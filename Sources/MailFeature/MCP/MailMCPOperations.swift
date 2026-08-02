@@ -121,7 +121,11 @@ public enum MailMCPOperations {
 
         case "send_draft":
             guard let id = args["draft_id"] as? String else { return fail("draft_id required.") }
-            guard let draft = DraftBox.shared.draft(id) else { return fail("No draft \(id).") }
+            guard let draft = DraftBox.shared.draft(id) else {
+                return fail("No draft \(id) exists. Drafts are held in memory only and do not " +
+                            "survive a restart, so this id may be stale — call create_draft " +
+                            "again rather than retrying send_draft with the same id.")
+            }
             do {
                 try outbox.enqueue(.send(draft))
                 await outbox.drain()

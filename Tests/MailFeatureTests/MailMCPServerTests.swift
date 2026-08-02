@@ -115,4 +115,30 @@ import AinkradAppKit
         #expect(result.isError == false)
         #expect(result.text.contains("t-old"))
     }
+
+    @Test("draft ids are distinct and non-sequential across saves")
+    func draftIDsAreDistinctAndNonSequential() throws {
+        let box = DraftBox()
+        let message = OutgoingMessage(to: [MailAddress(email: "a@x.com")], subject: "s", bodyText: "b")
+        let first = try box.save(message)
+        let second = try box.save(message)
+        #expect(first != second)
+        // Not "draft-1"/"draft-2" style sequential ids — collision-proof across
+        // process lifetimes rather than a counter that resets on relaunch.
+        #expect(first != "draft-1")
+        #expect(second != "draft-2")
+    }
+
+    @Test("send_draft on an id the box does not hold is an error result, not a crash or no-op")
+    func sendDraftUnknownIDIsError() async throws {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        let provider = FakeMailProvider()
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
+
+        let result = await MailMCPOperations.run(
+            "send_draft", arguments: #"{"draft_id":"does-not-exist"}"#, store: store, outbox: outbox)
+        #expect(result.isError)
+        #expect(provider.sentMessages.isEmpty)
+        #expect(outbox.pending().isEmpty)
+    }
 }
