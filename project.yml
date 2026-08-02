@@ -54,7 +54,23 @@ targets:
     dependencies:
       - target: RavenFeature
       - package: AinkradAppKit
+  # Dev-only command-line harness for exercising the real GmailAuth OAuth
+  # flow against real Google traffic — RavenPlugin is a bundle and cannot be
+  # run directly. Deliberately NOT a dependency of RavenPlugin and never
+  # embedded in it; it is a sibling consumer of RavenFeature, same as
+  # RavenFeatureTests.
+  RavenDevAuth:
+    type: tool
+    platform: macOS
+    sources: [Sources/RavenDevAuth]
+    dependencies:
+      - target: RavenFeature
+      - package: AinkradAppKit
+        embed: false
 schemes:
   RavenPlugin:
     build: { targets: { RavenPlugin: all, RavenFeatureTests: [test] } }
     test:  { config: Debug, targets: [RavenFeatureTests] }
+  RavenDevAuth:
+    build: { targets: { RavenDevAuth: all } }
+    run: { config: Debug }

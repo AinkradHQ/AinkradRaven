@@ -54,7 +54,7 @@ struct GmailAuthCacheTests {
     @Test("a cached token that is still comfortably valid is returned without a network call")
     func cachedTokenReturnedWithoutRefresh() async throws {
         let secrets = InMemorySecretStore()
-        let auth = GmailAuth(secrets: secrets, clientID: "cid") { _ in
+        let auth = GmailAuth(secrets: secrets, clientID: "cid", clientSecret: "csecret") { _ in
             Issue.record("refresh should not be called for a still-valid cached token")
             return ("network-token", 3600)
         }
@@ -69,7 +69,7 @@ struct GmailAuthCacheTests {
     func staleCachedTokenTriggersRefresh() async throws {
         let secrets = InMemorySecretStore()
         secrets.setSecret("stored-refresh-token", forKey: "refresh-acct")
-        let auth = GmailAuth(secrets: secrets, clientID: "cid") { refresh in
+        let auth = GmailAuth(secrets: secrets, clientID: "cid", clientSecret: "csecret") { refresh in
             #expect(refresh == "stored-refresh-token")
             return ("refreshed-token", 3600)
         }
@@ -85,7 +85,7 @@ struct GmailAuthCacheTests {
     @Test("no refresh token in the secret store throws notAuthenticated rather than returning something empty")
     func missingRefreshTokenThrows() async throws {
         let secrets = InMemorySecretStore()
-        let auth = GmailAuth(secrets: secrets, clientID: "cid") { _ in
+        let auth = GmailAuth(secrets: secrets, clientID: "cid", clientSecret: "csecret") { _ in
             Issue.record("refresh should not be attempted without a stored refresh token")
             return ("unused", 0)
         }

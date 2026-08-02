@@ -28,6 +28,29 @@ import AinkradAppKit
 
     private let secrets: PluginSecretStore
     private let clientID: String
+    /// The Desktop OAuth client's secret. Google's token endpoint requires it
+    /// for BOTH the authorization-code exchange and every refresh-token
+    /// exchange — omitting it (as this file did before) makes every exchange
+    /// fail with `invalid_client`.
+    ///
+    /// Design decision: `GmailAuth` takes this as a plain constructor
+    /// argument, exactly like `clientID`, rather than being handed the
+    /// `secrets` store plus a key name and reaching in for it itself. That is
+    /// deliberate: it keeps the *only* sanctioned origin of this value outside
+    /// this type entirely. The caller must already hold the secret (typically
+    /// having just read it from `host.secrets`, or parsed it at process
+    /// startup from the OAuth client JSON) and hands it over as a bare value;
+    /// `GmailAuth` never calls `secrets.secret(forKey:)` or
+    /// `secrets.setSecret(forKey:)` for it, and never writes it anywhere —
+    /// only the refresh token it obtains gets persisted, into `secrets`,
+    /// unchanged from before. Consequently there is no key name, no document
+    /// path, and no code inside this type that could ever be misdirected at
+    /// `PluginDocumentStore` — the only way this leaks is if code *outside*
+    /// this file chooses to persist it somewhere it shouldn't, which is a
+    /// mistake this design cannot make on its own.
+    ///
+    /// Never logged, never interpolated into a `MailError`, never printed.
+    private let clientSecret: String
     /// Test-only seam: when set, `accessToken(accountID:)` calls this instead
     /// of performing the real network refresh-token exchange. Left nil in
     /// production, where the real HTTP exchange in `exchange(parameters:)`
@@ -38,10 +61,11 @@ import AinkradAppKit
     // directly, without needing a real network round trip or a browser flow.
     var accessTokens: [String: (token: String, expiry: Date)] = [:]
 
-    public init(secrets: PluginSecretStore, clientID: String,
+    public init(secrets: PluginSecretStore, clientID: String, clientSecret: String,
                 refreshExchange: (@MainActor (String) async throws -> (String, TimeInterval))? = nil) {
         self.secrets = secrets
         self.clientID = clientID
+        self.clientSecret = clientSecret
         self.refreshExchangeOverride = refreshExchange
     }
 
@@ -105,6 +129,7 @@ import AinkradAppKit
         } else {
             (token, lifetime) = try await exchange(parameters: [
                 "client_id": clientID,
+                "client_secret": clientSecret,
                 "refresh_token": refresh,
                 "grant_type": "refresh_token",
             ])
@@ -122,7 +147,14 @@ import AinkradAppKit
         let (code, redirectURI) = try await LoopbackCallbackListener.run(
             timeout: Self.authorizationTimeout,
             openBrowser: { [clientID] port in
-                let redirectURI = "http://127.0.0.1:\(port)"
+                // Must be "localhost", not "127.0.0.1": the registered Desktop
+                // client's redirect URI is `http://localhost` (Google matches
+                // loopback redirects by host and ignores the port for
+                // installed apps), and a 127.0.0.1 URI can be rejected against
+                // that registration. See `LoopbackCallbackListener` for how
+                // the listener still guarantees it receives this regardless
+                // of whether "localhost" resolves to the IPv4 or IPv6 loop.
+                let redirectURI = "http://localhost:\(port)"
                 let url = Self.authorizationURL(clientID: clientID, redirectURI: redirectURI,
                                                  verifier: verifier, state: state)
                 NSWorkspace.shared.open(url)
@@ -132,6 +164,7 @@ import AinkradAppKit
 
         let payload = try await exchangeFull(parameters: [
             "client_id": clientID,
+            "client_secret": clientSecret,
             "code": code,
             "code_verifier": verifier,
             "grant_type": "authorization_code",
@@ -305,7 +338,24 @@ enum LoopbackCallbackListener {
         }
 
         func start(timeout: Duration) {
-            guard let listener = try? NWListener(using: .tcp, on: .any) else {
+            // The redirect is `http://localhost:PORT`, and "localhost" can
+            // resolve to either the IPv4 loop (127.0.0.1) or the IPv6 loop
+            // (::1) depending on the browser/OS resolver order — so the
+            // listener must accept on both families, not just IPv4, or a
+            // browser that resolves to ::1 will hit a closed port and the
+            // flow will hang forever.
+            //
+            // `acceptLocalOnly` is what makes that safe: rather than binding
+            // to the IPv4/IPv6 wildcard (which would accept connections from
+            // *any* interface, not just loopback), it binds wide but tells
+            // the OS to only hand back connections whose *peer* is the local
+            // machine itself. That is what actually guarantees both
+            // properties at once — loopback-only, and family-agnostic —
+            // rather than requiring a second listener bound to a second
+            // address family.
+            let parameters = NWParameters.tcp
+            parameters.acceptLocalOnly = true
+            guard let listener = try? NWListener(using: parameters, on: .any) else {
                 finish(.failure(ListenerError.portUnavailable))
                 return
             }
