@@ -3,7 +3,7 @@ import AinkradAppKit
 
 /// Every tool body. Takes a store and an outbox — deliberately no provider, so
 /// a tool physically cannot reach the network ahead of the store.
-public enum MailMCPOperations {
+public enum RavenMCPOperations {
     private static func decode(_ arguments: String) -> [String: Any] {
         (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
     }

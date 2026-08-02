@@ -18,17 +18,17 @@ packages:
     #   git -C ../Ainkrad/build/SourcePackages/checkouts/AinkradAppKit rev-parse HEAD
     revision: 31f89bc9e186354077035316a832237ce6993a09
 targets:
-  MailFeature:
+  RavenFeature:
     type: library.static
     platform: macOS
-    sources: [Sources/MailFeature]
+    sources: [Sources/RavenFeature]
     dependencies:
       - package: AinkradAppKit
         embed: false
-  MailPlugin:
+  RavenPlugin:
     type: bundle
     platform: macOS
-    sources: [Sources/MailPlugin]
+    sources: [Sources/RavenPlugin]
     postBuildScripts:
       - script: '"$SRCROOT/scripts/stamp-api-version.sh"'
         name: Stamp AinkradAPIVersion
@@ -36,25 +36,25 @@ targets:
           - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
         basedOnDependencyAnalysis: false
     dependencies:
-      - target: MailFeature
+      - target: RavenFeature
       - package: AinkradAppKit
         embed: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ainkrad.plugin.mail
+        PRODUCT_BUNDLE_IDENTIFIER: com.ainkrad.plugin.raven
         GENERATE_INFOPLIST_FILE: NO
-        INFOPLIST_FILE: Sources/MailPlugin/Info.plist
+        INFOPLIST_FILE: Sources/RavenPlugin/Info.plist
         MACH_O_TYPE: mh_bundle
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
-        OTHER_LDFLAGS: ["-lMailFeature"]
-  MailFeatureTests:
+        OTHER_LDFLAGS: ["-lRavenFeature"]
+  RavenFeatureTests:
     type: bundle.unit-test
     platform: macOS
-    sources: [Tests/MailFeatureTests]
+    sources: [Tests/RavenFeatureTests]
     dependencies:
-      - target: MailFeature
+      - target: RavenFeature
       - package: AinkradAppKit
 schemes:
-  MailPlugin:
-    build: { targets: { MailPlugin: all, MailFeatureTests: [test] } }
-    test:  { config: Debug, targets: [MailFeatureTests] }
+  RavenPlugin:
+    build: { targets: { RavenPlugin: all, RavenFeatureTests: [test] } }
+    test:  { config: Debug, targets: [RavenFeatureTests] }

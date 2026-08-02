@@ -1,13 +1,13 @@
 import Testing
 import Foundation
 import AinkradAppKit
-@testable import MailFeature
+@testable import RavenFeature
 
-@Suite("Mail MCP server")
-@MainActor struct MailMCPServerTests {
+@Suite("Raven MCP server")
+@MainActor struct RavenMCPServerTests {
     @Test("every tool registers without a duplicate or a bad schema")
     func registersCleanly() {
-        let made = MailMCPServer.make(appID: "mail") { _, _ in
+        let made = RavenMCPServer.make(appID: "raven") { _, _ in
             AgentActionResult(text: "", isError: false)
         }
         #expect(made.failures.isEmpty)
@@ -15,21 +15,21 @@ import AinkradAppKit
 
     @Test("send_draft is the only destructive tool and no send_mail exists")
     func sendGating() {
-        let destructive = MailMCPServer.tools.filter(\.destructive).map(\.name)
+        let destructive = RavenMCPServer.tools.filter(\.destructive).map(\.name)
         #expect(destructive == ["send_draft"])
-        #expect(MailMCPServer.tools.contains { $0.name == "send_mail" } == false)
+        #expect(RavenMCPServer.tools.contains { $0.name == "send_mail" } == false)
     }
 
     @Test("read tools are marked readOnly so the host can skip the gate")
     func readOnlyFlags() {
-        let readOnly = Set(MailMCPServer.tools.filter(\.readOnly).map(\.name))
+        let readOnly = Set(RavenMCPServer.tools.filter(\.readOnly).map(\.name))
         #expect(readOnly.isSuperset(of: ["list_accounts", "search_mail", "read_thread",
                                          "list_labels", "unread_summary"]))
     }
 
     @Test("every schema is parseable JSON")
     func schemasParse() throws {
-        for tool in MailMCPServer.tools {
+        for tool in RavenMCPServer.tools {
             let data = Data(tool.schemaJSON.utf8)
             #expect(throws: Never.self) { try JSONSerialization.jsonObject(with: data) }
         }
@@ -48,7 +48,7 @@ import AinkradAppKit
         ]))
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
 
-        let result = await MailMCPOperations.run("unread_summary", arguments: "{}",
+        let result = await RavenMCPOperations.run("unread_summary", arguments: "{}",
                                                  store: store, outbox: outbox)
         #expect(result.isError == false)
         #expect(result.text.contains("t1"))
@@ -58,7 +58,7 @@ import AinkradAppKit
     func readMissingThread() async throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
-        let result = await MailMCPOperations.run(
+        let result = await RavenMCPOperations.run(
             "read_thread", arguments: #"{"thread_id":"nope"}"#, store: store, outbox: outbox)
         #expect(result.isError)
     }
@@ -74,7 +74,7 @@ import AinkradAppKit
                         subject: "Hi", date: now, labelIDs: ["INBOX"], snippet: "s")
         ]))
 
-        let result = await MailMCPOperations.run(
+        let result = await RavenMCPOperations.run(
             "archive", arguments: #"{"thread_ids":["t1"]}"#, store: store, outbox: outbox)
         #expect(result.isError == false)
         #expect(outbox.pending().count == 1)
@@ -88,7 +88,7 @@ import AinkradAppKit
                                           address: "me@x.com", displayName: "Me", state: .ready))
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
 
-        let result = await MailMCPOperations.run(
+        let result = await RavenMCPOperations.run(
             "search_mail", arguments: #"{"query":"invoice"}"#, store: store, outbox: outbox)
         #expect(result.isError == false)
         #expect(result.text.contains("synced window"))
@@ -110,7 +110,7 @@ import AinkradAppKit
         ]))
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
 
-        let result = await MailMCPOperations.run(
+        let result = await RavenMCPOperations.run(
             "search_mail", arguments: #"{"query":"invoice"}"#, store: store, outbox: outbox)
         #expect(result.isError == false)
         #expect(result.text.contains("t-old"))
@@ -135,7 +135,7 @@ import AinkradAppKit
         let provider = FakeMailProvider()
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
 
-        let result = await MailMCPOperations.run(
+        let result = await RavenMCPOperations.run(
             "send_draft", arguments: #"{"draft_id":"does-not-exist"}"#, store: store, outbox: outbox)
         #expect(result.isError)
         #expect(provider.sentMessages.isEmpty)

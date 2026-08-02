@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import MailFeature
+@testable import RavenFeature
 
 @Suite("Body sanitizer")
 struct BodySanitizerTests {

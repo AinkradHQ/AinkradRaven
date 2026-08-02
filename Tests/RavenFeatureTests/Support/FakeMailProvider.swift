@@ -1,5 +1,5 @@
 import Foundation
-@testable import MailFeature
+@testable import RavenFeature
 
 /// Scriptable provider double. Every behaviour the sync engine must survive is
 /// expressed as data here rather than as a mock expectation.

@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import MailFeature
+@testable import RavenFeature
 
 @Suite("Outbox")
 @MainActor struct OutboxTests {

@@ -1,7 +1,7 @@
 import Foundation
 import AinkradAppKit
 
-public enum MailMCPServer {
+public enum RavenMCPServer {
     public struct Tool: Sendable {
         public let name: String
         public let operation: String
