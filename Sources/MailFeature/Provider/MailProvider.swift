@@ -40,7 +40,7 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     }
 }
 
-public struct LabelMutation: Equatable, Sendable {
+public struct LabelMutation: Codable, Equatable, Sendable {
     public let threadIDs: [String]
     public let add: [String]
     public let remove: [String]
