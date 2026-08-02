@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import MailFeature
 
@@ -75,5 +76,73 @@ struct BodySanitizerTests {
         let text = BodySanitizer.plainText(fromHTML: html)
         #expect(text.contains("<script>") == false)
         #expect(text.contains("alert") == false)
+    }
+
+    // MARK: - Reviewer findings (order-of-operations and detection bypasses)
+
+    @Test("entity-encoded script tags do not reconstitute after decoding")
+    func encodedScriptDoesNotReconstitute() {
+        let text = BodySanitizer.plainText(fromHTML: "&lt;script&gt;alert(1)&lt;/script&gt;")
+        #expect(text.contains("<script>") == false)
+        #expect(text.contains("</script>") == false)
+    }
+
+    @Test("double-encoded script tags do not reconstitute after decoding")
+    func doubleEncodedScriptDoesNotReconstitute() {
+        let text = BodySanitizer.plainText(fromHTML: "&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;")
+        #expect(text.contains("<script>") == false)
+        #expect(text.contains("</script>") == false)
+    }
+
+    @Test("a real tag and an entity-encoded tag together both fail to survive as tags")
+    func mixedRealAndEncodedTagsBothStripped() {
+        let html = "<p>Hi</p>&lt;script&gt;alert(1)&lt;/script&gt;<p>Bye</p>"
+        let text = BodySanitizer.plainText(fromHTML: html)
+        #expect(text.contains("<script>") == false)
+        #expect(text.contains("Hi"))
+        #expect(text.contains("Bye"))
+    }
+
+    @Test("legitimate prose using bare < and > as comparisons reads naturally")
+    func proseWithComparisonOperatorsIsPreserved() {
+        let text = BodySanitizer.plainText(fromHTML: "<p>5 &lt; 6 and 7 &gt; 3</p>")
+        #expect(text.contains("5 < 6 and 7 > 3"))
+    }
+
+    @Test("protocol-relative image sources are detected as remote")
+    func protocolRelativeImageIsRemote() {
+        let html = "<img src=\"//tracker.example/pixel.gif\">"
+        let urls = BodySanitizer.remoteImageURLs(inHTML: html)
+        #expect(urls == ["//tracker.example/pixel.gif"])
+    }
+
+    @Test("unquoted image src attributes are detected across quoting styles")
+    func unquotedAndQuotedImageSrcAreAllDetected() {
+        let html = "<img src=http://a.example/x.gif>" +
+            "<img src=\"https://b.example/y.gif\">" +
+            "<img src='https://c.example/z.gif'>"
+        let urls = BodySanitizer.remoteImageURLs(inHTML: html)
+        #expect(urls == [
+            "http://a.example/x.gif",
+            "https://b.example/y.gif",
+            "https://c.example/z.gif",
+        ])
+    }
+
+    @Test("deep nesting and large input stay cheap after the decode/strip loop")
+    func costProfileStaysBounded() {
+        let deepNest = String(repeating: "<scr", count: 2000)
+            + "<script>" + String(repeating: "ipt>", count: 2000) + "alert(1)</script>"
+        let start1 = Date()
+        _ = BodySanitizer.plainText(fromHTML: deepNest)
+        let deepNestElapsed = Date().timeIntervalSince(start1)
+        #expect(deepNestElapsed < 2.0)
+
+        let oneMB = String(
+            repeating: "<p>Hello world, this is prose &amp; more &lt;text&gt;.</p>", count: 20000)
+        let start2 = Date()
+        _ = BodySanitizer.plainText(fromHTML: oneMB)
+        let oneMBElapsed = Date().timeIntervalSince(start2)
+        #expect(oneMBElapsed < 2.0)
     }
 }

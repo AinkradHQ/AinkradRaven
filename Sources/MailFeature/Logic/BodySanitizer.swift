@@ -36,25 +36,65 @@ public enum BodySanitizer {
         working = working.replacingOccurrences(
             of: "<br\\s*/?>|</p>|</div>|</tr>", with: "\n",
             options: [.regularExpression, .caseInsensitive])
-        working = working.replacingOccurrences(
-            of: "<[^>]+>", with: "", options: .regularExpression)
-        return decodeEntities(working)
+
+        // Decode entities and strip tag-shaped text to a fixed point. Decoding
+        // BEFORE the final strip (not after, as a naive single pass would do)
+        // matters: entity-encoded markup like `&lt;script&gt;` must not survive
+        // stripping and then reconstitute into a literal "<script>" in the
+        // output once decoded — that string would be live if any consumer ever
+        // re-rendered it. Iterating covers double-encoding
+        // (`&amp;lt;script&amp;gt;`) regardless of the (unordered) entity-table
+        // iteration order. Capped so a pathological input can't loop unbounded;
+        // in practice this converges in 2-3 passes.
+        var decodeIterations = 0
+        repeat {
+            previous = working
+            working = decodeEntities(working)
+            working = stripTagShaped(working)
+            decodeIterations += 1
+        } while working != previous && decodeIterations < 8
+
+        return working
             .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Every http(s) image source. `cid:` inline parts are excluded — they come
-    /// from the message itself and leak nothing.
+    /// Only matches genuinely tag-shaped text (`<tag ...>`, `</tag>`, `<!...>`) —
+    /// deliberately narrower than `<[^>]+>` so that legitimate prose using bare
+    /// `<`/`>` as comparison operators (e.g. "5 &lt; 6 and 7 &gt; 3", which
+    /// decodes to "5 < 6 and 7 > 3") is left intact instead of being swallowed
+    /// as if it were a tag.
+    private static let tagShapedPattern = "<\\/?[A-Za-z!][^<>]*>"
+
+    private static func stripTagShaped(_ html: String) -> String {
+        html.replacingOccurrences(
+            of: tagShapedPattern, with: "", options: .regularExpression)
+    }
+
+    /// Every http(s) (including protocol-relative `//host/...`, which loads
+    /// over https and is a common tracking-pixel disguise) image source.
+    /// `cid:` inline parts are excluded — they come from the message itself
+    /// and leak nothing. Matches quoted (single/double) and bare/unquoted
+    /// attribute values, since hostile or malformed mail HTML routinely omits
+    /// quotes.
     public static func remoteImageURLs(inHTML html: String) -> [String] {
-        let pattern = "<img[^>]+src\\s*=\\s*[\"']([^\"']+)[\"']"
+        let pattern = "<img\\b[^>]*?\\bsrc\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'>]+))"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
         else { return [] }
         let range = NSRange(html.startIndex..<html.endIndex, in: html)
         return regex.matches(in: html, range: range).compactMap { match in
-            guard let found = Range(match.range(at: 1), in: html) else { return nil }
-            let url = String(html[found])
-            return url.lowercased().hasPrefix("http") ? url : nil
+            for group in 1...3 {
+                guard let found = Range(match.range(at: group), in: html) else { continue }
+                let url = String(html[found])
+                return isRemote(url) ? url : nil
+            }
+            return nil
         }
+    }
+
+    private static func isRemote(_ url: String) -> Bool {
+        let lower = url.lowercased()
+        return lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("//")
     }
 
     private static func removeBlocks(named tag: String, in html: String) -> String {
