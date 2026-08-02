@@ -107,6 +107,11 @@ import Foundation
     /// Incremental sync. Falls back to a full backfill when there is no cursor
     /// or the provider rejects the one we hold — a cursor that is too old is a
     /// normal event after the app has been closed for a while, not an error.
+    /// Any other `fetchDelta` failure (rate limiting, transient network errors)
+    /// is NOT treated as a rejected cursor: a full re-walk is expensive and a
+    /// backfill would mask what is really a transient problem, so we leave the
+    /// cursor untouched, record the error, and let the next scheduled sync
+    /// retry cheaply against the same cursor.
     public func syncDelta() async throws {
         guard let cursor = store.accounts().first(where: { $0.id == accountID })?.syncCursor else {
             try await backfill()
@@ -116,30 +121,70 @@ import Foundation
         let delta: MailDelta
         do {
             delta = try await provider.fetchDelta(cursor: cursor)
-        } catch {
+        } catch MailError.providerFailed(let status, let message) {
+            // A provider-level rejection (e.g. a 404/410 on the history
+            // endpoint) plausibly means the cursor itself is expired/invalid —
+            // fall back to a full backfill to recover.
             state = .idle
+            _ = (status, message)
             try await backfill()
+            return
+        } catch {
+            // Anything else (rate limiting, transient network errors) is not
+            // evidence the cursor is bad. Leave it alone and let the next
+            // scheduled sync retry against the same cursor.
+            try? updateAccount { account in
+                account.state = .failed
+                account.lastError = String(describing: error)
+            }
+            state = .failed(String(describing: error))
             return
         }
 
+        var transientFailures: [String] = []
         for id in delta.changedThreadIDs {
-            // A thread can vanish between the delta listing it and us fetching
-            // it. That is not a sync failure; skip it and keep going.
-            guard let thread = try? await provider.fetchThread(id: id) else { continue }
-            try store.upsertThread(thread)
+            do {
+                let thread = try await provider.fetchThread(id: id)
+                try store.upsertThread(thread)
+            } catch MailError.unknownThread {
+                // A thread can vanish between the delta listing it and us
+                // fetching it. That is not a sync failure; skip it and keep
+                // going.
+                continue
+            } catch {
+                // A transient failure (network blip, 500, rate limit) is NOT
+                // the same as a vanished thread. If we advanced the cursor
+                // anyway, this change would be lost forever — cursor-based
+                // deltas are not re-delivered once consumed. So we record the
+                // failure and hold the cursor back below.
+                transientFailures.append(id)
+            }
         }
         for id in delta.removedThreadIDs {
             guard let existing = store.thread(id) else { continue }
             try store.removeThread(id, accountID: accountID, date: existing.lastMessageDate)
         }
 
-        try updateAccount { account in
-            account.syncCursor = delta.newCursor
-            account.lastSyncedAt = Date()
-            account.lastError = nil
-            account.state = .ready
+        if transientFailures.isEmpty {
+            try updateAccount { account in
+                account.syncCursor = delta.newCursor
+                account.lastSyncedAt = Date()
+                account.lastError = nil
+                account.state = .ready
+            }
+            state = .idle
+        } else {
+            // Do NOT advance the cursor — the ids in `transientFailures` were
+            // never durably applied, so the next delta must re-deliver them.
+            // Do not "clean this up" into always advancing the cursor; that
+            // would silently drop mail.
+            try updateAccount { account in
+                account.lastSyncedAt = Date()
+                account.lastError = "syncDelta: \(transientFailures.count) thread(s) failed transiently: \(transientFailures.joined(separator: ", "))"
+                account.state = .failed
+            }
+            state = .failed("transient failure fetching threads: \(transientFailures.joined(separator: ", "))")
         }
-        state = .idle
     }
 
     private func updateAccount(_ mutate: (inout MailAccount) -> Void) throws {
