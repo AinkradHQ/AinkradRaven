@@ -13,4 +13,10 @@ test: generate ; xcodebuild -scheme RavenPlugin -configuration Debug -derivedDat
 # Google traffic. Opens a browser and needs a human to click through
 # Google's consent screen — never run unattended.
 dev-auth: generate ; xcodebuild -scheme RavenDevAuth -configuration Debug -derivedDataPath build -destination 'platform=macOS' build && build/Build/Products/Debug/RavenDevAuth
+# Dev-only: captures RAW (unredacted) Gmail API responses to
+# ~/.config/ainkrad-raven/raw-fixtures/, outside the repo, for hand-redaction
+# into Tests/RavenFeatureTests/Fixtures/. Requires RAVEN_DEV_ACCOUNT_ID set to
+# the already-authorized account's email, and a refresh token already stored
+# via `make dev-auth`. Never run unattended in CI.
+dev-fixtures: generate ; xcodebuild -scheme RavenDevAuth -configuration Debug -derivedDataPath build -destination 'platform=macOS' build && build/Build/Products/Debug/RavenDevAuth --capture-fixtures
 release: ; ./scripts/release.sh $(V)
