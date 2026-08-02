@@ -1,0 +1,95 @@
+{
+  "_fixtureNote": "HAND-BUILT, not captured live. Both real threads reachable in a wider dev-harness scan (maxResults=25, 90-day window) were single-message at capture time, so this fixture was constructed by hand from the real thread-0.json/message-0.json shape: structure, header set, and encoding conventions are authentic; ids and internalDate are synthetic but internally consistent (message-multi-1 predates message-multi-2). All human-readable content (subjects, snippet, addresses, body) is synthetic, following the same @example.com convention as the rest of this fixture set.",
+  "id": "19fc00000000mult",
+  "historyId": "2172000",
+  "messages": [
+    {
+      "id": "19fc00000000m002",
+      "threadId": "19fc00000000mult",
+      "labelIds": ["INBOX"],
+      "snippet": "Sounds good, let's ship it Thursday.",
+      "payload": {
+        "mimeType": "multipart/alternative",
+        "headers": [
+          {"name": "Subject", "value": "Re: Example release timing"},
+          {"name": "From", "value": "\"Sam Example\" <sam@example.com>"},
+          {"name": "To", "value": "\"Alex Example\" <alex@example.com>"},
+          {"name": "Message-Id", "value": "<multi-0002@example.com>"},
+          {"name": "Date", "value": "Mon, 03 Aug 2026 09:15:00 -0700"}
+        ],
+        "body": {"size": 0},
+        "parts": [
+          {
+            "partId": "0",
+            "mimeType": "text/plain",
+            "headers": [
+              {"name": "Content-Type", "value": "text/plain; charset=UTF-8"}
+            ],
+            "body": {
+              "size": 33,
+              "data": "U291bmRzIGdvb2QsIGxldCdzIHNoaXAgaXQgVGh1cnNkYXku"
+            }
+          },
+          {
+            "partId": "1",
+            "mimeType": "text/html",
+            "headers": [
+              {"name": "Content-Type", "value": "text/html; charset=UTF-8"}
+            ],
+            "body": {
+              "size": 45,
+              "data": "PHA-U291bmRzIGdvb2QsIGxldCdzIHNoaXAgaXQgVGh1cnNkYXkuPC9wPg"
+            }
+          }
+        ]
+      },
+      "sizeEstimate": 2048,
+      "historyId": "2172000",
+      "internalDate": "1785700500000"
+    },
+    {
+      "id": "19fc00000000m001",
+      "threadId": "19fc00000000mult",
+      "labelIds": ["INBOX"],
+      "snippet": "What do you think about moving the example release to Thursday?",
+      "payload": {
+        "mimeType": "multipart/alternative",
+        "headers": [
+          {"name": "Subject", "value": "Example release timing"},
+          {"name": "From", "value": "\"Alex Example\" <alex@example.com>"},
+          {"name": "To", "value": "\"Sam Example\" <sam@example.com>"},
+          {"name": "Message-Id", "value": "<multi-0001@example.com>"},
+          {"name": "Date", "value": "Mon, 03 Aug 2026 08:00:00 -0700"}
+        ],
+        "body": {"size": 0},
+        "parts": [
+          {
+            "partId": "0",
+            "mimeType": "text/plain",
+            "headers": [
+              {"name": "Content-Type", "value": "text/plain; charset=UTF-8"}
+            ],
+            "body": {
+              "size": 64,
+              "data": "V2hhdCBkbyB5b3UgdGhpbmsgYWJvdXQgbW92aW5nIHRoZSBleGFtcGxlIHJlbGVhc2UgdG8gVGh1cnNkYXk_"
+            }
+          },
+          {
+            "partId": "1",
+            "mimeType": "text/html",
+            "headers": [
+              {"name": "Content-Type", "value": "text/html; charset=UTF-8"}
+            ],
+            "body": {
+              "size": 76,
+              "data": "PHA-V2hhdCBkbyB5b3UgdGhpbmsgYWJvdXQgbW92aW5nIHRoZSBleGFtcGxlIHJlbGVhc2UgdG8gVGh1cnNkYXk_PC9wPg"
+            }
+          }
+        ]
+      },
+      "sizeEstimate": 2048,
+      "historyId": "2171999",
+      "internalDate": "1785696000000"
+    }
+  ]
+}

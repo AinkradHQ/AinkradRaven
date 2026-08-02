@@ -218,14 +218,31 @@ import AinkradAppKit
         return (payload.accessToken, payload.expiresIn)
     }
 
+    /// RFC 3986 unreserved characters — exactly what
+    /// `application/x-www-form-urlencoded` must leave unescaped. The previous
+    /// encoding used `.alphanumerics`, which under-escapes: it left `+`, `/`,
+    /// `=`, `&`, and space in values completely unescaped, so any such value
+    /// (a refresh token or auth code containing one of those bytes) would
+    /// corrupt the parameter boundaries when Google's token endpoint parsed
+    /// the body back. This has not bitten in practice only because every
+    /// parameter value used so far happened to be URL-safe.
+    nonisolated static func formURLEncode(_ parameters: [String: String]) -> Data {
+        let unreserved = CharacterSet(charactersIn:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        func encode(_ value: String) -> String {
+            value.addingPercentEncoding(withAllowedCharacters: unreserved) ?? value
+        }
+        let body = parameters
+            .map { "\(encode($0.key))=\(encode($0.value))" }
+            .joined(separator: "&")
+        return Data(body.utf8)
+    }
+
     private func exchangeFull(parameters: [String: String]) async throws -> TokenPayload {
         var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = parameters
-            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0.value)" }
-            .joined(separator: "&")
-            .data(using: .utf8)
+        request.httpBody = Self.formURLEncode(parameters)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {

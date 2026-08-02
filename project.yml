@@ -50,7 +50,10 @@ targets:
   RavenFeatureTests:
     type: bundle.unit-test
     platform: macOS
-    sources: [Tests/RavenFeatureTests]
+    sources:
+      - path: Tests/RavenFeatureTests
+      - path: Tests/RavenFeatureTests/Fixtures
+        buildPhase: resources
     dependencies:
       - target: RavenFeature
       - package: AinkradAppKit

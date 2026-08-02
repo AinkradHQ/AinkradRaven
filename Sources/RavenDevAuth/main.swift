@@ -163,8 +163,13 @@ enum FixtureCapture {
             try await get("profile.json", "/users/me/profile")
             try await get("labels.json", "/users/me/labels")
 
+            // maxResults widened from 5 to 25: a 5-thread sample turned out
+            // to contain no multi-message thread in practice (see Task 13's
+            // report), making the multi-message branch below dead code
+            // against this account. A larger window gives the scan below a
+            // realistic chance of finding one.
             let ninetyDaysAgo = Int(Date().addingTimeInterval(-90 * 24 * 60 * 60).timeIntervalSince1970)
-            try await get("threads.json", "/users/me/threads?maxResults=5&q=after:\(ninetyDaysAgo)")
+            try await get("threads.json", "/users/me/threads?maxResults=25&q=after:\(ninetyDaysAgo)")
 
             // Pull thread ids out of the just-captured threads.json so we can
             // fetch two of them in detail (ideally one single-message thread

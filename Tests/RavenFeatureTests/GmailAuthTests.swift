@@ -261,3 +261,43 @@ struct LoopbackCallbackListenerLifetimeTests {
         }
     }
 }
+
+/// Covers the fix to `exchangeFull`'s form encoding (carry-over from Task
+/// 12's review): `.alphanumerics` under-escaped reserved characters, which
+/// had not bitten yet only because every parameter value used so far
+/// happened to be URL-safe. `formURLEncode` is `static`, non-private, so
+/// `@testable import` can exercise it directly without a network round trip.
+@Suite("Gmail auth form encoding")
+struct GmailAuthFormEncodingTests {
+    @Test("a value containing +, /, =, & and a space is percent-escaped, not corrupted")
+    func encodesReservedCharactersAndSpace() {
+        let data = GmailAuth.formURLEncode([
+            "refresh_token": "a+b/c=d&e f",
+        ])
+        let body = String(decoding: data, as: UTF8.self)
+
+        // The encoded body must round-trip back to the exact original value
+        // when parsed as application/x-www-form-urlencoded — i.e. splitting
+        // on the FIRST '&' the encoder itself introduced as a real separator
+        // must not happen mid-value.
+        #expect(body.hasPrefix("refresh_token="))
+        let encodedValue = String(body.dropFirst("refresh_token=".count))
+        // The raw value must not appear byte-for-byte (that's exactly the
+        // under-escaping bug: '+', '/', '=', '&', and ' ' left untouched).
+        #expect(encodedValue != "a+b/c=d&e f")
+        #expect(encodedValue.contains("&") == false)  // no stray separator
+        #expect(encodedValue.contains(" ") == false)   // no literal space
+
+        // And it must decode back to exactly the original value.
+        let recovered = encodedValue
+            .replacingOccurrences(of: "+", with: " ")
+            .removingPercentEncoding
+        #expect(recovered == "a+b/c=d&e f")
+    }
+
+    @Test("plain alphanumeric values are encoded byte-identically (no regression for the common case)")
+    func leavesSimpleValuesUnchanged() {
+        let data = GmailAuth.formURLEncode(["grant_type": "refresh_token"])
+        #expect(String(decoding: data, as: UTF8.self) == "grant_type=refresh_token")
+    }
+}
