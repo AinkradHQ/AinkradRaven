@@ -20,6 +20,12 @@ import AinkradAppKit
 // Usage: `make dev-auth` (or run the built binary directly), optionally with
 // the OAuth client JSON path as the first argument.
 
+// Output was being swallowed while the process ran (fully-buffered stdout is
+// the default when stdout isn't a TTY, e.g. under `xcodebuild`/`make`), which
+// made a stuck run indistinguishable from a silent one. Line-buffer stdout so
+// every `print` shows up immediately.
+setvbuf(stdout, nil, _IOLBF, 0)
+
 let defaultCredentialsPath = ("~/.config/ainkrad-raven/oauth-client.json" as NSString)
     .expandingTildeInPath
 let credentialsPath = CommandLine.arguments.count > 1
@@ -113,16 +119,44 @@ func runHarness() async -> Int32 {
     let auth = GmailAuth(secrets: secrets, clientID: credentials.client_id,
                          clientSecret: credentials.client_secret)
 
-    print("Opening the consent screen in your browser — sign in and approve access…")
+    print("Requesting a loopback listener…")
     do {
-        let result = try await auth.authorize()
+        let result = try await auth.authorize { url in
+            // Fires once the listener is bound and ready, immediately before
+            // `NSWorkspace.shared.open(url)` is attempted — so "ready and
+            // waiting" is always visible even if the browser handoff itself
+            // silently fails (the reason this hook exists: `NSWorkspace.
+            // shared.open` is not guaranteed to reliably surface a browser
+            // from a bare command-line tool with no app bundle).
+            //
+            // Safe to print in full: this URL carries only the client id,
+            // requested scopes, `state`, the PKCE challenge, and the
+            // `redirect_uri` — never the client secret, never a code or
+            // token. Printing the `redirect_uri` specifically here (as part
+            // of the full URL, and pulled out on its own line) is what makes
+            // a Google `redirect_uri_mismatch` immediately diagnosable
+            // instead of showing up as a silent hang.
+            let redirectURI = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "redirect_uri" }?.value ?? "(unknown)"
+            let port = URLComponents(string: redirectURI)?.port.map(String.init) ?? "(unknown)"
+            print("Listener ready on port \(port). redirect_uri = \(redirectURI)")
+            print("Opening the consent screen in your browser…")
+            print("If no browser window appears, open this URL manually:")
+            print(url.absoluteString)
+        }
         print(result.address)
         print("Gmail authorization succeeded.")
         return 0
     } catch {
         // Never prints tokens or the client secret — GmailAuth's errors never
         // carry either, and this harness does not add any of its own.
-        FileHandle.standardError.write(Data("Gmail authorization failed: \(error)\n".utf8))
+        let description = "\(error)"
+        if description.contains("timedOut") {
+            print("Timed out waiting for the browser callback — the listener was up and " +
+                  "waiting the whole time; the consent screen was never completed (or the " +
+                  "callback never reached this process).")
+        }
+        FileHandle.standardError.write(Data("Gmail authorization failed: \(description)\n".utf8))
         return 1
     }
 }

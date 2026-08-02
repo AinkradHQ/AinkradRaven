@@ -139,9 +139,22 @@ import AinkradAppKit
     }
 
     /// Runs the loopback browser flow and stores the refresh token. Returns
-    /// the address. Never exercised in tests against real Google traffic —
-    /// see the task report.
-    public func authorize() async throws -> (accountID: String, address: String) {
+    /// the address.
+    ///
+    /// - Parameter onAuthorizationURL: called once, with the fully-built
+    ///   authorization URL, immediately BEFORE `NSWorkspace.shared.open` is
+    ///   asked to launch it. `NSWorkspace.shared.open` is not guaranteed to
+    ///   reliably surface a browser from every kind of host process (observed
+    ///   in practice from a bare command-line tool with no app bundle — see
+    ///   `RavenDevAuth`), so this exists as the fallback: whoever is driving
+    ///   the flow can present or log the URL for the human to open by hand if
+    ///   no browser window appears. Defaulted to `nil` so every existing call
+    ///   site remains source-compatible. The URL itself is safe to surface
+    ///   anywhere (print it, log it, show it in UI) — it carries only the
+    ///   client id, requested scopes, `state`, and the PKCE challenge, none of
+    ///   which are secrets.
+    public func authorize(onAuthorizationURL: (@Sendable (URL) -> Void)? = nil) async throws
+        -> (accountID: String, address: String) {
         let verifier = Self.codeVerifier()
         let state = Self.randomState()
         let (code, redirectURI) = try await LoopbackCallbackListener.run(
@@ -157,6 +170,7 @@ import AinkradAppKit
                 let redirectURI = "http://localhost:\(port)"
                 let url = Self.authorizationURL(clientID: clientID, redirectURI: redirectURI,
                                                  verifier: verifier, state: state)
+                onAuthorizationURL?(url)
                 NSWorkspace.shared.open(url)
                 return redirectURI
             },
@@ -345,14 +359,25 @@ enum LoopbackCallbackListener {
             // browser that resolves to ::1 will hit a closed port and the
             // flow will hang forever.
             //
-            // `acceptLocalOnly` is what makes that safe: rather than binding
-            // to the IPv4/IPv6 wildcard (which would accept connections from
-            // *any* interface, not just loopback), it binds wide but tells
-            // the OS to only hand back connections whose *peer* is the local
-            // machine itself. That is what actually guarantees both
-            // properties at once — loopback-only, and family-agnostic —
-            // rather than requiring a second listener bound to a second
-            // address family.
+            // This binds on `.any` — a genuine wildcard bind across every
+            // interface and both address families, confirmed by `lsof`
+            // showing `*:PORT`, not just "both loopback addresses." It is
+            // NOT restricted to loopback by the bind itself. What restricts
+            // it is `acceptLocalOnly = true`: Network.framework enforces,
+            // per accepted connection, that the connection's peer resolves
+            // to this same device before ever handing it to
+            // `newConnectionHandler` — so a remote connection attempt is
+            // rejected by the framework layer, not by the socket's bind
+            // address. This is a real guarantee (it comes from the OS/
+            // Network.framework, not from application-level filtering this
+            // type does itself), but it is a single flag standing in for
+            // what a loopback-only bind would otherwise guarantee
+            // structurally — say so plainly rather than implying the two are
+            // equivalent. An explicit loopback bind (`127.0.0.1` or `::1`
+            // alone) was not used instead because `NWListener` binds one
+            // local endpoint per instance, and binding to only one loopback
+            // address would drop whichever family "localhost" didn't resolve
+            // to — reintroducing the exact hang this fix exists to prevent.
             let parameters = NWParameters.tcp
             parameters.acceptLocalOnly = true
             guard let listener = try? NWListener(using: parameters, on: .any) else {
