@@ -84,8 +84,14 @@ import AinkradAppKit
     }
 
     public func removeThread(_ id: String, accountID: String, date: Date) throws {
+        // Prefer the thread's own stored lastMessageDate over the caller-supplied `date`:
+        // the caller's date can be stale (read before the thread moved months), and trusting
+        // it would leave the summary row behind in whatever shard it actually lives in — the
+        // same ghost-row bug fixed for upsertThread via removeStaleIndexRow. Only fall back
+        // to the caller's date when there's no stored thread left to read (already gone).
+        let shardDate = load(MailThread.self, DocumentKeys.thread(id))?.lastMessageDate ?? date
         documents.setData(nil, forKey: DocumentKeys.thread(id))
-        try updateIndex(accountID: accountID, date: date) { rows in
+        try updateIndex(accountID: accountID, date: shardDate) { rows in
             rows.removeAll { $0.id == id }
         }
     }

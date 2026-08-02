@@ -79,6 +79,21 @@ import Foundation
         #expect(store.summaries(accountID: "a1", months: [MonthShard.key(for: when)]).isEmpty)
     }
 
+    @Test("removing a thread uses the thread's own stored month, not a stale caller date")
+    func removeThreadUsesStoredMonth() throws {
+        let (store, _) = makeStore()
+        let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01
+        let march = Date(timeIntervalSince1970: 1_772_323_200)    // 2026-03-01
+        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
+                                          messages: [message("m1", thread: "t1", date: january)]))
+        // Caller passes a date in a different month than where the thread's summary
+        // row actually lives (stale caller state, or the thread moved since it was read).
+        try store.removeThread("t1", accountID: "a1", date: march)
+
+        let januaryRows = store.summaries(accountID: "a1", months: [MonthShard.key(for: january)])
+        #expect(januaryRows.isEmpty)
+    }
+
     @Test("a thread that gains a message in a new month leaves no stale index row")
     func threadMovesMonth() throws {
         let (store, _) = makeStore()
