@@ -1,32 +1,42 @@
 import Foundation
 import CryptoKit
-import AuthenticationServices
+import Network
 import AppKit
 import AinkradAppKit
 
 /// OAuth with PKCE against a Desktop client, over a loopback redirect. The
 /// refresh token goes to the host's Keychain-backed secret store; the access
 /// token is held in memory only and never persisted.
-@MainActor public final class GmailAuth: NSObject {
-    public static let scopes = [
+///
+/// Google's Desktop OAuth client type requires a loopback (`http://127.0.0.1`)
+/// redirect — a custom URI scheme is not an option for this client type. That
+/// redirect is captured by binding a minimal, one-shot `NWListener` on an
+/// OS-chosen port *before* opening the authorization URL in the user's
+/// default browser (`NSWorkspace`), rather than via
+/// `ASWebAuthenticationSession` (which expects a universal-link callback and
+/// never intercepts a loopback HTTP redirect).
+@MainActor public final class GmailAuth {
+    public nonisolated static let scopes = [
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/gmail.send",
         "https://www.googleapis.com/auth/userinfo.email",
     ]
+
+    /// How long the loopback listener stays up waiting for the user to finish
+    /// the consent screen before it tears itself down.
+    private static let authorizationTimeout: Duration = .seconds(180)
 
     private let secrets: PluginSecretStore
     private let clientID: String
     /// Test-only seam: when set, `accessToken(accountID:)` calls this instead
     /// of performing the real network refresh-token exchange. Left nil in
     /// production, where the real HTTP exchange in `exchange(parameters:)`
-    /// runs. This is the only refactor made beyond the brief's Step 3 code,
-    /// and it does not change the public `accessToken(accountID:)` signature
-    /// that `GmailProvider` depends on.
+    /// runs. This does not change the public `accessToken(accountID:)`
+    /// signature that `GmailProvider` depends on.
     private let refreshExchangeOverride: (@MainActor (String) async throws -> (String, TimeInterval))?
     // Not `private` so `@testable import` tests can seed a cached token
     // directly, without needing a real network round trip or a browser flow.
     var accessTokens: [String: (token: String, expiry: Date)] = [:]
-    private var session: ASWebAuthenticationSession?
 
     public init(secrets: PluginSecretStore, clientID: String,
                 refreshExchange: (@MainActor (String) async throws -> (String, TimeInterval))? = nil) {
@@ -37,25 +47,30 @@ import AinkradAppKit
 
     // MARK: PKCE
 
-    public static func codeVerifier() -> String {
+    public nonisolated static func codeVerifier() -> String {
         var bytes = [UInt8](repeating: 0, count: 64)
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
         return base64URL(Data(bytes))
     }
 
-    public static func codeChallenge(for verifier: String) -> String {
+    public nonisolated static func codeChallenge(for verifier: String) -> String {
         base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
     }
 
-    private static func base64URL(_ data: Data) -> String {
+    /// A random, unguessable value for the `state` parameter. Reuses the same
+    /// entropy source as `codeVerifier()` — both just need a long random
+    /// base64url string.
+    public nonisolated static func randomState() -> String { codeVerifier() }
+
+    private nonisolated static func base64URL(_ data: Data) -> String {
         data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
 
-    public static func authorizationURL(clientID: String, redirectURI: String,
-                                        verifier: String) -> URL {
+    public nonisolated static func authorizationURL(clientID: String, redirectURI: String,
+                                        verifier: String, state: String) -> URL {
         var components = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
         components.queryItems = [
             .init(name: "client_id", value: clientID),
@@ -69,6 +84,7 @@ import AinkradAppKit
             .init(name: "prompt", value: "consent"),
             .init(name: "code_challenge", value: codeChallenge(for: verifier)),
             .init(name: "code_challenge_method", value: "S256"),
+            .init(name: "state", value: state),
         ]
         return components.url!
     }
@@ -97,14 +113,23 @@ import AinkradAppKit
         return token
     }
 
-    /// Runs the browser flow and stores the refresh token. Returns the address.
-    public func authorize(redirectPort: Int = 7654) async throws -> (accountID: String, address: String) {
+    /// Runs the loopback browser flow and stores the refresh token. Returns
+    /// the address. Never exercised in tests against real Google traffic —
+    /// see the task report.
+    public func authorize() async throws -> (accountID: String, address: String) {
         let verifier = Self.codeVerifier()
-        let redirectURI = "http://127.0.0.1:\(redirectPort)"
-        let code = try await presentBrowserFlow(
-            url: Self.authorizationURL(clientID: clientID, redirectURI: redirectURI,
-                                       verifier: verifier),
-            redirectURI: redirectURI)
+        let state = Self.randomState()
+        let (code, redirectURI) = try await LoopbackCallbackListener.run(
+            timeout: Self.authorizationTimeout,
+            openBrowser: { [clientID] port in
+                let redirectURI = "http://127.0.0.1:\(port)"
+                let url = Self.authorizationURL(clientID: clientID, redirectURI: redirectURI,
+                                                 verifier: verifier, state: state)
+                NSWorkspace.shared.open(url)
+                return redirectURI
+            },
+            expectedState: state)
+
         let payload = try await exchangeFull(parameters: [
             "client_id": clientID,
             "code": code,
@@ -178,33 +203,190 @@ import AinkradAppKit
         }
         return wire.email
     }
+}
 
-    private func presentBrowserFlow(url: URL, redirectURI: String) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: url, callbackURLScheme: nil
-            ) { callback, error in
-                if let error {
-                    continuation.resume(throwing: error); return
-                }
-                guard let callback,
-                      let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems,
-                      let code = items.first(where: { $0.name == "code" })?.value else {
-                    continuation.resume(throwing: MailError.decodingFailed("authorization callback"))
-                    return
-                }
-                continuation.resume(returning: code)
-            }
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = false
-            self.session = session
-            session.start()
+// MARK: - Loopback callback capture
+
+/// Parses the OAuth redirect off the first line of a raw HTTP request, e.g.
+/// `GET /?code=abc&state=xyz HTTP/1.1`. Pure and free of any networking, so
+/// it is unit-testable without a socket.
+enum CallbackRequestParser {
+    struct Result: Equatable {
+        let code: String?
+        let error: String?
+        let state: String?
+    }
+
+    static func parse(requestLine: String) -> Result {
+        let parts = requestLine.split(separator: " ", omittingEmptySubsequences: true)
+        guard parts.count >= 2, parts[0] == "GET" else {
+            return Result(code: nil, error: nil, state: nil)
         }
+        guard let components = URLComponents(string: "http://127.0.0.1\(parts[1])") else {
+            return Result(code: nil, error: nil, state: nil)
+        }
+        let items = components.queryItems ?? []
+        func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+        return Result(code: value("code"), error: value("error"), state: value("state"))
+    }
+
+    /// The first line of a raw HTTP request, however the line ending was sent.
+    static func firstLine(of rawRequest: String) -> String? {
+        rawRequest.split(whereSeparator: { $0 == "\r\n" || $0 == "\n" }).first.map(String.init)
     }
 }
 
-extension GmailAuth: ASWebAuthenticationPresentationContextProviding {
-    public nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        MainActor.assumeIsolated { NSApplication.shared.keyWindow ?? NSWindow() }
+/// Binds a one-shot loopback HTTP listener on an OS-chosen port, opens the
+/// authorization URL in the browser once the port is known, and resolves with
+/// the `code` from the first request the listener receives — tearing itself
+/// down exactly once on every path (success, denial, malformed request, or
+/// timeout).
+///
+/// This type has never been exercised against real Google traffic — see the
+/// task report. Its socket-handling is deliberately not unit-tested (that
+/// would require real networking); the parsing it depends on
+/// (`CallbackRequestParser`) is pure and is tested directly instead.
+enum LoopbackCallbackListener {
+    enum ListenerError: Error, Equatable {
+        case portUnavailable
+        case authorizationDenied(String)
+        case malformedCallback
+        case stateMismatch
+        case timedOut
+    }
+
+    /// - Parameters:
+    ///   - openBrowser: called once the listener is bound, with the actual
+    ///     port; must return the `redirect_uri` used, so the caller can reuse
+    ///     it for the token exchange.
+    static func run(
+        timeout: Duration,
+        openBrowser: @escaping @Sendable (UInt16) -> String,
+        expectedState: String
+    ) async throws -> (code: String, redirectURI: String) {
+        try await withCheckedThrowingContinuation { continuation in
+            let coordinator = Coordinator(expectedState: expectedState,
+                                           openBrowser: openBrowser,
+                                           continuation: continuation)
+            coordinator.start(timeout: timeout)
+        }
+    }
+
+    /// All mutable state and callback wiring for one authorization attempt,
+    /// isolated to a single object so the continuation is guaranteed to
+    /// resume exactly once. Every `NWListener`/`NWConnection` callback used
+    /// here runs on `queue: .main`, so access is effectively serialized even
+    /// though the compiler can't see that through the `@Sendable` closures
+    /// Network.framework requires — hence `@unchecked Sendable`.
+    private final class Coordinator: @unchecked Sendable {
+        private let expectedState: String
+        private let openBrowser: @Sendable (UInt16) -> String
+        private let continuation: CheckedContinuation<(code: String, redirectURI: String), Error>
+        private var listener: NWListener?
+        private var resumed = false
+        private var redirectURI = ""
+
+        init(expectedState: String,
+             openBrowser: @escaping @Sendable (UInt16) -> String,
+             continuation: CheckedContinuation<(code: String, redirectURI: String), Error>) {
+            self.expectedState = expectedState
+            self.openBrowser = openBrowser
+            self.continuation = continuation
+        }
+
+        func start(timeout: Duration) {
+            guard let listener = try? NWListener(using: .tcp, on: .any) else {
+                finish(.failure(ListenerError.portUnavailable))
+                return
+            }
+            self.listener = listener
+
+            listener.newConnectionHandler = { [weak self] connection in
+                self?.handle(connection)
+            }
+            listener.stateUpdateHandler = { [weak self] state in
+                self?.handleListenerState(state)
+            }
+            listener.start(queue: .main)
+
+            Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                self?.finish(.failure(ListenerError.timedOut))
+            }
+        }
+
+        private func handleListenerState(_ state: NWListener.State) {
+            switch state {
+            case .ready:
+                guard let port = listener?.port else {
+                    finish(.failure(ListenerError.portUnavailable))
+                    return
+                }
+                redirectURI = openBrowser(port.rawValue)
+            case .failed:
+                finish(.failure(ListenerError.portUnavailable))
+            default:
+                break
+            }
+        }
+
+        private func handle(_ connection: NWConnection) {
+            connection.stateUpdateHandler = { state in
+                if case .failed = state { connection.cancel() }
+            }
+            connection.start(queue: .main)
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, error in
+                defer { connection.cancel() }
+                guard let self else { return }
+                if error != nil {
+                    self.finish(.failure(ListenerError.malformedCallback))
+                    return
+                }
+                guard let data, let text = String(data: data, encoding: .utf8),
+                      let line = CallbackRequestParser.firstLine(of: text) else {
+                    Self.respond(connection, success: false)
+                    self.finish(.failure(ListenerError.malformedCallback))
+                    return
+                }
+                let callback = CallbackRequestParser.parse(requestLine: line)
+                if let oauthError = callback.error {
+                    Self.respond(connection, success: false)
+                    self.finish(.failure(ListenerError.authorizationDenied(oauthError)))
+                    return
+                }
+                guard let code = callback.code else {
+                    Self.respond(connection, success: false)
+                    self.finish(.failure(ListenerError.malformedCallback))
+                    return
+                }
+                guard callback.state == self.expectedState else {
+                    Self.respond(connection, success: false)
+                    self.finish(.failure(ListenerError.stateMismatch))
+                    return
+                }
+                Self.respond(connection, success: true)
+                self.finish(.success(code))
+            }
+        }
+
+        private func finish(_ result: Result<String, Error>) {
+            guard !resumed else { return }
+            resumed = true
+            listener?.cancel()
+            switch result {
+            case .success(let code): continuation.resume(returning: (code, redirectURI))
+            case .failure(let error): continuation.resume(throwing: error)
+            }
+        }
+
+        private static func respond(_ connection: NWConnection, success: Bool) {
+            let title = success ? "Signed in" : "Sign-in failed"
+            let body = success
+                ? "You can close this tab and return to Mail."
+                : "Something went wrong. You can close this tab and try again."
+            let html = "<html><body><h2>\(title)</h2><p>\(body)</p></body></html>"
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
+            connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in })
+        }
     }
 }

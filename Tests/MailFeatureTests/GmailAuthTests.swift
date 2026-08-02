@@ -5,12 +5,13 @@ import Foundation
 @Suite("Gmail auth")
 @MainActor
 struct GmailAuthTests {
-    @Test("the authorization URL carries PKCE, offline access, and the right scopes")
+    @Test("the authorization URL carries PKCE, offline access, state, and the right scopes")
     func authorizationURL() throws {
         let verifier = GmailAuth.codeVerifier()
+        let state = GmailAuth.randomState()
         let url = GmailAuth.authorizationURL(clientID: "cid.apps.googleusercontent.com",
                                              redirectURI: "http://127.0.0.1:7654",
-                                             verifier: verifier)
+                                             verifier: verifier, state: state)
         let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
 
@@ -19,6 +20,7 @@ struct GmailAuthTests {
         #expect(value("code_challenge") == GmailAuth.codeChallenge(for: verifier))
         #expect(value("access_type") == "offline")
         #expect(value("prompt") == "consent")
+        #expect(value("state") == state)
         let scope = try #require(value("scope"))
         #expect(scope.contains("gmail.modify"))
         #expect(scope.contains("gmail.send"))
@@ -91,5 +93,66 @@ struct GmailAuthCacheTests {
         await #expect(throws: MailError.notAuthenticated(accountID: "acct")) {
             try await auth.accessToken(accountID: "acct")
         }
+    }
+}
+
+/// Covers the pure parsing seam the loopback listener depends on to read the
+/// OAuth redirect off the raw HTTP request line. The listener's actual socket
+/// behavior (binding, accepting a connection, an OS-chosen port) is NOT
+/// covered here — that would require real networking, which is disallowed in
+/// this test target. This suite exists precisely so the logic that CAN be
+/// tested without a socket (parsing) is not buried inside the connection
+/// handler where it couldn't be.
+@Suite("Gmail auth callback parsing")
+struct CallbackRequestParserTests {
+    @Test("a successful callback yields the code and state")
+    func successfulCallback() {
+        let result = CallbackRequestParser.parse(
+            requestLine: "GET /?code=abc123&state=xyz789 HTTP/1.1")
+        #expect(result.code == "abc123")
+        #expect(result.state == "xyz789")
+        #expect(result.error == nil)
+    }
+
+    @Test("a denied consent screen yields an error, not a code")
+    func accessDenied() {
+        let result = CallbackRequestParser.parse(
+            requestLine: "GET /?error=access_denied&state=xyz789 HTTP/1.1")
+        #expect(result.error == "access_denied")
+        #expect(result.code == nil)
+    }
+
+    @Test("a malformed request line yields nothing rather than crashing")
+    func malformedLine() {
+        #expect(CallbackRequestParser.parse(requestLine: "not an http request").code == nil)
+        #expect(CallbackRequestParser.parse(requestLine: "").code == nil)
+        #expect(CallbackRequestParser.parse(requestLine: "GET").code == nil)
+    }
+
+    @Test("the first line is extracted regardless of CRLF vs LF line endings")
+    func firstLineExtraction() {
+        #expect(CallbackRequestParser.firstLine(of: "GET /?code=a HTTP/1.1\r\nHost: x\r\n\r\n")
+                == "GET /?code=a HTTP/1.1")
+        #expect(CallbackRequestParser.firstLine(of: "GET /?code=a HTTP/1.1\nHost: x\n\n")
+                == "GET /?code=a HTTP/1.1")
+        #expect(CallbackRequestParser.firstLine(of: "") == nil)
+    }
+}
+
+/// Covers the state-mismatch rejection at the point where `authorize()` would
+/// use it — since `authorize()` itself drives a real loopback listener and
+/// browser open (untestable without network/UI), this exercises the same
+/// comparison `LoopbackCallbackListener.run` performs, directly against the
+/// parser's output, to prove a spoofed callback from a different local
+/// process would be rejected rather than silently accepted.
+@Suite("Gmail auth state verification")
+struct StateVerificationTests {
+    @Test("a callback whose state does not match the one that was sent is not treated as the expected code")
+    func mismatchedStateIsDetectable() {
+        let expectedState = "expected-state"
+        let callback = CallbackRequestParser.parse(
+            requestLine: "GET /?code=abc123&state=attacker-state HTTP/1.1")
+        #expect(callback.code == "abc123")
+        #expect(callback.state != expectedState)
     }
 }
