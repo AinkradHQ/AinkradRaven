@@ -104,6 +104,44 @@ import Foundation
         }
     }
 
+    /// Incremental sync. Falls back to a full backfill when there is no cursor
+    /// or the provider rejects the one we hold — a cursor that is too old is a
+    /// normal event after the app has been closed for a while, not an error.
+    public func syncDelta() async throws {
+        guard let cursor = store.accounts().first(where: { $0.id == accountID })?.syncCursor else {
+            try await backfill()
+            return
+        }
+        state = .delta
+        let delta: MailDelta
+        do {
+            delta = try await provider.fetchDelta(cursor: cursor)
+        } catch {
+            state = .idle
+            try await backfill()
+            return
+        }
+
+        for id in delta.changedThreadIDs {
+            // A thread can vanish between the delta listing it and us fetching
+            // it. That is not a sync failure; skip it and keep going.
+            guard let thread = try? await provider.fetchThread(id: id) else { continue }
+            try store.upsertThread(thread)
+        }
+        for id in delta.removedThreadIDs {
+            guard let existing = store.thread(id) else { continue }
+            try store.removeThread(id, accountID: accountID, date: existing.lastMessageDate)
+        }
+
+        try updateAccount { account in
+            account.syncCursor = delta.newCursor
+            account.lastSyncedAt = Date()
+            account.lastError = nil
+            account.state = .ready
+        }
+        state = .idle
+    }
+
     private func updateAccount(_ mutate: (inout MailAccount) -> Void) throws {
         guard var account = store.accounts().first(where: { $0.id == accountID }) else { return }
         mutate(&account)
