@@ -119,9 +119,20 @@ func runHarness() async -> Int32 {
     let auth = GmailAuth(secrets: secrets, clientID: credentials.client_id,
                          clientSecret: credentials.client_secret)
 
+    // A deliberately short timeout (`RAVEN_DEV_AUTH_TIMEOUT_SECONDS=5`) lets
+    // the bind → ready → open-browser path be exercised and observed to
+    // terminate with a definite error, without a human completing consent.
+    // Unset, the real 180s production timeout applies.
+    let timeoutOverride = ProcessInfo.processInfo
+        .environment["RAVEN_DEV_AUTH_TIMEOUT_SECONDS"]
+        .flatMap(Double.init)
+        .map { Duration.seconds($0) }
+
+    print("Credentials loaded from \(credentialsPath).")
+    print("Callback timeout: \(timeoutOverride.map { "\($0) (override)" } ?? "default (180s)").")
     print("Requesting a loopback listener…")
     do {
-        let result = try await auth.authorize { url in
+        let result = try await auth.authorize(timeout: timeoutOverride) { url in
             // Fires once the listener is bound and ready, immediately before
             // `NSWorkspace.shared.open(url)` is attempted — so "ready and
             // waiting" is always visible even if the browser handoff itself

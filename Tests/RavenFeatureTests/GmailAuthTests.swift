@@ -206,3 +206,58 @@ struct OneShotResumeGuardTests {
         #expect(trueReturns.current == 1)
     }
 }
+
+/// Regression cover for the continuation leak: the `Coordinator` owning the
+/// loopback listener was referenced only by a local inside
+/// `withCheckedThrowingContinuation`, while every callback it installed
+/// captured `[weak self]` — so it deallocated the instant `run(...)` returned,
+/// every resume path became a no-op, and the flow hung forever ("SWIFT TASK
+/// CONTINUATION MISUSE … leaked its continuation"). These tests drive
+/// `run(...)` for real, over a loopback socket only (no live network, no
+/// browser, no Google traffic): a leaked continuation would hang here rather
+/// than fail, and the harness timeout would surface it as a stuck test run.
+@Suite("Loopback listener lifetime")
+struct LoopbackCallbackListenerLifetimeTests {
+    private final class Box: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: UInt16?
+        func set(_ new: UInt16) { lock.lock(); value = new; lock.unlock() }
+        var current: UInt16? { lock.lock(); defer { lock.unlock() }; return value }
+    }
+
+    @Test("the listener binds, reports its port, and times out with a definite error")
+    func bindsAndTimesOutRatherThanLeaking() async {
+        let observedPort = Box()
+
+        await #expect(throws: LoopbackCallbackListener.ListenerError.timedOut) {
+            try await LoopbackCallbackListener.run(
+                timeout: .milliseconds(400),
+                openBrowser: { port in
+                    // Only called from the `.ready` state handler, so reaching
+                    // here proves the coordinator was still alive well after
+                    // `run(...)` returned — the exact thing the bug broke.
+                    observedPort.set(port)
+                    return "http://localhost:\(port)"
+                },
+                expectedState: "test-state")
+        }
+
+        // A real, non-zero OS-assigned ephemeral port was bound.
+        #expect((observedPort.current ?? 0) > 0)
+    }
+
+    @Test("a second flow can bind after the first tore itself down")
+    func coordinatorIsReleasedSoAnotherFlowCanRun() async {
+        // If the self-reference were never cleared the coordinator (and its
+        // listener) would leak; running the whole flow twice in a row checks
+        // teardown actually happened rather than only that nothing hung.
+        for _ in 0..<2 {
+            await #expect(throws: LoopbackCallbackListener.ListenerError.timedOut) {
+                try await LoopbackCallbackListener.run(
+                    timeout: .milliseconds(200),
+                    openBrowser: { "http://localhost:\($0)" },
+                    expectedState: "test-state")
+            }
+        }
+    }
+}

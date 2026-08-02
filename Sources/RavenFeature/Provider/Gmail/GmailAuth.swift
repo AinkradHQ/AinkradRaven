@@ -153,12 +153,18 @@ import AinkradAppKit
     ///   anywhere (print it, log it, show it in UI) — it carries only the
     ///   client id, requested scopes, `state`, and the PKCE challenge, none of
     ///   which are secrets.
-    public func authorize(onAuthorizationURL: (@Sendable (URL) -> Void)? = nil) async throws
+    /// - Parameter timeout: how long the loopback listener waits for the
+    ///   browser callback. Defaults to `authorizationTimeout`; exposed so a
+    ///   dev harness can ask for a deliberately short wait and observe the
+    ///   whole bind-and-open path terminate with a definite `timedOut` error,
+    ///   without a human having to sit through the consent screen.
+    public func authorize(timeout: Duration? = nil,
+                          onAuthorizationURL: (@Sendable (URL) -> Void)? = nil) async throws
         -> (accountID: String, address: String) {
         let verifier = Self.codeVerifier()
         let state = Self.randomState()
         let (code, redirectURI) = try await LoopbackCallbackListener.run(
-            timeout: Self.authorizationTimeout,
+            timeout: timeout ?? Self.authorizationTimeout,
             openBrowser: { [clientID] port in
                 // Must be "localhost", not "127.0.0.1": the registered Desktop
                 // client's redirect URI is `http://localhost` (Google matches
@@ -300,6 +306,11 @@ enum LoopbackCallbackListener {
         case malformedCallback
         case stateMismatch
         case timedOut
+        /// The coordinator was torn down without ever producing a result. This
+        /// should be unreachable — it exists so that a future ownership bug
+        /// surfaces as a thrown error rather than as a leaked continuation and
+        /// an infinite hang (which is exactly how the original bug presented).
+        case abandoned
     }
 
     /// - Parameters:
@@ -312,6 +323,14 @@ enum LoopbackCallbackListener {
         expectedState: String
     ) async throws -> (code: String, redirectURI: String) {
         try await withCheckedThrowingContinuation { continuation in
+            // `coordinator` is a local and would die the instant this closure
+            // returns; every callback it installs captures `[weak self]`, so a
+            // dead coordinator makes every resume path a silent no-op and the
+            // continuation leaks (observed: "SWIFT TASK CONTINUATION MISUSE …
+            // leaked its continuation", then an unbreakable hang, before the
+            // listener even reached `.ready`). `start(timeout:)` therefore
+            // installs a strong self-reference that keeps the coordinator
+            // alive on its own; `finish(_:)` clears it. See `selfRetain`.
             let coordinator = Coordinator(expectedState: expectedState,
                                            openBrowser: openBrowser,
                                            continuation: continuation)
@@ -337,6 +356,19 @@ enum LoopbackCallbackListener {
         private var listener: NWListener?
         private var redirectURI = ""
         private var timeoutWorkItem: DispatchWorkItem?
+        /// **This is what keeps the coordinator alive.** Nothing else holds a
+        /// strong reference to it: `run(...)`'s local dies as the continuation
+        /// closure returns, and every `NWListener`/`NWConnection` callback and
+        /// the timeout work item deliberately capture `[weak self]` (so that a
+        /// finished flow cannot be resurrected by a late callback). `start`
+        /// sets this to `self`, which makes the coordinator own itself for the
+        /// duration of the flow; **`finish(_:)` clears it**, which is the only
+        /// release, and it happens after the continuation has been resumed.
+        /// So the object's lifetime is exactly "listener started → continuation
+        /// resumed", with no leak in either direction.
+        ///
+        /// Written and read only on `.main`, like all other state here.
+        private var selfRetain: Coordinator?
 
         init(expectedState: String,
              openBrowser: @escaping @Sendable (UInt16) -> String,
@@ -351,7 +383,21 @@ enum LoopbackCallbackListener {
             }
         }
 
+        deinit {
+            // Unreachable while `selfRetain` is correct: the only release of
+            // that reference happens inside `finish(_:)`, after the guard has
+            // already fired. It is here as a hard backstop so that if the
+            // ownership model is ever broken again, the caller gets a definite
+            // `abandoned` error instead of a leaked continuation and a hang
+            // that no timeout can break. `fire` is a no-op if already fired.
+            resumeGuard.fire(.failure(ListenerError.abandoned))
+        }
+
         func start(timeout: Duration) {
+            // Take ownership of ourselves before anything can fail; every exit
+            // path below runs through `finish(_:)`, which releases it again.
+            selfRetain = self
+
             // The redirect is `http://localhost:PORT`, and "localhost" can
             // resolve to either the IPv4 loop (127.0.0.1) or the IPv6 loop
             // (::1) depending on the browser/OS resolver order — so the
@@ -475,6 +521,13 @@ enum LoopbackCallbackListener {
             case .success(let code): resumeGuard.fire(.success((code, redirectURI)))
             case .failure(let error): resumeGuard.fire(.failure(error))
             }
+            // Release the self-reference taken in `start` — but only after the
+            // continuation has been resumed, and via a local so that `self` is
+            // not deallocated part-way through this method (which dropping the
+            // last reference by a bare `selfRetain = nil` would risk).
+            let lastReference = selfRetain
+            selfRetain = nil
+            withExtendedLifetime(lastReference) {}
         }
 
         private static func respond(_ connection: NWConnection, success: Bool) {
