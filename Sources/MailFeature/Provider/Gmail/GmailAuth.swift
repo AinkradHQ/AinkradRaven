@@ -272,26 +272,36 @@ enum LoopbackCallbackListener {
         }
     }
 
-    /// All mutable state and callback wiring for one authorization attempt,
-    /// isolated to a single object so the continuation is guaranteed to
-    /// resume exactly once. Every `NWListener`/`NWConnection` callback used
-    /// here runs on `queue: .main`, so access is effectively serialized even
-    /// though the compiler can't see that through the `@Sendable` closures
-    /// Network.framework requires — hence `@unchecked Sendable`.
+    /// All mutable state and callback wiring for one authorization attempt.
+    /// Every `NWListener`/`NWConnection` callback used here runs on
+    /// `queue: .main`, and the timeout is scheduled on that same queue via
+    /// `DispatchQueue.main.asyncAfter` (not an unstructured `Task`, which
+    /// would run on the concurrent executor and race the queue-confined
+    /// callbacks) — so all mutable state on this type really is touched from
+    /// one queue only, and `@unchecked Sendable` describes a mechanism that
+    /// is actually true rather than an assumption. The exactly-once resume
+    /// guarantee itself does not depend on that queue confinement, though:
+    /// it is delegated to `OneShotResumeGuard`, which is independently lock-
+    /// protected and safe even if called from genuinely concurrent contexts.
     private final class Coordinator: @unchecked Sendable {
         private let expectedState: String
         private let openBrowser: @Sendable (UInt16) -> String
-        private let continuation: CheckedContinuation<(code: String, redirectURI: String), Error>
+        private let resumeGuard: OneShotResumeGuard<Result<(code: String, redirectURI: String), Error>>
         private var listener: NWListener?
-        private var resumed = false
         private var redirectURI = ""
+        private var timeoutWorkItem: DispatchWorkItem?
 
         init(expectedState: String,
              openBrowser: @escaping @Sendable (UInt16) -> String,
              continuation: CheckedContinuation<(code: String, redirectURI: String), Error>) {
             self.expectedState = expectedState
             self.openBrowser = openBrowser
-            self.continuation = continuation
+            self.resumeGuard = OneShotResumeGuard { result in
+                switch result {
+                case .success(let value): continuation.resume(returning: value)
+                case .failure(let error): continuation.resume(throwing: error)
+                }
+            }
         }
 
         func start(timeout: Duration) {
@@ -309,10 +319,15 @@ enum LoopbackCallbackListener {
             }
             listener.start(queue: .main)
 
-            Task { [weak self] in
-                try? await Task.sleep(for: timeout)
+            // Scheduled on the same queue as every Network callback above, so
+            // the timeout can never race a connection callback that is
+            // concurrently deciding whether to finish. `finish(_:)` cancels
+            // this work item on every other exit path.
+            let workItem = DispatchWorkItem { [weak self] in
                 self?.finish(.failure(ListenerError.timedOut))
             }
+            timeoutWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout.timeInterval, execute: workItem)
         }
 
         private func handleListenerState(_ state: NWListener.State) {
@@ -324,6 +339,14 @@ enum LoopbackCallbackListener {
                 }
                 redirectURI = openBrowser(port.rawValue)
             case .failed:
+                finish(.failure(ListenerError.portUnavailable))
+            case .waiting:
+                // NWListener retries a `.waiting` state (e.g. transient bind
+                // contention) on its own, but leaving it unhandled meant the
+                // only way out of a genuinely stuck bind was the full
+                // authorization timeout. Fail fast instead: a loopback bind
+                // that cannot become ready promptly is not worth making the
+                // user sit through several minutes of "please wait".
                 finish(.failure(ListenerError.portUnavailable))
             default:
                 break
@@ -370,12 +393,12 @@ enum LoopbackCallbackListener {
         }
 
         private func finish(_ result: Result<String, Error>) {
-            guard !resumed else { return }
-            resumed = true
+            timeoutWorkItem?.cancel()
+            timeoutWorkItem = nil
             listener?.cancel()
             switch result {
-            case .success(let code): continuation.resume(returning: (code, redirectURI))
-            case .failure(let error): continuation.resume(throwing: error)
+            case .success(let code): resumeGuard.fire(.success((code, redirectURI)))
+            case .failure(let error): resumeGuard.fire(.failure(error))
             }
         }
 
@@ -388,5 +411,41 @@ enum LoopbackCallbackListener {
             let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
             connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in })
         }
+    }
+}
+
+private extension Duration {
+    var timeInterval: TimeInterval {
+        let components = components
+        return TimeInterval(components.seconds) + TimeInterval(components.attoseconds) / 1e18
+    }
+}
+
+/// Guarantees a completion closure fires at most once, even under genuinely
+/// concurrent invocation from multiple threads — independent of any queue or
+/// actor confinement its caller may or may not have. Backed by a lock rather
+/// than by "everything happens to run on the same queue," so the exactly-
+/// once property holds regardless of how callers are scheduled. Stress-tested
+/// in `GmailAuthTests.swift` by firing from many concurrent tasks and
+/// asserting the completion runs exactly once.
+final class OneShotResumeGuard<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var hasFired = false
+    private let onFirstFire: (T) -> Void
+
+    init(onFirstFire: @escaping (T) -> Void) {
+        self.onFirstFire = onFirstFire
+    }
+
+    /// Fires `onFirstFire` with `value` if (and only if) this is the first
+    /// call. Returns whether this call was the one that fired.
+    @discardableResult
+    func fire(_ value: T) -> Bool {
+        lock.lock()
+        let shouldFire = !hasFired
+        if shouldFire { hasFired = true }
+        lock.unlock()
+        if shouldFire { onFirstFire(value) }
+        return shouldFire
     }
 }

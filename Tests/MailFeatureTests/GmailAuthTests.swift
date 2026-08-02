@@ -156,3 +156,53 @@ struct StateVerificationTests {
         #expect(callback.state != expectedState)
     }
 }
+
+/// Covers the exactly-once resume discipline `LoopbackCallbackListener`
+/// depends on to avoid double-resuming its continuation when a timeout races
+/// a connection callback. `OneShotResumeGuard` is lock-protected rather than
+/// relying on queue confinement, so — unlike the listener's socket handling,
+/// which genuinely cannot be tested without a real network — this can and
+/// does get exercised under real concurrent contention from multiple tasks.
+/// This is a stress test, not a formal proof: it does not guarantee every
+/// possible interleaving was hit, but a lock around a single boolean has no
+/// interesting interleavings left to miss once the critical section is that
+/// small, and 200 concurrent firers reliably exercise the race in practice.
+@Suite("OneShotResumeGuard")
+struct OneShotResumeGuardTests {
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func increment() { lock.lock(); value += 1; lock.unlock() }
+        var current: Int { lock.lock(); defer { lock.unlock() }; return value }
+    }
+
+    @Test("only the first of many concurrent fires invokes the completion")
+    func exactlyOneCompletionUnderConcurrency() async {
+        let completions = Counter()
+        let resumeGuard = OneShotResumeGuard<Int> { _ in completions.increment() }
+
+        await withTaskGroup(of: Void.self) { group in
+            for i in 0..<200 {
+                group.addTask { resumeGuard.fire(i) }
+            }
+        }
+
+        #expect(completions.current == 1)
+    }
+
+    @Test("fire() reports true for exactly one caller under concurrency")
+    func exactlyOneTrueReturnUnderConcurrency() async {
+        let trueReturns = Counter()
+        let resumeGuard = OneShotResumeGuard<Int> { _ in }
+
+        await withTaskGroup(of: Void.self) { group in
+            for i in 0..<200 {
+                group.addTask {
+                    if resumeGuard.fire(i) { trueReturns.increment() }
+                }
+            }
+        }
+
+        #expect(trueReturns.current == 1)
+    }
+}
