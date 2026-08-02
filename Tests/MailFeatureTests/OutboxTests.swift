@@ -73,4 +73,50 @@ import Foundation
         let revived = Outbox(documents: documents, provider: provider, maxAttempts: 3)
         #expect(revived.pending().count == 1)
     }
+
+    @Test("a persistence failure after a successful send does not resend the entry")
+    func persistenceFailureAfterSendDoesNotResend() async throws {
+        let provider = FakeMailProvider()
+        let (outbox, documents) = makeOutbox(provider)
+        try outbox.enqueue(.send(OutgoingMessage(
+            to: [MailAddress(email: "b@x.com")], subject: "Hi", bodyText: "There")))
+
+        // Allow the enqueue write and the in-flight-marking write to land, but
+        // drop the write that would record the post-send removal — simulating
+        // a crash (or a silent disk failure) between the send succeeding and
+        // that success being persisted.
+        documents.dropWritesAfter = documents.writeLog.count + 1
+
+        await outbox.drain()
+        #expect(provider.sentMessages.count == 1)
+
+        let revived = Outbox(documents: documents, provider: provider, maxAttempts: 3)
+        #expect(revived.pending().isEmpty)
+        #expect(revived.needsReview().count == 1)
+    }
+
+    @Test("an entry left marked in-flight by a previous process is surfaced, not resent")
+    func inFlightEntrySurfacedNotResent() async throws {
+        let provider = FakeMailProvider()
+        let (outbox, documents) = makeOutbox(provider)
+        try outbox.enqueue(.send(OutgoingMessage(
+            to: [MailAddress(email: "b@x.com")], subject: "Hi", bodyText: "There")))
+
+        // Drop every write from here on, so drain()'s in-flight marker
+        // persists but nothing past it does — as if the process died right
+        // after handing the message to the provider.
+        documents.dropWritesAfter = documents.writeLog.count + 1
+
+        await outbox.drain()
+        #expect(provider.sentMessages.count == 1)
+
+        let revived = Outbox(documents: documents, provider: provider, maxAttempts: 3)
+        #expect(revived.pending().isEmpty)
+        #expect(revived.needsReview().count == 1)
+        #expect(revived.needsReview().first?.lastError?.isEmpty == false)
+
+        // Draining the revived outbox must not resend the in-flight entry.
+        await revived.drain()
+        #expect(provider.sentMessages.count == 1)
+    }
 }
