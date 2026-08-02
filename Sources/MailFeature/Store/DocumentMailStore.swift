@@ -53,6 +53,8 @@ import AinkradAppKit
     }
 
     public func upsertThread(_ thread: MailThread) throws {
+        try removeStaleIndexRow(threadID: thread.id, accountID: thread.accountID,
+                                newMonth: MonthShard.key(for: thread.lastMessageDate))
         try save(thread, DocumentKeys.thread(thread.id))
         try updateIndex(accountID: thread.accountID, date: thread.lastMessageDate) { rows in
             let summary = thread.summary()
@@ -62,6 +64,19 @@ import AinkradAppKit
                 rows.append(summary)
             }
         }
+    }
+
+    /// A thread's month can change when a new message arrives. Without this the
+    /// old shard keeps a stale summary and the inbox shows the thread twice.
+    private func removeStaleIndexRow(threadID: String, accountID: String,
+                                     newMonth: String) throws {
+        guard let previous = load(MailThread.self, DocumentKeys.thread(threadID)) else { return }
+        let previousMonth = MonthShard.key(for: previous.lastMessageDate)
+        guard previousMonth != newMonth else { return }
+        let key = DocumentKeys.index(accountID: accountID, month: previousMonth)
+        var rows = load([ThreadSummary].self, key) ?? []
+        rows.removeAll { $0.id == threadID }
+        try save(rows, key)
     }
 
     public func thread(_ id: String) -> MailThread? {

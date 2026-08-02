@@ -79,6 +79,23 @@ import Foundation
         #expect(store.summaries(accountID: "a1", months: [MonthShard.key(for: when)]).isEmpty)
     }
 
+    @Test("a thread that gains a message in a new month leaves no stale index row")
+    func threadMovesMonth() throws {
+        let (store, _) = makeStore()
+        let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01
+        let february = Date(timeIntervalSince1970: 1_770_000_000) // 2026-02
+        var thread = MailThread(id: "t1", accountID: "a1",
+                                messages: [message("m1", thread: "t1", date: january)])
+        try store.upsertThread(thread)
+        thread.messages.append(message("m2", thread: "t1", date: february))
+        try store.upsertThread(thread)
+
+        let januaryRows = store.summaries(accountID: "a1", months: [MonthShard.key(for: january)])
+        let februaryRows = store.summaries(accountID: "a1", months: [MonthShard.key(for: february)])
+        #expect(januaryRows.isEmpty)
+        #expect(februaryRows.map(\.id) == ["t1"])
+    }
+
     @Test("accounts round-trip and never carry a token field")
     func accountsRoundTrip() throws {
         let (store, documents) = makeStore()
