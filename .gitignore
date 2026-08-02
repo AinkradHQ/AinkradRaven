@@ -2,3 +2,8 @@
 build/
 .superpowers/
 *.xcodeproj
+
+# Never commit OAuth client credentials
+client_secret*.json
+oauth-client*.json
+*.credentials.json
