@@ -1,0 +1,60 @@
+name: AinkradMail
+options:
+  bundleIdPrefix: com.ainkrad
+  deploymentTarget: { macOS: "14.0" }
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGNING_ALLOWED: NO
+    EAGER_LINKING: NO
+packages:
+  AinkradAppKit:
+    url: https://github.com/AhmedMElhalaby/AinkradAppKit
+    # EXACTLY the revision the host's build checks out. Verify, never copy:
+    #   git -C ../Ainkrad/build/SourcePackages/checkouts/AinkradAppKit rev-parse HEAD
+    revision: 31f89bc9e186354077035316a832237ce6993a09
+targets:
+  MailFeature:
+    type: library.static
+    platform: macOS
+    sources: [Sources/MailFeature]
+    dependencies:
+      - package: AinkradAppKit
+        embed: false
+  MailPlugin:
+    type: bundle
+    platform: macOS
+    sources: [Sources/MailPlugin]
+    postBuildScripts:
+      - script: '"$SRCROOT/scripts/stamp-api-version.sh"'
+        name: Stamp AinkradAPIVersion
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        basedOnDependencyAnalysis: false
+    dependencies:
+      - target: MailFeature
+      - package: AinkradAppKit
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ainkrad.plugin.mail
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Sources/MailPlugin/Info.plist
+        MACH_O_TYPE: mh_bundle
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+        OTHER_LDFLAGS: ["-lMailFeature"]
+  MailFeatureTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests/MailFeatureTests]
+    dependencies:
+      - target: MailFeature
+      - package: AinkradAppKit
+schemes:
+  MailPlugin:
+    build: { targets: { MailPlugin: all, MailFeatureTests: [test] } }
+    test:  { config: Debug, targets: [MailFeatureTests] }
