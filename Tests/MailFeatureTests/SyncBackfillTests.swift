@@ -60,4 +60,61 @@ import Foundation
         #expect(store.accounts().first?.state == .failed)
         #expect(store.accounts().first?.lastError?.isEmpty == false)
     }
+
+    @Test("a provider that echoes back the same page token terminates instead of hanging")
+    func constantTokenTerminates() async throws {
+        let provider = FakeMailProvider()
+        // Every page hands back the exact token it was just given — a
+        // pathological/hostile provider. Without cycle detection this would
+        // spin `backfill()`'s repeat-loop forever on the main actor.
+        provider.pages = [
+            ThreadPage(threads: [], nextPageToken: "same"),
+            ThreadPage(threads: [], nextPageToken: "same"),
+            ThreadPage(threads: [], nextPageToken: "same"),
+        ]
+        let (engine, _) = makeEngine(provider)
+
+        try await engine.backfill()
+
+        #expect(engine.lastBackfillTruncated == true)
+    }
+
+    @Test("hitting the page cap truncates the backfill and records that it happened")
+    func pageCapTruncates() async throws {
+        // Five pages with distinct, ever-advancing tokens — no cycle here,
+        // just more pages than the (test-injected, small) cap allows. Proves
+        // the cap itself stops the walk, not the cycle detector.
+        let provider = FakeMailProvider()
+        provider.pages = (1...5).map { i in
+            ThreadPage(threads: [], nextPageToken: i < 5 ? "p\(i + 1)" : nil)
+        }
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        let engine = SyncEngine(store: store, provider: provider, accountID: "a1",
+                                 windowDays: 90, maxBackfillPages: 3)
+
+        try await engine.backfill()
+
+        #expect(engine.lastBackfillTruncated == true)
+    }
+
+    @Test("windowStart is pinned to UTC, matching MonthShard's convention")
+    func windowStartUsesUTC() throws {
+        let df = ISO8601DateFormatter()
+        // Chosen so the 90-day lookback crosses the 2026 US DST start
+        // (2026-03-08): a calendar pinned to a DST-observing zone like
+        // America/Los_Angeles lands an hour off UTC across that boundary,
+        // while a fixed-offset zone (e.g. Asia/Tokyo) would not discriminate
+        // the bug at all, since plain day arithmetic is offset-independent
+        // absent a DST transition in the window.
+        let now = try #require(df.date(from: "2026-05-01T07:30:00Z"))
+
+        let utcResult = SyncEngine.windowStart(from: now, windowDays: 90)
+
+        var localBug = Calendar(identifier: .gregorian)
+        localBug.timeZone = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let buggyResult = localBug.date(byAdding: .day, value: -90, to: now)
+
+        #expect(utcResult != buggyResult)
+        #expect(utcResult == df.date(from: "2026-01-31T07:30:00Z"))
+    }
 }
