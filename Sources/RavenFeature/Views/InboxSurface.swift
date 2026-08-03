@@ -17,24 +17,35 @@ import AinkradAppKitUI
 /// "archive" means).
 public struct InboxSurface: View {
     @Bindable var model: RavenViewModel
+    let runtime: RavenRuntime
 
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
 
-    public init(model: RavenViewModel) { self.model = model }
+    public init(model: RavenViewModel, runtime: RavenRuntime) {
+        self.model = model
+        self.runtime = runtime
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
             AinkradSearchField(
                 text: $model.searchText,
                 placeholder: "Search synced mail — from:, label:, is:unread, is:starred",
+                onSubmit: { Task { await runtime.searchArchive(query: model.searchText) } },
                 focus: $searchFocused)
+                .onChange(of: model.searchText) {
+                    if model.searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        runtime.clearArchiveSearch()
+                    }
+                }
 
             if !model.multiSelection.isEmpty {
                 selectionBar
             }
 
             content
+            archiveSearchSection
         }
         .padding(AinkradSpacing.md)
         .ainkradPanel()
@@ -44,6 +55,45 @@ public struct InboxSurface: View {
         .onAppear {
             model.reload()
             listFocused = true
+        }
+    }
+
+    /// A "results from all mail" list, kept visibly SEPARATE from the Inbox's
+    /// windowed `visibleThreads` above — see `RavenRuntime.searchArchive`'s
+    /// documentation for why blending an archive hit into the windowed list
+    /// would misrepresent what that list means. Only shown once a search has
+    /// actually been submitted (`archiveSearchState != .idle`).
+    @ViewBuilder
+    private var archiveSearchSection: some View {
+        switch runtime.archiveSearchState {
+        case .idle:
+            EmptyView()
+        case .searching:
+            HStack(spacing: AinkradSpacing.sm) {
+                ProgressView().controlSize(.small)
+                Text("Searching all mail…").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.top, AinkradSpacing.sm)
+        case .failed(let message):
+            AinkradErrorState(message: "Search all mail failed: \(message)")
+                .padding(.top, AinkradSpacing.sm)
+        case .results(let hits):
+            VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
+                Divider()
+                Text(hits.isEmpty ? "All mail: no matches" : "Results from all mail (\(hits.count))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                if hits.isEmpty {
+                    Text("Gmail's full-archive search found nothing for this query.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(hits, id: \.id) { summary in
+                        row(for: summary)
+                    }
+                }
+            }
+            .padding(.top, AinkradSpacing.sm)
         }
     }
 
@@ -70,10 +120,21 @@ public struct InboxSurface: View {
     @ViewBuilder
     private var emptyState: some View {
         if !model.searchText.trimmingCharacters(in: .whitespaces).isEmpty {
-            AinkradEmptyState(
-                icon: "tray",
-                title: "No matches",
-                message: "Nothing in the synced window matches that search.")
+            VStack(spacing: AinkradSpacing.sm) {
+                AinkradEmptyState(
+                    icon: "tray",
+                    title: "No matches",
+                    message: "Nothing in the synced window matches that search.")
+                // Deliberate, explicit act — never automatic — per
+                // `RavenRuntime.searchArchive`'s documentation. Offered here
+                // because local results are empty, not fired on every
+                // keystroke.
+                Button("Search all mail") {
+                    Task { await runtime.searchArchive(query: model.searchText) }
+                }
+                .buttonStyle(.plain)
+                .font(.caption.weight(.semibold))
+            }
         } else if model.summaries.isEmpty, let lastSyncError = model.lastSyncError {
             AinkradErrorState(message: "Sync failed: \(lastSyncError)")
         } else {

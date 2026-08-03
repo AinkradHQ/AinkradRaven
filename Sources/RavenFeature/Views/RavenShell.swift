@@ -17,7 +17,7 @@ public struct RavenShell: View {
             HStack {
                 AinkradSegmentedPicker(items: [Surface.mail, .compose], selection: $surface) { s in
                     switch s {
-                    case .mail: return "Mail"
+                    case .mail: return "Inbox"
                     case .compose: return "Compose"
                     }
                 }
@@ -27,7 +27,7 @@ public struct RavenShell: View {
             switch surface {
             case .mail:
                 HStack(spacing: AinkradSpacing.sm) {
-                    InboxSurface(model: runtime.model)
+                    InboxSurface(model: runtime.model, runtime: runtime)
                         .frame(width: 340)
                     ThreadSurface(model: runtime.model, runtime: runtime)
                         .frame(maxWidth: .infinity)

@@ -68,4 +68,16 @@ public protocol MailProvider: Sendable {
     func send(_ message: OutgoingMessage) async throws -> String  // provider message id
     /// The newest cursor available right now, for seeding after a backfill.
     func currentCursor() async throws -> String
+
+    /// Full-archive search delegated to the provider — the one path that
+    /// reaches beyond whatever window `SyncEngine` has synced locally. Called
+    /// only on a deliberate "search all mail" act, never per keystroke; local
+    /// search (`ThreadSearch`) stays purely in-memory and never calls this.
+    ///
+    /// The raw `query` string is passed straight through with no translation
+    /// layer: Gmail's `q` syntax (from:, label:, is:unread, and much more) is
+    /// close to, but not identical with, what `ThreadSearch.parse` accepts
+    /// locally. Gmail's syntax is authoritative for what actually matches a
+    /// remote hit — this does not attempt to reconcile the two grammars.
+    func searchThreads(query: String, limit: Int) async throws -> [MailThread]
 }

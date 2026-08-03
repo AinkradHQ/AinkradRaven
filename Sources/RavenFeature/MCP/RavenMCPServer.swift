@@ -29,11 +29,18 @@ public enum RavenMCPServer {
              schemaJSON: schema([("account_id", "string", "Defaults to the first account.")]),
              destructive: false, readOnly: true),
         Tool(name: "search_mail", operation: "search_mail",
-             summary: "Search synced threads. Supports from:, label:, is:unread, is:starred. "
-                    + "Covers the synced window only, not the full archive.",
+             summary: "Search mail. Supports from:, label:, is:unread, is:starred. By default "
+                    + "covers the synced window only (last 90 days) and never touches the "
+                    + "network. Set include_archive=true to also search the full mailbox "
+                    + "server-side (Gmail search syntax, which overlaps but is not identical "
+                    + "to the operators above) — that hits the network and its hits are "
+                    + "cached locally afterward.",
              schemaJSON: schema([("query", "string", "Search string."),
                                  ("account_id", "string", "Defaults to the first account."),
-                                 ("limit", "integer", "Max results, default 25.")],
+                                 ("limit", "integer", "Max results, default 25."),
+                                 ("include_archive", "boolean",
+                                  "Default false. When true, also searches the full mailbox "
+                                  + "via the provider, not just the synced window.")],
                                 required: ["query"]),
              destructive: false, readOnly: true),
         Tool(name: "unread_summary", operation: "unread_summary",

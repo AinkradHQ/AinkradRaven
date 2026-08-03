@@ -264,4 +264,103 @@ import AinkradAppKit
         #expect(runtime.outbox.pending().isEmpty,
                 "a send queued for a1 must not survive to transmit from the next account")
     }
+
+    // MARK: Archive search (provider-side search outside the synced window)
+
+    @Test("a remote archive search caches its hits and they are reachable in the store even outside the synced window")
+    func searchArchiveCachesHitsReachableOutsideWindow() async throws {
+        let host = FakeHostServices()
+        let runtime = RavenRuntime(host: host)
+        runtime.teardown()
+        let provider = FakeMailProvider(accountID: "a1")
+        let sixMonthsAgo = Calendar(identifier: .gregorian)
+            .date(byAdding: .month, value: -6, to: Date())!
+        provider.searchResults = [MailThread(id: "old-1", accountID: "a1", messages: [
+            MailMessage(id: "m1", threadID: "old-1", from: MailAddress(email: "old@x.com"),
+                        subject: "Ancient invoice", date: sixMonthsAgo, labelIDs: [], snippet: "s")
+        ])]
+        runtime.attachTestProvider(provider, accountID: "a1")
+
+        await runtime.searchArchive(query: "invoice")
+
+        guard case .results(let hits) = runtime.archiveSearchState else {
+            Issue.record("expected .results, got \(runtime.archiveSearchState)")
+            return
+        }
+        #expect(hits.map(\.id) == ["old-1"])
+        // Reachable through the store directly — the presentation this task
+        // chose (a distinct "results from all mail" list) reads exactly this
+        // way, and `read_thread`/archive/reply all go through `store.thread`.
+        #expect(runtime.store.thread("old-1") != nil)
+        // NOT part of the windowed Inbox view: its month shard (6 months
+        // back) sits outside the recent-months window `RavenViewModel.reload`
+        // loads, which is precisely why a separate presentation is required.
+        #expect(runtime.model.summaries.contains { $0.id == "old-1" } == false)
+    }
+
+    @Test("local search never calls the provider — only an explicit archive search does")
+    func localSearchNeverTouchesProvider() async throws {
+        let host = FakeHostServices()
+        let runtime = RavenRuntime(host: host)
+        runtime.teardown()
+        try runtime.store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
+                                                  displayName: "Me", state: .ready))
+        try runtime.store.upsertThread(MailThread(id: "t1", accountID: "a1", messages: [
+            MailMessage(id: "m1", threadID: "t1", from: MailAddress(email: "b@x.com"),
+                        subject: "Invoice March", date: Date(), labelIDs: ["INBOX"], snippet: "s")
+        ]))
+        let provider = FakeMailProvider(accountID: "a1")
+        runtime.attachTestProvider(provider, accountID: "a1")
+        runtime.model.accountID = "a1"
+        runtime.model.reload()
+
+        runtime.model.searchText = "invoice"
+        #expect(runtime.model.visibleThreads.map(\.id) == ["t1"])
+        #expect(provider.searchThreadsCallCount == 0,
+                "the in-memory ThreadSearch path must return instantly without touching the provider")
+    }
+
+    @Test("a rate-limited archive search is distinguishable from a genuinely empty result")
+    func searchArchiveRateLimitIsDistinctFromEmpty() async throws {
+        let host = FakeHostServices()
+        let runtime = RavenRuntime(host: host)
+        runtime.teardown()
+        let provider = FakeMailProvider(accountID: "a1")
+        provider.failures["searchThreads"] = [MailError.rateLimited(retryAfter: 42)]
+        runtime.attachTestProvider(provider, accountID: "a1")
+
+        await runtime.searchArchive(query: "invoice")
+
+        guard case .failed(let message) = runtime.archiveSearchState else {
+            Issue.record("expected .failed, got \(runtime.archiveSearchState)")
+            return
+        }
+        #expect(message.contains("42"))
+        #expect(message.contains("MailError") == false, "must not leak the raw error case name")
+
+        // A second search that genuinely finds nothing must land in a
+        // different, distinguishable state — not the same as the failure
+        // above.
+        provider.searchResults = []
+        await runtime.searchArchive(query: "nothing-matches-this")
+        guard case .results(let hits) = runtime.archiveSearchState else {
+            Issue.record("expected .results([]), got \(runtime.archiveSearchState)")
+            return
+        }
+        #expect(hits.isEmpty)
+    }
+
+    @Test("an empty search text idles the archive search state without calling the provider")
+    func emptyQueryIdlesWithoutCallingProvider() async throws {
+        let host = FakeHostServices()
+        let runtime = RavenRuntime(host: host)
+        runtime.teardown()
+        let provider = FakeMailProvider(accountID: "a1")
+        runtime.attachTestProvider(provider, accountID: "a1")
+
+        await runtime.searchArchive(query: "   ")
+
+        #expect(runtime.archiveSearchState == .idle)
+        #expect(provider.searchThreadsCallCount == 0)
+    }
 }

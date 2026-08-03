@@ -29,9 +29,16 @@ public enum RavenMCPOperations {
         return MonthShard.keys(from: start, to: now)
     }
 
+    /// `provider` is optional and used ONLY by `search_mail`'s
+    /// `include_archive` path — every other tool physically cannot reach the
+    /// network ahead of the store, exactly as before. Defaulted to `nil` so
+    /// every pre-existing call site (tests, `RavenApp`) keeps compiling
+    /// unchanged; `RavenApp.makeMCPServer` passes the real provider so the
+    /// tool can actually reach it.
     @MainActor
     public static func run(_ operation: String, arguments: String,
-                           store: MailStore, outbox: Outbox) async -> AgentActionResult {
+                           store: MailStore, outbox: Outbox,
+                           provider: MailProvider? = nil) async -> AgentActionResult {
         let args = decode(arguments)
 
         switch operation {
@@ -50,18 +57,53 @@ public enum RavenMCPOperations {
                     ?? store.accounts().first?.id else { return fail("No account.") }
             let query = args["query"] as? String ?? ""
             let limit = args["limit"] as? Int ?? 25
+            let includeArchive = args["include_archive"] as? Bool ?? false
+
+            if includeArchive {
+                // Reaches the full mailbox via the provider's server-side
+                // search — the ONE place this tool set is allowed to touch
+                // the network ahead of the store, and only because the
+                // caller explicitly asked for `include_archive`. Every hit is
+                // cached locally (`upsertThread`) exactly as `RavenRuntime.
+                // searchArchive` does, so it becomes a normal store row
+                // reachable via `read_thread`/`archive`/etc. afterward.
+                guard let provider else {
+                    return fail("No provider attached; cannot search the archive.")
+                }
+                do {
+                    let hits = try await provider.searchThreads(query: query, limit: limit)
+                    for hit in hits { try? store.upsertThread(hit) }
+                    if hits.isEmpty {
+                        return ok("No matching threads in the full archive search either.")
+                    }
+                    return ok(hits.map { describe($0.summary()) }.joined(separator: "\n"))
+                } catch let error as MailError {
+                    // Reuses `MailError`'s existing cases rather than
+                    // `String(describing:)`-ing the raw error — a Gmail error
+                    // body must never reach a tool response any more than it
+                    // may reach `MailAccount.lastError` (see `GmailProvider.
+                    // perform`'s documentation).
+                    return fail("Archive search failed: \(archiveErrorMessage(error))")
+                } catch {
+                    return fail("Archive search failed.")
+                }
+            }
+
             // Filtered to the same "in the inbox" set the Inbox list and
             // `unread_summary` use — see `InboxFilter`'s documentation for
             // why these three must never disagree. A thread that left the
             // inbox is still readable via `read_thread`; it just doesn't
-            // show up as an inbox search hit.
+            // show up as an inbox search hit. This is the DEFAULT path —
+            // synced-window only, exactly as the tool description promises —
+            // and never touches `provider`.
             let hits = ThreadSearch.match(InboxFilter.apply(store.summaries(accountID: accountID,
                                                                             months: recentMonths())),
                                           query: query).prefix(limit)
             if hits.isEmpty {
                 return ok("No matching threads in the synced window (last 90 days). " +
                           "This does not mean no such mail exists — only that it hasn't " +
-                          "synced this far back, or at all.")
+                          "synced this far back, or at all. Call again with " +
+                          "\"include_archive\": true to search the full mailbox.")
             }
             return ok(hits.map(describe).joined(separator: "\n"))
 
@@ -187,6 +229,25 @@ public enum RavenMCPOperations {
             return fail("Applied locally but could not queue: \(error)")
         }
         return ok("\(operation) applied to \(ids.count) thread(s); queued for sync.")
+    }
+
+    /// Short, user-safe text for an archive-search failure — mirrors
+    /// `RavenRuntime.archiveSearchFailureMessage`'s cases so the tool and the
+    /// UI agree on what "rate-limited" vs "failed" mean, without either one
+    /// echoing a raw provider error body.
+    private static func archiveErrorMessage(_ error: MailError) -> String {
+        switch error {
+        case .notAuthenticated:
+            return "no account connected."
+        case .rateLimited(let retryAfter):
+            return "rate-limited by Gmail; try again in \(Int(retryAfter))s."
+        case .providerFailed(let status, _):
+            return "provider request failed (status \(status))."
+        case .decodingFailed:
+            return "could not decode the provider's response."
+        default:
+            return "provider error."
+        }
     }
 
     private static func describe(_ summary: ThreadSummary) -> String {

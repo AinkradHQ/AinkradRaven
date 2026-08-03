@@ -172,4 +172,26 @@ final class FakeMailProvider: MailProvider, @unchecked Sendable {
         try failIfScripted("currentCursor")
         return cursor
     }
+
+    // MARK: Archive search
+    //
+    // Canned results rather than a real query engine — tests script exactly
+    // what "the provider" returns (including nothing, or a rate-limit) and
+    // assert on how the caller reacted, not on any search logic here.
+
+    /// What `searchThreads` returns, canned. Tests set this directly rather
+    /// than filtering `threadsByID` — the fake has no obligation to actually
+    /// implement Gmail's `q` grammar.
+    var searchResults: [MailThread] = []
+    /// Counts every call — the local-search test's proof that an in-memory
+    /// `ThreadSearch.match` never reaches the provider at all.
+    private(set) var searchThreadsCallCount = 0
+    private(set) var lastSearchQuery: String?
+
+    func searchThreads(query: String, limit: Int) async throws -> [MailThread] {
+        try failIfScripted("searchThreads")
+        searchThreadsCallCount += 1
+        lastSearchQuery = query
+        return Array(searchResults.prefix(limit))
+    }
 }

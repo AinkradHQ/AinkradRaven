@@ -224,6 +224,46 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
         try await get(GmailProfileDTO.self, path: "profile").historyId
     }
 
+    /// Gmail's full-archive search: `GET /threads?q=<query>`, the same
+    /// endpoint `fetchThreads` uses for the synced window but with the
+    /// caller's raw query instead of an `after:` bound, so it walks the
+    /// entire mailbox rather than the last N days.
+    ///
+    /// The query is passed through UNTRANSLATED — see `MailProvider.
+    /// searchThreads`'s documentation for why: Gmail's `q` grammar is close
+    /// to `ThreadSearch.parse`'s (from:, label:, is:unread) but not
+    /// identical, and Gmail's own interpretation of it is authoritative for
+    /// what a remote hit actually is.
+    ///
+    /// Fetched sequentially (not with `fetchThreads`'s bounded concurrency
+    /// pool) since this is a bounded, user-triggered, one-shot call rather
+    /// than a page in an unattended backfill walk — `limit` is small by
+    /// convention (the MCP tool and the UI both default well under 50).
+    public func searchThreads(query: String, limit: Int) async throws -> [MailThread] {
+        var results: [MailThread] = []
+        var pageToken: String?
+        repeat {
+            let remaining = limit - results.count
+            guard remaining > 0 else { break }
+            var queryItems = [URLQueryItem(name: "q", value: query),
+                              URLQueryItem(name: "maxResults", value: "\(min(50, remaining))")]
+            if let pageToken { queryItems.append(URLQueryItem(name: "pageToken", value: pageToken)) }
+            let list = try await get(GmailListDTO.self, path: "threads", query: queryItems)
+            for reference in list.threads ?? [] {
+                guard results.count < limit else { break }
+                do {
+                    results.append(try await fetchThread(id: reference.id))
+                } catch MailError.unknownThread {
+                    // Listed, then deleted before the follow-up fetch. Same
+                    // treatment as `fetchThreads`: skip it, nothing to return.
+                    continue
+                }
+            }
+            pageToken = list.nextPageToken
+        } while results.count < limit && pageToken != nil
+        return results
+    }
+
     /// RFC822, base64url encoded as Gmail's `raw` field requires.
     ///
     /// **Every** header line is built by `MIMEHeader`, which sanitizes each

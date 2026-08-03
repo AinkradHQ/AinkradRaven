@@ -51,7 +51,8 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
         let runtime = runtime(host: host)
         return RavenMCPServer.make(appID: id) { operation, arguments in
             await RavenMCPOperations.run(operation, arguments: arguments,
-                                        store: runtime.store, outbox: runtime.outbox)
+                                        store: runtime.store, outbox: runtime.outbox,
+                                        provider: runtime.provider)
         }.server
     }
 }

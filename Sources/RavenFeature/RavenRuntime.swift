@@ -60,6 +60,20 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     func currentCursor() async throws -> String {
         try await require().currentCursor()
     }
+    func searchThreads(query: String, limit: Int) async throws -> [MailThread] {
+        try await require().searchThreads(query: query, limit: limit)
+    }
+}
+
+/// Result of a deliberate "search all mail" act — see `RavenRuntime.
+/// searchArchive`. Distinct `.results([])` vs `.failed` on purpose: a remote
+/// search that genuinely found nothing must never look the same as one that
+/// couldn't run at all (rate-limited, unauthenticated, transport failure).
+public enum ArchiveSearchState: Equatable {
+    case idle
+    case searching
+    case results([ThreadSummary])
+    case failed(String)
 }
 
 /// One instance per `HostServices`, so the on-screen UI and the MCP server
@@ -76,6 +90,14 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     public let store: DocumentMailStore
     public let outbox: Outbox
     public let model: RavenViewModel
+
+    /// The always-present forwarding provider — `RavenMCPOperations.run`'s
+    /// `include_archive` path uses this to reach `searchThreads`. Throws
+    /// `.notAuthenticated` on every call, exactly like every other
+    /// `MailProvider` method, until an account is actually connected; that is
+    /// handled by the same catch that handles every other archive-search
+    /// failure, not a special case here.
+    public var provider: MailProvider { providerProxy }
 
     private let host: HostServices
     private let providerProxy: RavenProviderProxy
@@ -133,6 +155,11 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         // gets everything else (summaries, selection) through the view model.
         didSet { model.lastSyncError = lastSyncError }
     }
+    /// Result of the most recent `searchArchive` call. `InboxSurface` renders
+    /// this as a distinct "results from all mail" list alongside (not
+    /// replacing) the windowed Inbox list — see `searchArchive`'s
+    /// documentation for why a separate presentation is the honest one.
+    public private(set) var archiveSearchState: ArchiveSearchState = .idle
     public private(set) var outboxDeadLettered: [OutboxEntry] = []
     /// Entries whose outcome is unknown because a previous process died
     /// mid-send — see `Outbox.needsReview()`. Never auto-resolved.
@@ -461,6 +488,17 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         model.reload()
     }
 
+    /// Test-only seam: attaches an arbitrary `MailProvider` (e.g.
+    /// `FakeMailProvider`) directly to the proxy, bypassing `attach(provider:
+    /// accountID:)`'s `GmailProvider`-specific signature. `RavenAgentBridgeTests`
+    /// already swaps `syncEngine` directly for the same reason (exercising a
+    /// real `RavenRuntime` without a live network); this lets `searchArchive`
+    /// be exercised the same way, without widening the public surface.
+    func attachTestProvider(_ provider: MailProvider, accountID: String) {
+        providerProxy.accountID = accountID
+        providerProxy.current = provider
+    }
+
     private func attach(provider: GmailProvider, accountID: String) {
         providerProxy.accountID = accountID
         providerProxy.current = provider
@@ -512,6 +550,75 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     public func drainOutbox() async {
         await outbox.drain()
         refreshOutboxSnapshots()
+    }
+
+    // MARK: Archive search (outside the synced window)
+
+    /// A deliberate, explicit "search all mail" act — never triggered per
+    /// keystroke. Delegates to the provider's server-side search
+    /// (`MailProvider.searchThreads`), which reaches Gmail's full archive,
+    /// not just the locally-synced window `ThreadSearch` filters.
+    ///
+    /// Every hit is cached locally via `store.upsertThread` so the thread
+    /// becomes a normal store row from then on — it opens, renders, and can
+    /// be archived/replied like any synced thread, with its body still
+    /// fetched lazily exactly as today. That matters because a 6-month-old
+    /// hit lands in a month-shard the Inbox's windowed view (`RavenViewModel.
+    /// reload`, `RavenMCPOperations.recentMonths`) never loads — caching it
+    /// does NOT make it show up in the Inbox list. This is deliberate, not a
+    /// gap: `archiveSearchState` is surfaced as its OWN "results from all
+    /// mail" list, kept visibly separate from the Inbox's windowed view,
+    /// rather than silently blending an archive hit into a list whose whole
+    /// contract is "the last 90 days" — the honest presentation the task
+    /// calls for. Selecting a hit from that list still works normally
+    /// (`RavenViewModel.select`/`store.thread`), since `upsertThread` already
+    /// made it a real row.
+    ///
+    /// Failure is distinguishable from an empty result: `.failed` carries a
+    /// short, safe message (never Gmail's raw response body — see
+    /// `GmailProvider.perform`'s documentation for why that must never reach
+    /// a persisted field) while `.results([])` means the provider actually
+    /// ran and genuinely found nothing.
+    public func searchArchive(query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { archiveSearchState = .idle; return }
+        archiveSearchState = .searching
+        do {
+            let threads = try await providerProxy.searchThreads(query: trimmed, limit: 50)
+            for thread in threads {
+                try? store.upsertThread(thread)
+            }
+            archiveSearchState = .results(threads.map { $0.summary() })
+        } catch {
+            archiveSearchState = .failed(Self.archiveSearchFailureMessage(error))
+        }
+    }
+
+    /// Clears the last archive search — called when the search field itself
+    /// is cleared or edited, so a stale "results from all mail" list never
+    /// lingers next to a search string that no longer produced it.
+    public func clearArchiveSearch() {
+        archiveSearchState = .idle
+    }
+
+    /// Maps a thrown error to a short, user-safe message — reusing
+    /// `MailError`'s existing cases rather than `String(describing:)`-ing an
+    /// arbitrary error, which for `.providerFailed` could echo a Gmail
+    /// response body. Never written to `MailAccount.lastError` (that field is
+    /// document-backed and persisted); this only ever feeds `archiveSearchState`.
+    private static func archiveSearchFailureMessage(_ error: Error) -> String {
+        switch error {
+        case MailError.notAuthenticated:
+            return "No account connected."
+        case MailError.rateLimited(let retryAfter):
+            return "Gmail rate-limited this search; try again in \(Int(retryAfter))s."
+        case MailError.providerFailed(let status, _):
+            return "Search all mail failed (status \(status))."
+        case MailError.decodingFailed:
+            return "Search all mail failed to decode the provider's response."
+        default:
+            return "Search all mail failed."
+        }
     }
 
     // MARK: Bodies
