@@ -18,6 +18,13 @@ import Observation
     public var searchText = ""
     public private(set) var summaries: [ThreadSummary] = []
     public private(set) var selectedThread: MailThread?
+    /// Which account the list is scoped to, or `nil` for the unified view
+    /// across EVERY account. `nil` used to mean "no account, show nothing",
+    /// which was only tenable while exactly one account could be connected —
+    /// and it is the same `accounts.first` guess this milestone removes. A
+    /// caller that has not chosen an account genuinely means "all of them", so
+    /// that is what it now gets; each row still says which account it came
+    /// from via `ThreadSummary.accountID`.
     public var accountID: String?
     /// The most recent sync/backfill failure, mirrored in from
     /// `RavenRuntime.lastSyncError` so the Inbox can tell "sync failed" apart
@@ -46,7 +53,21 @@ import Observation
     public init(store: MailStore, outbox: (any MutationOutbox)? = nil) {
         self.store = store
         self.outbox = outbox
-        self.accountID = store.accounts().first?.id
+        // Deliberately NOT `accounts.first`: with several accounts connected
+        // the honest default is all of them, not whichever happens to be
+        // first in the accounts document.
+        self.accountID = nil
+    }
+
+    /// The accounts `reload()` reads — the selected one, or every account.
+    public var scopedAccountIDs: [String]? {
+        accountID.map { [$0] }
+    }
+
+    /// The address of `accountID`, for a row badge or a from-line. `nil` when
+    /// the id is unknown to the store.
+    public func address(ofAccount accountID: String) -> String? {
+        store.accounts().first { $0.id == accountID }?.address
     }
 
     /// `ThreadSearch.match` only ever filters the loaded window (see
@@ -61,12 +82,11 @@ import Observation
     }
 
     public func reload() {
-        guard let accountID else { summaries = []; return }
-        let calendar = Calendar(identifier: .gregorian)
-        let months = (0..<4).compactMap { offset in
-            calendar.date(byAdding: .month, value: -offset, to: Date()).map(MonthShard.key(for:))
-        }
-        summaries = InboxFilter.apply(store.summaries(accountID: accountID, months: months))
+        // One merged, date-ordered read shared with the MCP layer — see
+        // `UnifiedInbox` for why the merge lives there rather than in the store
+        // or being re-derived here.
+        summaries = UnifiedInbox.inbox(store: store, accountIDs: scopedAccountIDs,
+                                       months: UnifiedInbox.recentMonths())
         // The selection can point at a thread that just left the window (e.g.
         // archived out from under it); re-resolve so stale detail doesn't
         // linger next to a list that no longer contains it.
@@ -96,7 +116,10 @@ import Observation
         }
         try? store.upsertThread(thread)
         if wasUnread {
-            try? outbox?.enqueue(.labels(LabelMutation(threadIDs: [threadID], remove: ["UNREAD"])))
+            // Stamped with the THREAD's account, not a default: the mutation
+            // has to reach the mailbox the thread actually lives in.
+            try? outbox?.enqueue(.labels(LabelMutation(threadIDs: [threadID], remove: ["UNREAD"])),
+                                 accountID: thread.accountID)
         }
         selectedThread = thread
         reload()
@@ -201,17 +224,27 @@ import Observation
     /// store already reflects the change before `enqueue` is even attempted,
     /// so a failed enqueue below never has to undo anything — it only has to
     /// say so.
+    /// A multi-selection can now span accounts (the list is unified), so the
+    /// ids are grouped by the account each thread belongs to and one mutation
+    /// is queued per account — still exactly one entry per account, never one
+    /// per thread. A single-account selection therefore behaves precisely as
+    /// before; a cross-account one no longer routes half of itself to the wrong
+    /// mailbox.
     private func apply(_ action: ThreadAction, ids: [String]) {
         guard !ids.isEmpty else { return }
         let mutation = action.mutation(threadIDs: ids)
+        let groups = ThreadAccountGrouping.group(ids, store: store, fallback: accountID)
         ThreadMutationApplier.applyLocally(mutation, store: store)
         reload()
         for id in ids { rowErrors.removeValue(forKey: id) }
-        do {
-            try outbox?.enqueue(.labels(mutation))
-        } catch {
-            let message = String(describing: error)
-            for id in ids { rowErrors[id] = message }
+        for (accountID, groupedIDs) in groups {
+            do {
+                try outbox?.enqueue(.labels(action.mutation(threadIDs: groupedIDs)),
+                                    accountID: accountID)
+            } catch {
+                let message = String(describing: error)
+                for id in groupedIDs { rowErrors[id] = message }
+            }
         }
     }
 }

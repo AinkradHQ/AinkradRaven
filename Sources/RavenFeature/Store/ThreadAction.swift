@@ -36,6 +36,32 @@ public enum ThreadAction: Equatable {
     }
 }
 
+/// Which account each of a set of thread ids belongs to.
+///
+/// A mutation must reach the mailbox the thread actually lives in, and with
+/// several accounts connected that can no longer be inferred from "the current
+/// account" — it has to be read off the thread. Shared by `RavenViewModel` and
+/// `RavenMCPOperations` so the human and the agent resolve the account the same
+/// way, exactly as `ThreadAction` already made them agree on what a mutation is.
+public enum ThreadAccountGrouping {
+    /// Groups `ids` by their thread's `accountID`. An id the store does not
+    /// know is filed under `fallback` rather than dropped — dropping it would
+    /// silently not sync a mutation the caller was told had been queued.
+    /// Deterministically ordered by account id.
+    @MainActor
+    public static func group(_ ids: [String], store: MailStore,
+                            fallback: String? = nil) -> [(accountID: String?, ids: [String])] {
+        var byAccount: [String?: [String]] = [:]
+        for id in ids {
+            let accountID = store.thread(id)?.accountID ?? fallback
+            byAccount[accountID, default: []].append(id)
+        }
+        return byAccount
+            .map { (accountID: $0.key, ids: $0.value) }
+            .sorted { ($0.accountID ?? "") < ($1.accountID ?? "") }
+    }
+}
+
 /// Applies a `LabelMutation` to the store's local copy of every thread it
 /// names. This is the exact per-thread loop `RavenMCPOperations.mutate` used
 /// to own inline — moved here so both it and `RavenViewModel` call one copy.

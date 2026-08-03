@@ -16,29 +16,34 @@ public enum RavenMCPOperations {
         AgentActionResult(text: text, isError: true)
     }
 
-    /// Every month key covering the same window `SyncEngine` actually syncs
-    /// (90 days by default), rather than an independent guess. Derived from
-    /// `SyncEngine.windowStart` on purpose: a tool that searched a different
-    /// span than what was synced would silently disagree with the store, and
-    /// a magic "4 months" here would drift out of sync with `SyncEngine`'s
-    /// `windowDays` the moment either one changed.
+    /// The month keys covering the synced window, shared with the Inbox list
+    /// through `UnifiedInbox.recentMonths` — a tool that searched a different
+    /// span than the UI would silently disagree with it, and a magic "4 months"
+    /// would drift from `SyncEngine.windowDays` the moment either changed.
     @MainActor
-    private static func recentMonths() -> [String] {
-        let now = Date()
-        let start = SyncEngine.windowStart(from: now, windowDays: 90)
-        return MonthShard.keys(from: start, to: now)
+    private static func recentMonths() -> [String] { UnifiedInbox.recentMonths() }
+
+    /// The accounts a read covers: the one named by `account_id`, or EVERY
+    /// account when it is omitted.
+    ///
+    /// Omitting `account_id` used to fall back to `store.accounts().first`,
+    /// which meant "what's unread?" answered for an arbitrary mailbox and
+    /// quietly ignored the rest. `nil` here means all accounts, which is what
+    /// the caller actually asked for; `UnifiedInbox` does the merge so the
+    /// answer matches the Inbox exactly.
+    private static func scope(_ args: [String: Any]) -> [String]? {
+        (args["account_id"] as? String).map { [$0] }
     }
 
-    /// `provider` is optional and used ONLY by `search_mail`'s
+    /// `providers` is optional and used ONLY by `search_mail`'s
     /// `include_archive` path — every other tool physically cannot reach the
-    /// network ahead of the store, exactly as before. Defaulted to `nil` so
-    /// every pre-existing call site (tests, `RavenApp`) keeps compiling
-    /// unchanged; `RavenApp.makeMCPServer` passes the real provider so the
-    /// tool can actually reach it.
+    /// network ahead of the store, exactly as before. It is a router rather
+    /// than a single provider because an archive search with no `account_id`
+    /// must reach every connected account, not an arbitrary one.
     @MainActor
     public static func run(_ operation: String, arguments: String,
                            store: MailStore, outbox: Outbox,
-                           provider: MailProvider? = nil) async -> AgentActionResult {
+                           providers: MailProviderRouter? = nil) async -> AgentActionResult {
         let args = decode(arguments)
 
         switch operation {
@@ -47,14 +52,18 @@ public enum RavenMCPOperations {
             return ok(lines.isEmpty ? "No accounts configured." : lines.joined(separator: "\n"))
 
         case "list_labels":
-            guard let accountID = args["account_id"] as? String
-                    ?? store.accounts().first?.id else { return fail("No account.") }
-            let labels = store.labels(accountID: accountID)
-            return ok(labels.map { "\($0.id) — \($0.name)" }.joined(separator: "\n"))
+            let ids = scope(args) ?? store.accounts().map(\.id)
+            guard !ids.isEmpty else { return fail("No accounts configured.") }
+            // Every account's labels, each line attributed — label ids are
+            // per-account (Gmail mints its own), so a merged list that dropped
+            // the account would hand back ids the caller cannot act on.
+            let lines = ids.flatMap { accountID in
+                store.labels(accountID: accountID).map { "\(accountID) · \($0.id) — \($0.name)" }
+            }
+            return ok(lines.isEmpty ? "No labels synced yet." : lines.joined(separator: "\n"))
 
         case "search_mail":
-            guard let accountID = args["account_id"] as? String
-                    ?? store.accounts().first?.id else { return fail("No account.") }
+            let accountIDs = scope(args)
             let query = args["query"] as? String ?? ""
             let limit = args["limit"] as? Int ?? 25
             let includeArchive = args["include_archive"] as? Bool ?? false
@@ -67,26 +76,48 @@ public enum RavenMCPOperations {
                 // cached locally (`upsertThread`) exactly as `RavenRuntime.
                 // searchArchive` does, so it becomes a normal store row
                 // reachable via `read_thread`/`archive`/etc. afterward.
-                guard let provider else {
+                guard let providers else {
                     return fail("No provider attached; cannot search the archive.")
                 }
-                do {
-                    let hits = try await provider.searchThreads(query: query, limit: limit)
-                    for hit in hits { try? store.upsertThread(hit) }
-                    if hits.isEmpty {
-                        return ok("No matching threads in the full archive search either.")
-                    }
-                    return ok(hits.map { describe($0.summary()) }.joined(separator: "\n"))
-                } catch let error as MailError {
-                    // Reuses `MailError`'s existing cases rather than
-                    // `String(describing:)`-ing the raw error — a Gmail error
-                    // body must never reach a tool response any more than it
-                    // may reach `MailAccount.lastError` (see `GmailProvider.
-                    // perform`'s documentation).
-                    return fail("Archive search failed: \(archiveErrorMessage(error))")
-                } catch {
-                    return fail("Archive search failed.")
+                let targets = accountIDs ?? providers.attachedAccountIDs
+                guard !targets.isEmpty else {
+                    return fail("No provider attached; cannot search the archive.")
                 }
+                var groups: [[ThreadSummary]] = []
+                var failure: String?
+                var succeeded = false
+                for target in targets {
+                    guard let provider = providers.provider(for: target) else {
+                        failure = failure ?? "no provider attached for \(target)."
+                        continue
+                    }
+                    do {
+                        let hits = try await provider.searchThreads(query: query, limit: limit)
+                        for hit in hits { try? store.upsertThread(hit) }
+                        groups.append(hits.map { $0.summary() })
+                        succeeded = true
+                    } catch let error as MailError {
+                        // Reuses `MailError`'s existing cases rather than
+                        // `String(describing:)`-ing the raw error — a Gmail
+                        // error body must never reach a tool response any more
+                        // than it may reach `MailAccount.lastError` (see
+                        // `GmailProvider.perform`'s documentation).
+                        failure = failure ?? archiveErrorMessage(error)
+                    } catch {
+                        failure = failure ?? "provider error."
+                    }
+                }
+                // Only a total failure is reported as one: if one account
+                // answered, its hits are real and must not be thrown away
+                // because another account was rate-limited.
+                if !succeeded {
+                    return fail("Archive search failed: \(failure ?? "provider error.")")
+                }
+                let hits = Array(UnifiedInbox.merge(groups).prefix(limit))
+                if hits.isEmpty {
+                    return ok("No matching threads in the full archive search either.")
+                }
+                return ok(hits.map(describe).joined(separator: "\n"))
             }
 
             // Filtered to the same "in the inbox" set the Inbox list and
@@ -96,8 +127,8 @@ public enum RavenMCPOperations {
             // show up as an inbox search hit. This is the DEFAULT path —
             // synced-window only, exactly as the tool description promises —
             // and never touches `provider`.
-            let hits = ThreadSearch.match(InboxFilter.apply(store.summaries(accountID: accountID,
-                                                                            months: recentMonths())),
+            let hits = ThreadSearch.match(UnifiedInbox.inbox(store: store, accountIDs: accountIDs,
+                                                            months: recentMonths()),
                                           query: query).prefix(limit)
             if hits.isEmpty {
                 return ok("No matching threads in the synced window (last 90 days). " +
@@ -108,9 +139,8 @@ public enum RavenMCPOperations {
             return ok(hits.map(describe).joined(separator: "\n"))
 
         case "unread_summary":
-            guard let accountID = args["account_id"] as? String
-                    ?? store.accounts().first?.id else { return fail("No account.") }
-            let unread = InboxFilter.apply(store.summaries(accountID: accountID, months: recentMonths()))
+            let unread = UnifiedInbox.inbox(store: store, accountIDs: scope(args),
+                                            months: recentMonths())
                 .filter { $0.unreadCount > 0 }
             if unread.isEmpty {
                 return ok("No unread threads in the synced window (last 90 days).")
@@ -144,7 +174,11 @@ public enum RavenMCPOperations {
                 \(visible)
                 """
             }
-            return ok("Subject: \(thread.subject)\n\n" + rendered.joined(separator: "\n---\n"))
+            // States the account: a reply has to go out from the mailbox that
+            // received the thread, and the agent cannot know which that is
+            // from the thread id alone.
+            return ok("Subject: \(thread.subject)\nAccount: \(thread.accountID)\n\n"
+                      + rendered.joined(separator: "\n---\n"))
 
         case "archive", "trash", "set_read", "star", "label":
             return await mutate(operation, args: args, store: store, outbox: outbox)
@@ -152,13 +186,37 @@ public enum RavenMCPOperations {
         case "create_draft":
             guard let to = (args["to"] as? [String])?.compactMap({ MailAddress(rfc5322: $0) }),
                   !to.isEmpty else { return fail("to required.") }
+            // A draft must know which mailbox will send it: that decides the
+            // signature and, at `send_draft`, the transmitting provider. A
+            // reply within a thread takes the thread's account (there is only
+            // one right answer); otherwise the caller states it, and it may
+            // only be omitted while exactly one account is connected.
+            let draftAccount: String?
+            if let explicit = args["account_id"] as? String {
+                guard store.accounts().contains(where: { $0.id == explicit }) else {
+                    return fail("No account \(explicit). Call list_accounts for the ids.")
+                }
+                draftAccount = explicit
+            } else if let threadID = args["thread_id"] as? String,
+                      let thread = store.thread(threadID) {
+                draftAccount = thread.accountID
+            } else {
+                let accounts = store.accounts()
+                guard accounts.count <= 1 else {
+                    return fail("Several accounts are connected, so account_id is required — " +
+                                "a draft has to know which mailbox will send it. Call " +
+                                "list_accounts for the ids.")
+                }
+                draftAccount = accounts.first?.id
+            }
             let draft = OutgoingMessage(
                 to: to,
                 cc: (args["cc"] as? [String] ?? []).compactMap { MailAddress(rfc5322: $0) },
                 subject: args["subject"] as? String ?? "",
                 bodyText: args["body"] as? String ?? "",
                 inReplyToMessageID: args["in_reply_to"] as? String,
-                threadID: args["thread_id"] as? String)
+                threadID: args["thread_id"] as? String,
+                accountID: draftAccount)
             do {
                 let id = try DraftBox.shared.save(draft)
                 return ok("Draft \(id) created and visible in Compose. Call send_draft to send it.")
@@ -222,13 +280,25 @@ public enum RavenMCPOperations {
         // with `RavenViewModel` via `ThreadMutationApplier` so the two
         // surfaces can never disagree about what "archive"/"star"/etc. means
         // to the store.
+        //
+        // The account comes from each THREAD, never from an `account_id`
+        // argument or a default: a mutation must reach the mailbox the thread
+        // actually lives in, and there is no honest way for the caller to
+        // override that. Ids spanning two accounts therefore queue one entry
+        // per account (`ThreadAccountGrouping`), shared with `RavenViewModel`
+        // so the human and the agent resolve it identically.
+        let groups = ThreadAccountGrouping.group(ids, store: store)
         ThreadMutationApplier.applyLocally(mutation, store: store)
-        do {
-            try outbox.enqueue(.labels(mutation))
-        } catch {
-            return fail("Applied locally but could not queue: \(error)")
+        for group in groups {
+            do {
+                try outbox.enqueue(.labels(action.mutation(threadIDs: group.ids)),
+                                   accountID: group.accountID)
+            } catch {
+                return fail("Applied locally but could not queue: \(error)")
+            }
         }
-        return ok("\(operation) applied to \(ids.count) thread(s); queued for sync.")
+        return ok("\(operation) applied to \(ids.count) thread(s) across " +
+                  "\(groups.count) account(s); queued for sync.")
     }
 
     /// Short, user-safe text for an archive-search failure — mirrors
@@ -250,9 +320,12 @@ public enum RavenMCPOperations {
         }
     }
 
+    /// Includes the account id: a merged multi-account list in which the rows
+    /// don't say which mailbox they came from is not usable — the agent cannot
+    /// reply from the right address or name the account in its answer.
     private static func describe(_ summary: ThreadSummary) -> String {
         let sender = summary.participants.first?.displayLabel ?? "unknown"
         let unread = summary.unreadCount > 0 ? " [unread]" : ""
-        return "\(summary.id) · \(sender) · \(summary.subject)\(unread)"
+        return "\(summary.id) · \(summary.accountID) · \(sender) · \(summary.subject)\(unread)"
     }
 }

@@ -169,12 +169,16 @@ public struct ComposeSurface: View {
         }
     }
 
+    /// Attributed to the composing account (`RavenRuntime.composingAccountID`)
+    /// so the outbox transmits it through that mailbox's provider and
+    /// `SendAttempt` appends that account's signature.
     private func message() -> OutgoingMessage {
         OutgoingMessage(
             to: ComposeValidation.validAddresses(toChips),
             cc: ComposeValidation.validAddresses(ccChips),
             subject: subject,
-            bodyText: bodyText)
+            bodyText: bodyText,
+            accountID: runtime.composingAccountID)
     }
 
     private func saveDraft() {
@@ -197,6 +201,16 @@ public struct ComposeSurface: View {
     /// be undone.
     private func send() {
         guard ComposeValidation.canSend(toChips) else { return }
+        // Refuses rather than guessing which mailbox this goes out from — see
+        // `RavenRuntime.composingAccountID`. Nothing is queued, so nothing can
+        // later leave from the wrong address.
+        guard runtime.composingAccountID != nil else {
+            errorMessage = "Several accounts are connected, so Raven cannot tell which one " +
+                           "should send this. Filter the Inbox to one account first; nothing " +
+                           "was queued."
+            errorStatus = .warning
+            return
+        }
         isSending = true
         errorMessage = nil
         let outgoing = message()

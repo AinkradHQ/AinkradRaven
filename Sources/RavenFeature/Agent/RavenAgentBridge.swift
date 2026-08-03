@@ -17,11 +17,18 @@ public enum RavenAgentBridge {
     public static func snapshot(model: RavenViewModel) -> AgentContextSnapshot? {
         guard let thread = model.selectedThread else { return nil }
         let sender = thread.messages.last?.from?.displayLabel ?? "unknown"
+        // The account is part of the context, not a detail: with several
+        // mailboxes connected, "reply to this" cannot be answered from the
+        // thread alone — Sage would reply from the wrong address. The address
+        // is included alongside the id because that is what actually appears in
+        // a From line; it falls back to the id if the account row is gone.
+        let account = model.address(ofAccount: thread.accountID) ?? thread.accountID
         return AgentContextSnapshot(
             kind: "mail",
             title: "Mail — \(thread.subject)",
             text: """
             Selected thread: \(thread.id)
+            Account: \(account) (\(thread.accountID))
             Subject: \(thread.subject)
             Last sender: \(sender)
             Messages: \(thread.messages.count), unread: \(thread.unreadCount)

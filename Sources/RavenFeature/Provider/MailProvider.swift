@@ -30,13 +30,39 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     /// Set when this is a reply, so the provider can thread it correctly.
     public let inReplyToMessageID: String?
     public let threadID: String?
+    /// Which of the user's accounts composed this message, and therefore which
+    /// account's provider must transmit it and whose signature gets appended.
+    ///
+    /// M0 left this off the message entirely and relied on `OutboxEntry.
+    /// accountID` — stamped from whichever account happened to be attached at
+    /// `enqueue` — to stop a queued send crossing accounts. That was a safety
+    /// net (refuse to send) rather than routing (send from the right mailbox),
+    /// which is only adequate while exactly one account can be connected.
+    /// `Outbox.enqueue` now treats this, when present, as the authoritative
+    /// stamp for the entry.
+    ///
+    /// Optional, and decoded as `nil` when absent, so outbox entries persisted
+    /// by an earlier build still decode rather than stranding a queued send.
+    /// `nil` means "no account claimed it" — routable only when there is
+    /// exactly one candidate.
+    public let accountID: String?
 
     public init(to: [MailAddress], cc: [MailAddress] = [], subject: String,
                 bodyText: String, inReplyToMessageID: String? = nil,
-                threadID: String? = nil) {
+                threadID: String? = nil, accountID: String? = nil) {
         self.to = to; self.cc = cc; self.subject = subject
         self.bodyText = bodyText; self.inReplyToMessageID = inReplyToMessageID
-        self.threadID = threadID
+        self.threadID = threadID; self.accountID = accountID
+    }
+
+    /// The same message attributed to `accountID`. Used where the account is
+    /// only known one layer up from where the message was built (Compose's
+    /// from-picker, `create_draft`'s explicit `account_id`, a reply resolving
+    /// the account from its thread).
+    public func attributed(to accountID: String?) -> OutgoingMessage {
+        OutgoingMessage(to: to, cc: cc, subject: subject, bodyText: bodyText,
+                        inReplyToMessageID: inReplyToMessageID, threadID: threadID,
+                        accountID: accountID)
     }
 }
 

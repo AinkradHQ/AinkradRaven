@@ -14,7 +14,10 @@ import Foundation
 
     private let store: MailStore
     private let provider: MailProvider
-    private let accountID: String
+    /// Which account this engine syncs. Public so the runtime can key its
+    /// per-account engine table off the engine itself rather than tracking the
+    /// pairing separately and risking the two drifting.
+    public let accountID: String
     private let windowDays: Int
     private let maxPages: Int
     public private(set) var state: SyncState = .idle {

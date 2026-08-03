@@ -25,18 +25,24 @@ public enum RavenMCPServer {
              summary: "List configured mail accounts and their sync state.",
              schemaJSON: schema([]), destructive: false, readOnly: true),
         Tool(name: "list_labels", operation: "list_labels",
-             summary: "List labels for an account.",
-             schemaJSON: schema([("account_id", "string", "Defaults to the first account.")]),
+             summary: "List labels. Covers EVERY connected account unless account_id names one. "
+                    + "Label ids are per-account, so each line is prefixed with the account it "
+                    + "belongs to; pass a label id back only for that account's threads.",
+             schemaJSON: schema([("account_id", "string",
+                                  "One account. Omit to list every account's labels.")]),
              destructive: false, readOnly: true),
         Tool(name: "search_mail", operation: "search_mail",
-             summary: "Search mail. Supports from:, label:, is:unread, is:starred. By default "
-                    + "covers the synced window only (last 90 days) and never touches the "
-                    + "network. Set include_archive=true to also search the full mailbox "
-                    + "server-side (Gmail search syntax, which overlaps but is not identical "
-                    + "to the operators above) — that hits the network and its hits are "
-                    + "cached locally afterward.",
+             summary: "Search mail across EVERY connected account unless account_id names one; "
+                    + "each result line states the account it came from. Supports from:, "
+                    + "label:, is:unread, is:starred. By default covers the synced window only "
+                    + "(last 90 days) and never touches the network. Set include_archive=true "
+                    + "to also search the full mailbox of each account in scope server-side "
+                    + "(Gmail search syntax, which overlaps but is not identical to the "
+                    + "operators above) — that hits the network and its hits are cached "
+                    + "locally afterward.",
              schemaJSON: schema([("query", "string", "Search string."),
-                                 ("account_id", "string", "Defaults to the first account."),
+                                 ("account_id", "string",
+                                  "One account. Omit to search every connected account."),
                                  ("limit", "integer", "Max results, default 25."),
                                  ("include_archive", "boolean",
                                   "Default false. When true, also searches the full mailbox "
@@ -44,55 +50,69 @@ public enum RavenMCPServer {
                                 required: ["query"]),
              destructive: false, readOnly: true),
         Tool(name: "unread_summary", operation: "unread_summary",
-             summary: "Unread counts broken down by sender, plus the unread threads. "
-                    + "The entry point for triage.",
-             schemaJSON: schema([("account_id", "string", "Defaults to the first account.")]),
+             summary: "Unread counts broken down by sender, plus the unread threads, across "
+                    + "EVERY connected account unless account_id names one. Each thread line "
+                    + "states its account. The entry point for triage.",
+             schemaJSON: schema([("account_id", "string",
+                                  "One account. Omit to cover every connected account.")]),
              destructive: false, readOnly: true),
         Tool(name: "read_thread", operation: "read_thread",
-             summary: "Full text of one thread, with quoted trailers removed.",
+             summary: "Full text of one thread, with quoted trailers removed. Works for a "
+                    + "thread in any connected account and reports which account it belongs "
+                    + "to — reply from that one.",
              schemaJSON: schema([("thread_id", "string", "Thread id.")],
                                 required: ["thread_id"]),
              destructive: false, readOnly: true),
         Tool(name: "archive", operation: "archive",
-             summary: "Remove threads from the inbox. Reversible.",
+             summary: "Remove threads from the inbox. Reversible. Each thread is changed in "
+                    + "the account it belongs to, so ids from different accounts may be mixed.",
              schemaJSON: schema([("thread_ids", "array", "Thread ids.")],
                                 required: ["thread_ids"]),
              destructive: false, readOnly: false),
         Tool(name: "trash", operation: "trash",
-             summary: "Move threads to Trash. Reversible from Gmail.",
+             summary: "Move threads to Trash. Reversible from Gmail. Each thread is changed in "
+                    + "the account it belongs to, so ids from different accounts may be mixed.",
              schemaJSON: schema([("thread_ids", "array", "Thread ids.")],
                                 required: ["thread_ids"]),
              destructive: false, readOnly: false),
         Tool(name: "set_read", operation: "set_read",
-             summary: "Mark threads read or unread.",
+             summary: "Mark threads read or unread, each in the account it belongs to.",
              schemaJSON: schema([("thread_ids", "array", "Thread ids."),
                                  ("read", "boolean", "True to mark read, false for unread.")],
                                 required: ["thread_ids"]),
              destructive: false, readOnly: false),
         Tool(name: "star", operation: "star",
-             summary: "Star threads.",
+             summary: "Star threads, each in the account it belongs to.",
              schemaJSON: schema([("thread_ids", "array", "Thread ids.")],
                                 required: ["thread_ids"]),
              destructive: false, readOnly: false),
         Tool(name: "label", operation: "label",
-             summary: "Add and remove labels on threads.",
+             summary: "Add and remove labels on threads, each in the account it belongs to. "
+                    + "Label ids are per-account — use ids from list_labels for that thread's "
+                    + "account.",
              schemaJSON: schema([("thread_ids", "array", "Thread ids."),
                                  ("add", "array", "Label ids to add."),
                                  ("remove", "array", "Label ids to remove.")],
                                 required: ["thread_ids"]),
              destructive: false, readOnly: false),
         Tool(name: "create_draft", operation: "create_draft",
-             summary: "Create a draft visible in Compose. Does NOT send.",
+             summary: "Create a draft visible in Compose. Does NOT send. The draft is bound to "
+                    + "the account that will send it: account_id if given, otherwise the "
+                    + "account of thread_id, otherwise the only connected account. With "
+                    + "several accounts connected and no thread_id, account_id is required.",
              schemaJSON: schema([("to", "array", "Recipient addresses."),
                                  ("cc", "array", "CC addresses."),
                                  ("subject", "string", "Subject line."),
                                  ("body", "string", "Plain-text body."),
                                  ("in_reply_to", "string", "RFC822 message id being replied to."),
-                                 ("thread_id", "string", "Thread to reply within.")],
+                                 ("thread_id", "string", "Thread to reply within."),
+                                 ("account_id", "string",
+                                  "The account that will send this draft.")],
                                 required: ["to"]),
              destructive: false, readOnly: false),
         Tool(name: "send_draft", operation: "send_draft",
-             summary: "Send an existing draft. This transmits mail and cannot be undone.",
+             summary: "Send an existing draft, from the account the draft is bound to. This "
+                    + "transmits mail and cannot be undone.",
              schemaJSON: schema([("draft_id", "string", "Draft id from create_draft.")],
                                 required: ["draft_id"]),
              destructive: true, readOnly: false),

@@ -14,7 +14,11 @@ public struct RavenSettingsView: View {
     @State private var clientSecret = ""
     @State private var isConnecting = false
     @State private var connectError: String?
-    @State private var signature = ""
+    /// Per account, keyed by account id. A single shared string wrote whatever
+    /// was typed for one account into whichever row rendered last, which with
+    /// several accounts connected means editing account A's signature silently
+    /// overwrites B's.
+    @State private var signatures: [String: String] = [:]
     /// Bumped after any mutation so this view re-reads `runtime.accounts`,
     /// which is a plain (non-`@Observable`) snapshot method.
     @State private var accountsVersion = 0
@@ -33,7 +37,7 @@ public struct RavenSettingsView: View {
         .ainkradPanel()
         .onAppear {
             clientID = runtime.savedClientID ?? clientID
-            signature = runtime.accounts.first?.signature ?? ""
+            for account in runtime.accounts { signatures[account.id] = account.signature }
         }
         // `runtime.accounts` is a plain snapshot method, not `@Observable`
         // storage, so nothing re-reads it just because `runtime.syncState`
@@ -122,7 +126,9 @@ public struct RavenSettingsView: View {
                     }
                 })
                 accountsVersion += 1
-                signature = runtime.accounts.first?.signature ?? signature
+                for account in runtime.accounts where signatures[account.id] == nil {
+                    signatures[account.id] = account.signature
+                }
             } catch {
                 connectError = "Could not connect: \(error)"
             }
@@ -159,7 +165,7 @@ public struct RavenSettingsView: View {
                     accountsVersion += 1
                 })
             }
-            if case .backfilling(let threadsSynced) = runtime.syncState {
+            if case .backfilling(let threadsSynced) = runtime.syncState(for: account.id) {
                 // Live progress for the backfill `connectAccount`/
                 // `resyncFromScratch` now run detached (see
                 // `RavenRuntime.runBackfill`) — without this the Accounts
@@ -172,22 +178,26 @@ public struct RavenSettingsView: View {
                 Text("Last synced \(lastSyncedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if let lastError = account.lastError {
+            if let lastError = runtime.lastSyncError(for: account.id) ?? account.lastError {
                 Text(lastError).font(.caption).foregroundStyle(.red)
             }
-            if runtime.lastBackfillTruncated {
+            if runtime.lastBackfillTruncated(for: account.id) {
                 AinkradBanner(message: "The last backfill stopped early (page limit reached). " +
                               "Some older mail in the sync window may be missing.", status: .warning)
             }
             AinkradFormRow(title: "Signature") {
-                AinkradTextArea(text: $signature, placeholder: "Signature", minHeight: 60)
+                AinkradTextArea(
+                    text: Binding(get: { signatures[account.id] ?? account.signature },
+                                  set: { signatures[account.id] = $0 }),
+                    placeholder: "Signature", minHeight: 60)
                     // Read-modify-write the CURRENT row rather than writing
                     // back `account`, which is a snapshot captured when this
                     // row was rendered: writing that back on every keystroke
                     // clobbered syncCursor/lastSyncedAt/state/lastError with
                     // stale values, silently re-walking (or fully
                     // re-backfilling) the mailbox.
-                    .onChange(of: signature) { _, newValue in
+                    .onChange(of: signatures[account.id]) { _, newValue in
+                        guard let newValue else { return }
                         runtime.updateSignature(newValue, accountID: account.id)
                     }
             }
@@ -198,11 +208,11 @@ public struct RavenSettingsView: View {
                     // `RavenRuntime.resyncFromScratch`'s documentation. Progress
                     // reaches this view via the `.onChange(of: runtime.syncState)`
                     // below, not a poll.
-                    runtime.resyncFromScratch()
+                    runtime.resyncFromScratch(accountID: account.id)
                 }
                 AinkradButton(title: "Sync Now", style: .ghost, icon: "arrow.clockwise") {
                     Task {
-                        await runtime.syncNow()
+                        await runtime.syncNow(accountID: account.id)
                         accountsVersion += 1
                     }
                 }

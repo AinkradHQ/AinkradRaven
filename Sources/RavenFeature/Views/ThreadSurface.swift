@@ -84,7 +84,7 @@ private struct MessageRow: View {
 
             if !message.attachments.isEmpty {
                 AttachmentChipRow(attachments: message.attachments, messageID: message.id,
-                                  runtime: runtime)
+                                  threadID: message.threadID, runtime: runtime)
             }
         }
         .padding(AinkradSpacing.md)
@@ -143,6 +143,9 @@ private struct MessageRow: View {
 private struct AttachmentChipRow: View {
     let attachments: [MailAttachment]
     let messageID: String
+    /// Needed to resolve which account's provider fetches the bytes — the
+    /// message alone does not say which mailbox it lives in.
+    let threadID: String
     let runtime: RavenRuntime
 
     @State private var downloadingID: String?
@@ -173,7 +176,8 @@ private struct AttachmentChipRow: View {
         downloadingID = attachment.attachmentID
         errorMessage = nil
         Task {
-            let data = await runtime.fetchAttachment(attachment, messageID: messageID)
+            let data = await runtime.fetchAttachment(attachment, messageID: messageID,
+                                                     threadID: threadID)
             downloadingID = nil
             guard let data else {
                 errorMessage = "Could not download \(attachment.filename)."
@@ -396,7 +400,11 @@ private struct ReplyPanel: View {
         statusMessage = nil
         let body = runtime.store.body(messageID: last.id)?.plainText ?? ""
         let draft = ReplyComposer.compose(mode: newMode, thread: thread, lastMessage: last,
-                                          lastMessageBody: body, ownAddress: runtime.ownAddress)
+                                          lastMessageBody: body,
+                                          // The replying account is the thread's own, not "the"
+                                          // account: excluding the wrong address from a reply-all
+                                          // mails the user their own mailbox.
+                                          ownAddress: runtime.ownAddress(for: thread.accountID))
         mode = newMode
         to = draft.to.map(\.email).joined(separator: ", ")
         subject = draft.subject
@@ -410,7 +418,10 @@ private struct ReplyPanel: View {
         let outgoing = OutgoingMessage(
             to: recipients, subject: subject, bodyText: bodyText,
             inReplyToMessageID: mode == .forward ? nil : thread.messages.last?.rfc822MessageID,
-            threadID: mode == .forward ? nil : thread.id)
+            threadID: mode == .forward ? nil : thread.id,
+            // Composed on the thread's account, so the outbox transmits it
+            // through that mailbox's provider and appends its signature.
+            accountID: thread.accountID)
         Task {
             do {
                 let result = try await runtime.sendThreadReply(outgoing)

@@ -25,13 +25,28 @@ import AinkradAppKit
 /// not something a test can trigger through its public API) standing in the
 /// way of exercising that path.
 @MainActor public protocol MutationOutbox: AnyObject {
+    /// `accountID` is the account the operation belongs to — the thread's
+    /// account for a mutation, the composing account for a send. `nil` falls
+    /// back to the outbox's own default stamp, which is only unambiguous while
+    /// a single account is connected.
     @discardableResult
-    func enqueue(_ operation: OutboxEntry.Operation) throws -> UUID
+    func enqueue(_ operation: OutboxEntry.Operation, accountID: String?) throws -> UUID
+}
+
+extension MutationOutbox {
+    @discardableResult
+    public func enqueue(_ operation: OutboxEntry.Operation) throws -> UUID {
+        try enqueue(operation, accountID: nil)
+    }
 }
 
 @MainActor public final class Outbox: MutationOutbox {
     private let documents: PluginDocumentStore
-    private let provider: MailProvider
+    /// Which provider transmits which account's entries. Every entry is routed
+    /// through this by its OWN `accountID` (see `provider(forEntryAccount:)`),
+    /// so a send composed on account A goes out through A's provider no matter
+    /// what else is attached.
+    private let router: MailProviderRouter
     private let maxAttempts: Int
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -41,10 +56,10 @@ import AinkradAppKit
     /// load-bearing rather than tidiness.
     private var isDraining = false
 
-    /// The account whose provider this outbox currently transmits through.
-    /// Set by `RavenRuntime` whenever a provider is attached. Entries are
-    /// stamped with it at `enqueue`, and an entry stamped with a *different*
-    /// account is never drained — see `OutboxEntry.accountID`.
+    /// The default account stamp for an `enqueue` that names none, and — in
+    /// the single-provider mode below — the account this outbox claims to
+    /// transmit for. An entry stamped with a *different* account is never
+    /// drained in that mode; see `provider(forEntryAccount:)`.
     public var accountID: String?
 
     /// Ids `drain()` saw returned successfully from the provider. This is the
@@ -67,10 +82,20 @@ import AinkradAppKit
     /// on-disk queue may be stale relative to memory.
     public private(set) var lastPersistenceError: String?
 
-    public init(documents: PluginDocumentStore, provider: MailProvider,
+    /// Single-provider form, kept for the one-account/test case: every entry
+    /// this outbox is willing to drain goes through `provider`, and an entry
+    /// stamped for an account other than `accountID` is refused (see
+    /// `provider(forEntryAccount:)`).
+    public convenience init(documents: PluginDocumentStore, provider: MailProvider,
+                            maxAttempts: Int = 5, accountID: String? = nil) {
+        self.init(documents: documents, router: MailProviderRouter(single: provider),
+                  maxAttempts: maxAttempts, accountID: accountID)
+    }
+
+    public init(documents: PluginDocumentStore, router: MailProviderRouter,
                 maxAttempts: Int = 5, accountID: String? = nil) {
         self.documents = documents
-        self.provider = provider
+        self.router = router
         self.maxAttempts = maxAttempts
         self.accountID = accountID
         encoder.dateEncodingStrategy = .iso8601
@@ -105,8 +130,32 @@ import AinkradAppKit
     public func pending() -> [OutboxEntry] {
         entries.filter {
             !$0.isDeadLettered && !$0.needsReview && $0.inFlightAt == nil
-                && ($0.accountID == nil || $0.accountID == accountID)
+                && provider(forEntryAccount: $0.accountID) != nil
         }
+    }
+
+    /// The provider that may transmit an entry stamped `entryAccountID`, or
+    /// `nil` if none may — which is what keeps the entry out of `pending()`.
+    ///
+    /// This is where "the entry's own account is authoritative" is implemented.
+    /// In the routed (real runtime) case the entry's account is looked up
+    /// directly, so several accounts drain side by side and each goes out
+    /// through its own provider. The `acceptsAnyAccount` case is the
+    /// single-provider convenience init: there the outbox *claims* one account,
+    /// and an entry stamped for a different one is refused outright rather than
+    /// transmitted from the wrong mailbox — the M0 backstop, preserved
+    /// verbatim, since a lone provider cannot tell the difference itself.
+    /// A `nil` stamp ("queued before any account was known") routes to the
+    /// claimed account if there is one, else to the sole provider if there is
+    /// exactly one, else nowhere — guessing between two mailboxes would be
+    /// worse than leaving it queued.
+    private func provider(forEntryAccount entryAccountID: String?) -> MailProvider? {
+        guard let entryAccountID else {
+            if let accountID, let claimed = router.provider(for: accountID) { return claimed }
+            return router.sole
+        }
+        if router.acceptsAnyAccount, let accountID, accountID != entryAccountID { return nil }
+        return router.provider(for: entryAccountID)
     }
 
     /// Entries handed to the provider by a drain that has not yet come back.
@@ -126,9 +175,19 @@ import AinkradAppKit
     /// this exact operation's fate (`SendAttempt`) can ask for it by id rather
     /// than diffing `pending()` — a diff cannot see an entry that a concurrent
     /// drain has already taken in-flight.
+    /// The stamp precedence is deliberate: a `.send`'s own
+    /// `OutgoingMessage.accountID` wins, then an explicitly passed
+    /// `accountID` (the thread's account, for a mutation), then this outbox's
+    /// default. A send therefore cannot be re-attributed to a different
+    /// mailbox by whatever happens to be attached when it is queued.
     @discardableResult
-    public func enqueue(_ operation: OutboxEntry.Operation) throws -> UUID {
-        let entry = OutboxEntry(operation: operation, accountID: accountID)
+    public func enqueue(_ operation: OutboxEntry.Operation,
+                        accountID explicit: String? = nil) throws -> UUID {
+        var stamp = explicit ?? accountID
+        if case .send(let message) = operation, let composed = message.accountID {
+            stamp = composed
+        }
+        let entry = OutboxEntry(operation: operation, accountID: stamp)
         entries.append(entry)
         persistRecordingFailure()
         return entry.id
@@ -183,6 +242,11 @@ import AinkradAppKit
         isDraining = true
         defer { isDraining = false }
         for entry in pending() {
+            // Resolved per entry, never once per pass: two accounts' entries
+            // can sit in the same queue and each must leave through its own
+            // provider. `pending()` already excluded anything unroutable, so
+            // this lookup is a repeat of that decision, not a new one.
+            guard let provider = provider(forEntryAccount: entry.accountID) else { continue }
             markInFlight(entry.id)
             do {
                 switch entry.operation {

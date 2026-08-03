@@ -52,7 +52,7 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
         return RavenMCPServer.make(appID: id) { operation, arguments in
             await RavenMCPOperations.run(operation, arguments: arguments,
                                         store: runtime.store, outbox: runtime.outbox,
-                                        provider: runtime.provider)
+                                        providers: runtime.providers)
         }.server
     }
 }

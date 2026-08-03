@@ -12,7 +12,7 @@ import Foundation
     /// Flip to `false` mid-test to prove a later SUCCESSFUL mutation clears a
     /// row error a previous failed one left behind.
     var shouldFail = true
-    func enqueue(_ operation: OutboxEntry.Operation) throws -> UUID {
+    func enqueue(_ operation: OutboxEntry.Operation, accountID: String?) throws -> UUID {
         attempts += 1
         if shouldFail { throw Failure() }
         return UUID()

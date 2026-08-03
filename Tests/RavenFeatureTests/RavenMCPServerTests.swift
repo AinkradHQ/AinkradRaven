@@ -130,7 +130,8 @@ import AinkradAppKit
 
         let result = await RavenMCPOperations.run(
             "search_mail", arguments: #"{"query":"invoice"}"#,
-            store: store, outbox: outbox, provider: provider)
+            store: store, outbox: outbox,
+            providers: MailProviderRouter(single: provider))
 
         #expect(result.isError == false)
         #expect(result.text.contains("synced window"))
@@ -153,7 +154,8 @@ import AinkradAppKit
 
         let result = await RavenMCPOperations.run(
             "search_mail", arguments: #"{"query":"invoice","include_archive":true}"#,
-            store: store, outbox: outbox, provider: provider)
+            store: store, outbox: outbox,
+            providers: MailProviderRouter(single: provider))
 
         #expect(result.isError == false)
         #expect(result.text.contains("archive-1"))
@@ -175,7 +177,8 @@ import AinkradAppKit
 
         let result = await RavenMCPOperations.run(
             "search_mail", arguments: #"{"query":"invoice","include_archive":true}"#,
-            store: store, outbox: outbox, provider: provider)
+            store: store, outbox: outbox,
+            providers: MailProviderRouter(single: provider))
 
         #expect(result.isError)
         #expect(result.text.contains("rate-limited"))

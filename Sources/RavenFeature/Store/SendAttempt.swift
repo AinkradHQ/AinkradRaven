@@ -103,13 +103,17 @@ public enum SendAttempt {
     /// only the body.
     private static func withSignature(_ message: OutgoingMessage, outbox: Outbox,
                                       store: MailStore) -> OutgoingMessage {
-        guard let accountID = outbox.accountID,
+        // The message's OWN account first: with several accounts connected,
+        // `outbox.accountID` is only a default stamp, so trusting it would
+        // sign mail from account A with account B's signature.
+        guard let accountID = message.accountID ?? outbox.accountID,
               let account = store.accounts().first(where: { $0.id == accountID }),
               !account.signature.isEmpty else { return message }
         return OutgoingMessage(to: message.to, cc: message.cc, subject: message.subject,
                                bodyText: message.bodyText + sigdash + account.signature,
                                inReplyToMessageID: message.inReplyToMessageID,
-                               threadID: message.threadID)
+                               threadID: message.threadID,
+                               accountID: message.accountID)
     }
 
     /// Shared wording, so the composer banner and the agent's tool result say
