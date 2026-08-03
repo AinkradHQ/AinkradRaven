@@ -134,10 +134,9 @@ public struct RavenSettingsView: View {
     }
 }
 
-/// The transparency controls on the fallback surface. The catalog expresses
-/// these as a `.slider` and a `.select`; this is the hand-built equivalent, and
-/// it exists so the fallback does not ship a Raven whose translucency cannot be
-/// changed at all.
+/// The transparency control on the fallback surface. The catalog expresses this
+/// as a `.slider`; this is the hand-built equivalent, and it exists so the
+/// fallback does not ship a Raven whose translucency cannot be changed at all.
 struct TransparencySettingsGroup: View {
     let runtime: RavenRuntime
 
@@ -147,7 +146,7 @@ struct TransparencySettingsGroup: View {
             title: "Transparency",
             hint: "How much of the workspace shows through Raven's panes. The slider stops "
                 + "short of fully clear on purpose — past that point no text colour stays "
-                + "readable. Blur is how the workspace behind the panes is sampled."
+                + "readable."
         ) {
             VStack(alignment: .leading, spacing: AinkradSpacing.md) {
                 AinkradFormRow(title: "Surface opacity",
@@ -156,14 +155,6 @@ struct TransparencySettingsGroup: View {
                         value: Binding(get: { store.appearance.surfaceOpacity },
                                        set: { store.appearance.rawSurfaceOpacity = $0 }),
                         in: RavenAppearance.legibleRange)
-                }
-                AinkradFormRow(title: "Blur", help: "The material behind Raven's panes.",
-                              controlWidth: 260) {
-                    AinkradSegmentedPicker(
-                        items: RavenAppearance.Blur.allCases,
-                        selection: Binding(get: { store.appearance.blur },
-                                           set: { store.appearance.blur = $0 }),
-                        label: { $0.title })
                 }
             }
         }

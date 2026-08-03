@@ -34,12 +34,19 @@ private struct RavenTranslucentModalModifier<ModalContent: View>: ViewModifier {
     @ViewBuilder var modalContent: () -> ModalContent
 
     @Environment(\.ainkradReduceMotion) private var reduceMotion
+    @Environment(\.ainkradTheme) private var theme
 
     func body(content: Content) -> some View {
         content.overlay {
             if isPresented {
                 ZStack {
-                    VisualEffectBlur(level: appearance.blur.level, blendingMode: .withinWindow)
+                    // The one `VisualEffectBlur` left in Raven, and it is not a
+                    // surface: it blurs RAVEN'S OWN mail list behind the scrim
+                    // so the composer reads as a separate plane. That is the
+                    // kit modifier's behaviour and the reason a scrim exists at
+                    // all. Fixed at `.panel` — with no per-surface blur left
+                    // there is nothing for a user setting to mean here.
+                    VisualEffectBlur(level: .panel, blendingMode: .withinWindow)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(0.6)
                     // The scrim. Unchanged from the kit's 0.45 — now named as
@@ -59,16 +66,27 @@ private struct RavenTranslucentModalModifier<ModalContent: View>: ViewModifier {
                     modalContent()
                         .frame(maxWidth: contentWidth)
                         .padding(AinkradSpacing.lg)
-                        // `modalFillOpacity`, not `surfaceOpacity`: the panel is
-                        // the THIRD layer here (blur, scrim, panel), and
-                        // painting the pane's opacity over an existing 0.45
-                        // scrim composited to ~0.85 — the "messed up", flat
-                        // composer. This is the fill that makes the whole stack
+                        // `modalFillOpacity`, not `surfaceOpacity`: the panel
+                        // sits over the scrim, and painting the pane's opacity
+                        // over an existing 0.45 scrim composited to ~0.85 — the
+                        // "messed up", flat composer. This fill makes the stack
                         // land on the user's setting plus one modal lift. See
                         // `RavenAppearance.modalFillOpacity`.
-                        .ainkradPanel(blur: appearance.blur.level,
-                                      backgroundOpacity: appearance.modalFillOpacity,
-                                      showsBrackets: true)
+                        //
+                        // `ravenSurface`-style finish rather than
+                        // `.ainkradPanel`, for the same reason every other Raven
+                        // surface changed: the panel's own `VisualEffectBlur`
+                        // would be a THIRD blur over an already-blurred scrim
+                        // over the host's already-blurred backdrop. Brackets are
+                        // kept — they are the modal's own signature.
+                        .background(theme.background.opacity(appearance.modalFillOpacity))
+                        .clipShape(ChamferShape(cut: AinkradRadius.panel))
+                        .overlay(
+                            ChamferShape(cut: AinkradRadius.panel)
+                                .strokeBorder(theme.accentSecondary.opacity(0.4), lineWidth: 1)
+                        )
+                        .cornerBrackets()
+                        .ainkradPanelGlow()
                         .transition(
                             reduceMotion
                                 ? .opacity

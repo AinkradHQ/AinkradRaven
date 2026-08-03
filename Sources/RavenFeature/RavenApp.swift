@@ -58,9 +58,13 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
     /// thing Raven's translucency was meant to reveal.
     ///
     /// The colour is the theme background at the user's `surfaceOpacity` —
-    /// literally the same expression `ravenSurface` paints over its blur (see
-    /// `RavenSurface`), so header and pane are the same fill by construction
-    /// rather than by two numbers kept in step by hand.
+    /// literally the same expression `ravenSurface` paints (see `RavenSurface`),
+    /// so header and pane are one fill by construction rather than two numbers
+    /// kept in step by hand. This is exactly what `RuneApp.chromeFill` does:
+    /// its own background colour at its own opacity, no compensation factor and
+    /// no second number. It can be that simple because neither app paints a
+    /// blur of its own; the header being flat is then not a mismatch, because
+    /// the surface is flat too.
     ///
     /// `static` with only a `HostServices` to work from is not a problem: the
     /// opacity lives in `RavenRuntime.appearanceStore`, and the per-host
@@ -74,12 +78,8 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
         // `theme.tokens` (not the `HostTheme` wrapper) is the colour snapshot,
         // and reading it here also means a theme change repaints the header —
         // `HostTheme` is `@Observable` and the host calls this from its `body`.
-        // `headerFillOpacity`, not `surfaceOpacity`: the host paints this as a
-        // flat colour while a pane paints the same tint over a light-scattering
-        // blur, so the identical alpha reads heavier here. See
-        // `RavenAppearance.headerFillOpacity`.
         host.theme.tokens.background
-            .opacity(runtime(host: host).appearanceStore.appearance.headerFillOpacity)
+            .opacity(runtime(host: host).appearanceStore.appearance.surfaceOpacity)
     }
 
     /// The fallback the protocol describes, for a host that does not consume

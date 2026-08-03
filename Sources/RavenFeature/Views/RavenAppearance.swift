@@ -2,51 +2,36 @@ import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
 
-/// How translucent Raven's own surfaces are, and how the blur behind them is
-/// sampled. User-controlled from Settings (the Transparency group).
+/// How translucent Raven's own surfaces are. One number, user-controlled from
+/// Settings (the Transparency group).
 ///
 /// Why this exists at all: every Raven surface used to take
 /// `AinkradPanel`'s default `backgroundOpacity` of 0.94, which is opaque
 /// enough that the pane read as a flat dark rectangle pasted on top of the
-/// host's translucent island rather than as part of it. The blur was always
-/// there — it simply had nothing to show through 94% of the theme background.
+/// host's translucent island rather than as part of it. The host's backdrop was
+/// always there — it simply had nothing to show through 94% of the theme
+/// background.
 /// So the fix is not "add blur", it is "stop painting over it", and how far to
 /// stop is a taste question, which is why it is a setting rather than a new
 /// hardcoded number.
 ///
-/// The Terminal pane is the precedent for a user-set surface opacity, and this
-/// follows it: one opacity value plus a blur choice, persisted as a document.
+/// Rune is the precedent, and Raven now follows it exactly: one opacity value,
+/// persisted as a document, painted as one flat fill. Rune's terminal sets a
+/// translucent background colour and a non-opaque layer and adds NO blur of its
+/// own (`TerminalContainerView.apply`), because the host already renders the
+/// blurred sky+island backdrop behind any pane whose `chromeFill` is
+/// sub-opaque. Raven used to route every surface through `AinkradPanel`, which
+/// draws its own `VisualEffectBlur` plus a tint — re-blurring an already-blurred
+/// backdrop and adding `.hudWindow`'s light scattering, so the pane body read
+/// lighter than the flat title bar. There is nothing left to choose a blur
+/// material for, which is why there is no longer a blur setting.
 public struct RavenAppearance: Codable, Equatable, Sendable {
-    /// Which `NSVisualEffectView` material backs Raven's surfaces. Stored as a
-    /// string case rather than the kit's `AinkradBlurLevel` because that type
-    /// is not `Codable` — it wraps an AppKit material.
-    public enum Blur: String, Codable, Sendable, CaseIterable {
-        /// `AinkradBlurLevel.panel` — the standard in-app panel material.
-        case panel
-        /// `AinkradBlurLevel.hud` — a heavier, more diffuse full-screen material.
-        case deep
-
-        public var level: AinkradBlurLevel {
-            switch self {
-            case .panel: return .panel
-            case .deep:  return .hud
-            }
-        }
-
-        public var title: String {
-            switch self {
-            case .panel: return "Panel"
-            case .deep:  return "Deep"
-            }
-        }
-    }
-
-    /// How much of the theme background is painted over the blur, 0-1.
+    /// How much of the theme background a surface paints over whatever the host
+    /// has put behind it, 0-1.
     ///
     /// Always read back through `surfaceOpacity`'s clamp, never used raw — see
     /// `legibleRange` for why the floor is not zero.
     public var rawSurfaceOpacity: Double
-    public var blur: Blur
 
     /// The opacity range the UI is allowed to offer, and the clamp every read
     /// passes through.
@@ -61,9 +46,10 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     /// behind every body and quoted-text run, and `bodyTextOpacity` drives the
     /// glyphs themselves to full strength as the surface thins. With the halo
     /// carrying the contrast, 0.30 is where body text stops being comfortable
-    /// — the remaining 30% of theme background plus the blur is still enough
+    /// — the remaining 30% of theme background is still enough
     /// to keep a bright document behind the window from bleeding through as
-    /// texture inside the glyphs. Below that the halo starts reading as an
+    /// texture inside the glyphs (the host's own backdrop blur softens it
+    /// further before it ever reaches this fill). Below that the halo starts reading as an
     /// outline rather than as a shadow, which is a legibility cliff as well as
     /// an ugly one, so that is the floor.
     ///
@@ -78,7 +64,7 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     /// to find a setting has not fixed it.
     ///
     /// 0.72 was the previous value and was wrong twice over: it painted 72% of
-    /// a near-black theme background over the blur, and message cards then
+    /// a near-black theme background over the backdrop, and message cards then
     /// stacked their own fill on top of that for an effective ~85%. Sitting
     /// just above the new floor rather than in the middle of the range is
     /// deliberate — with the halo doing the legibility work there is no reason
@@ -86,12 +72,24 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     /// exactly the ones this governs.
     public static let defaultSurfaceOpacity: Double = 0.42
 
-    public static let `default` = RavenAppearance(
-        rawSurfaceOpacity: defaultSurfaceOpacity, blur: .panel)
+    public static let `default` = RavenAppearance(rawSurfaceOpacity: defaultSurfaceOpacity)
 
-    public init(rawSurfaceOpacity: Double = defaultSurfaceOpacity, blur: Blur = .panel) {
+    public init(rawSurfaceOpacity: Double = defaultSurfaceOpacity) {
         self.rawSurfaceOpacity = rawSurfaceOpacity
-        self.blur = blur
+    }
+
+    private enum CodingKeys: String, CodingKey { case rawSurfaceOpacity }
+
+    /// Decoding is written out rather than synthesized so it tolerates BOTH
+    /// shapes of the persisted document: the old one, which also carried a
+    /// `blur` string (ignored — unknown keys are skipped), and any document
+    /// missing `rawSurfaceOpacity` (falls back to the default rather than
+    /// throwing). There is a real connected account with a stored appearance;
+    /// a decode failure there would silently reset the user's setting.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.rawSurfaceOpacity = try container.decodeIfPresent(
+            Double.self, forKey: .rawSurfaceOpacity) ?? Self.defaultSurfaceOpacity
     }
 
     /// The clamped opacity every surface actually uses.
@@ -127,8 +125,8 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     /// law `1-(1-a)(1-b)`.
     ///
     /// This exists because the previous version of this file did not have it.
-    /// The thread pane painted `surfaceOpacity` of the theme background over
-    /// the blur, and a message card then painted its own fill over *that*, and
+    /// The thread pane painted `surfaceOpacity` of the theme background, and a
+    /// message card then painted its own fill over *that*, and
     /// the two numbers were picked independently. At the old default the total
     /// was `1-(1-0.72)(1-0.45·0.72)` ≈ 0.85 — the solid slab in the
     /// screenshot. Two translucent layers are not "a bit more translucent than
@@ -166,36 +164,13 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
         isRead ? Self.readCardLift : Self.unreadCardLift
     }
 
-    /// How much of the pane's tint the pane title bar should paint.
-    ///
-    /// The header cannot simply reuse `surfaceOpacity`, and the reason is in
-    /// the host: `BlockView.headerBackground` renders `chromeFill` as a plain
-    /// `Color`, whereas `AinkradPanel` renders `VisualEffectBlur` *and then*
-    /// the same tint over it. The blur is `.hudWindow`, a light-scattering
-    /// material, so the pane's composite comes out visibly lighter than the
-    /// identical tint painted flat. Handing the header `surfaceOpacity`
-    /// therefore produces a header that is the same *colour* as the pane and
-    /// reads distinctly heavier — which is exactly what it did.
-    ///
-    /// This scales the header's tint down to approximate the material's lift,
-    /// so the two read as one surface. It is a calibration, not a derivation:
-    /// the real fix is a `VisualEffectBlur` behind `headerBackground` in the
-    /// host, which would let this return `surfaceOpacity` unchanged and would
-    /// fix every translucent pane at once, not just Raven's. Until then this
-    /// keeps Raven's own chrome coherent.
-    ///
-    /// Fully opaque stays fully opaque: with no translucency there is no
-    /// material lift to compensate for, and the host skips the backdrop
-    /// entirely.
-    public var headerFillOpacity: Double {
-        surfaceOpacity >= 1 ? 1 : surfaceOpacity * Self.headerMaterialCompensation
-    }
-
-    /// The share of the pane tint the flat header keeps. Chosen so a
-    /// mid-range surface reads level with its pane rather than as a bar on
-    /// top of it; it is a perceptual match, so it is a constant with a name
-    /// rather than a number buried in an expression.
-    public static let headerMaterialCompensation: Double = 0.55
+    /// There is deliberately no separate header opacity. `RavenApp.chromeFill`
+    /// returns `background.opacity(surfaceOpacity)` — the same expression a
+    /// surface paints — so the host's flat `BlockView.headerBackground` and
+    /// Raven's flat surface are one fill by construction, exactly as Rune's
+    /// are. The `headerFillOpacity` / `headerMaterialCompensation` pair that
+    /// used to live here existed only to scale the header down to meet a
+    /// blurred body; with the blur gone there is nothing to compensate for.
 
     /// What a card's region composites to overall: the pane's opacity plus the
     /// card's lift, capped at fully opaque. This is the number the user's
@@ -209,10 +184,10 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     /// equals `cardTargetOpacity(isRead:)` by construction, which is the whole
     /// point and is what `RavenAppearanceTests` pins.
     ///
-    /// Cards deliberately do NOT get their own `VisualEffectBlur`. A blur per
-    /// card would mean one `NSVisualEffectView` per message in a `LazyVStack`
-    /// — a real cost on a long thread — and it is not needed: the card sits on
-    /// a pane that is already blurred.
+    /// Nothing in Raven paints a blur, cards least of all: they sit on a flat
+    /// translucent pane over the host's already-blurred backdrop, so this
+    /// arithmetic is now literally what the screen composites rather than an
+    /// approximation of it plus a material's lift.
     public func cardFillOpacity(isRead: Bool) -> Double {
         Self.layer(over: surfaceOpacity, toReach: cardTargetOpacity(isRead: isRead))
     }
@@ -296,11 +271,34 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
 
 // MARK: - Applying it
 
+/// The Ainkrad panel finish MINUS the blur: theme background at the user's
+/// opacity, chamfered clip, accent edge, panel glow.
+///
+/// This is `AinkradPanel`'s body with its `VisualEffectBlur` removed, and the
+/// removal is the whole point rather than an optimisation. The host already
+/// renders one shared blurred sky+island backdrop behind any pane whose
+/// `chromeFill` is sub-opaque; a `VisualEffectBlur(.withinWindow)` here
+/// re-blurs that and, because `.hudWindow` scatters light, lifts the result —
+/// which is what made the pane body read lighter than its flat title bar. Rune
+/// paints one flat translucent fill for the same reason (see
+/// `TerminalContainerView`: "The layer must be non-opaque", and it adds no blur
+/// of its own).
+///
+/// At full opacity there is nothing behind to sample either, so there is one
+/// path, not two.
 private struct RavenSurface: ViewModifier {
     let appearance: RavenAppearance
+    @Environment(\.ainkradTheme) private var theme
+
     func body(content: Content) -> some View {
-        content.ainkradPanel(blur: appearance.blur.level,
-                             backgroundOpacity: appearance.surfaceOpacity)
+        content
+            .background(theme.background.opacity(appearance.surfaceOpacity))
+            .clipShape(ChamferShape(cut: AinkradRadius.panel))
+            .overlay(
+                ChamferShape(cut: AinkradRadius.panel)
+                    .strokeBorder(theme.accentSecondary.opacity(0.4), lineWidth: 1)
+            )
+            .ainkradPanelGlow()
     }
 }
 
@@ -321,14 +319,17 @@ private struct RavenLegibleText: ViewModifier {
 }
 
 public extension View {
-    /// The Raven pane finish: the kit's `AinkradPanel`, at the user's chosen
-    /// opacity and blur instead of the kit's opaque default.
+    /// The Raven pane finish: a flat translucent theme fill at the user's
+    /// chosen opacity, with the kit's chamfer, accent edge and glow. No blur —
+    /// see `RavenSurface`.
     func ravenSurface(_ appearance: RavenAppearance) -> some View {
         modifier(RavenSurface(appearance: appearance))
     }
 
     /// Keeps body text readable once the surface under it is translucent. A
-    /// no-op at full opacity.
+    /// no-op at full opacity, and it matters MORE now than it did: a flat 0.42
+    /// fill over an arbitrary host backdrop is precisely the case it exists
+    /// for.
     func ravenLegibleText(_ appearance: RavenAppearance) -> some View {
         modifier(RavenLegibleText(appearance: appearance))
     }

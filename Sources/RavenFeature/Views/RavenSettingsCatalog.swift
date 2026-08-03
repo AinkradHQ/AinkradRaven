@@ -326,8 +326,9 @@ enum RavenSettingsCatalog {
                 + "pane, message cards and composer. The slider stops short of fully clear on "
                 + "purpose: past that point whatever is behind the window dominates and no text "
                 + "colour stays readable, so body text would become unreadable at a setting you "
-                + "then could not see well enough to undo. Blur is how the workspace behind the "
-                + "panes is sampled — Deep is heavier and more diffuse than Panel.",
+                + "then could not see well enough to undo. Raven paints one flat fill and lets "
+                + "the workspace behind the window show through it; the blur is the host's, "
+                + "which is why there is no blur choice here.",
             fields: [
                 SettingsField(
                     path: root.appending("opacity"),
@@ -346,25 +347,7 @@ enum RavenSettingsCatalog {
                     },
                     reset: {
                         store.appearance.rawSurfaceOpacity = RavenAppearance.defaultSurfaceOpacity
-                    }),
-                SettingsField(
-                    path: root.appending("blur"),
-                    label: "Blur",
-                    help: "The material behind Raven's panes.",
-                    keywords: ["blur", "material", "vibrancy", "appearance"],
-                    kind: .select(
-                        options: RavenAppearance.Blur.allCases.map {
-                            SettingsOption(id: $0.rawValue, title: $0.title)
-                        },
-                        selection: Binding(
-                            get: { store.appearance.blur.rawValue },
-                            set: {
-                                guard let blur = RavenAppearance.Blur(rawValue: $0) else { return }
-                                store.appearance.blur = blur
-                            })),
-                    defaultDescription: RavenAppearance.default.blur.title,
-                    isModified: { store.appearance.blur != RavenAppearance.default.blur },
-                    reset: { store.appearance.blur = RavenAppearance.default.blur })
+                    })
             ])
     }
 

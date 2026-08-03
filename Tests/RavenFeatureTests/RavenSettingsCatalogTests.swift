@@ -119,7 +119,6 @@ import AinkradAppKit
             }
         }
         #expect(kindName("Surface opacity") == "slider")
-        #expect(kindName("Blur") == "select")
         #expect(kindName("Undo window") == "slider")
     }
 

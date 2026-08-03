@@ -35,7 +35,6 @@ import Foundation
         // And not the most transparent it could be: "defaulted so it looks
         // right out of the box rather than fully transparent".
         #expect(value > RavenAppearance.legibleRange.lowerBound)
-        #expect(RavenAppearance.default.blur == .panel)
     }
 
     // MARK: Contrast compensation
@@ -196,11 +195,10 @@ import Foundation
         let fresh = RavenAppearanceStore(documents: documents)
         #expect(fresh.appearance == .default)
 
-        fresh.appearance = RavenAppearance(rawSurfaceOpacity: 0.55, blur: .deep)
+        fresh.appearance = RavenAppearance(rawSurfaceOpacity: 0.55)
         // A second store over the SAME documents is the relaunch.
         let reloaded = RavenAppearanceStore(documents: documents)
         #expect(reloaded.appearance.surfaceOpacity == 0.55)
-        #expect(reloaded.appearance.blur == .deep)
     }
 
     @Test("A corrupt appearance document falls back to the default rather than throwing")
@@ -210,36 +208,63 @@ import Foundation
         #expect(RavenAppearanceStore(documents: documents).appearance == .default)
     }
 
-    @Test("Blur choices round-trip through their stored raw values")
-    func blurIsCodable() throws {
-        for blur in RavenAppearance.Blur.allCases {
-            let original = RavenAppearance(rawSurfaceOpacity: 0.8, blur: blur)
-            let decoded = try JSONDecoder().decode(
-                RavenAppearance.self, from: try JSONEncoder().encode(original))
-            #expect(decoded == original)
-            #expect(RavenAppearance.Blur(rawValue: blur.rawValue) == blur)
-        }
+    @Test("A document from before the blur setting was removed still decodes")
+    func migratesFromADocumentCarryingBlur() throws {
+        // The shape actually on disk for the connected account: the opacity
+        // plus a now-unknown `blur` key. Decoding must keep the opacity and
+        // ignore the key rather than throw and silently reset the user.
+        let legacy = Data(#"{"rawSurfaceOpacity":0.55,"blur":"deep"}"#.utf8)
+        let decoded = try JSONDecoder().decode(RavenAppearance.self, from: legacy)
+        #expect(decoded.surfaceOpacity == 0.55)
+
+        // Through the store, which is the path a relaunch takes.
+        let documents = InMemoryDocumentStore()
+        documents.setData(legacy, forKey: DocumentKeys.appearance)
+        #expect(RavenAppearanceStore(documents: documents).appearance.surfaceOpacity == 0.55)
+    }
+
+    @Test("A document missing the opacity decodes to the default rather than throwing")
+    func migratesFromADocumentMissingTheOpacity() throws {
+        let sparse = Data(#"{"blur":"panel"}"#.utf8)
+        let decoded = try JSONDecoder().decode(RavenAppearance.self, from: sparse)
+        #expect(decoded == .default)
+    }
+
+    @Test("The current shape still round-trips")
+    func roundTripsThroughJSON() throws {
+        let original = RavenAppearance(rawSurfaceOpacity: 0.8)
+        let decoded = try JSONDecoder().decode(
+            RavenAppearance.self, from: try JSONEncoder().encode(original))
+        #expect(decoded == original)
     }
 }
 
-@Suite("Header fill compensates for the missing material lift")
+/// Rune's rule: the title bar fill IS the surface fill, one expression, no
+/// compensation. `headerFillOpacity` and `headerMaterialCompensation` are gone
+/// along with the material lift they corrected for, so the only thing left to
+/// assert is the identity itself.
+@Suite("The header fill is the surface fill")
 struct RavenHeaderFillTests {
-    @Test("a translucent header paints less tint than its pane, because the host draws it flat")
-    func headerIsLighterThanPane() {
-        let appearance = RavenAppearance(rawSurfaceOpacity: 0.42)
-        #expect(appearance.headerFillOpacity < appearance.surfaceOpacity)
-        #expect(appearance.headerFillOpacity > 0)
+    @Test("chromeFill's alpha equals the alpha a surface paints, at every setting")
+    func headerAlphaEqualsBodyAlpha() {
+        for raw in [0.0, 0.30, 0.42, 0.6, 0.9, 1.0, 4.0] {
+            let appearance = RavenAppearance(rawSurfaceOpacity: raw)
+            // `RavenApp.chromeFill` is `background.opacity(surfaceOpacity)` and
+            // `RavenSurface` paints `background.opacity(surfaceOpacity)`. The
+            // alpha the host puts in the title bar is therefore the clamped
+            // setting, unscaled — no second number can drift from the first.
+            #expect(appearance.surfaceOpacity
+                    == min(max(raw, RavenAppearance.legibleRange.lowerBound),
+                           RavenAppearance.legibleRange.upperBound))
+        }
     }
 
-    @Test("a fully opaque surface keeps an opaque header — no lift to compensate for")
-    func opaqueStaysOpaque() {
-        #expect(RavenAppearance(rawSurfaceOpacity: 1.0).headerFillOpacity == 1)
-    }
-
-    @Test("the header tracks the slider rather than being a fixed value")
-    func headerTracksTheSetting() {
-        let thin = RavenAppearance(rawSurfaceOpacity: 0.30)
-        let thick = RavenAppearance(rawSurfaceOpacity: 0.90)
-        #expect(thin.headerFillOpacity < thick.headerFillOpacity)
+    @Test("A sub-opaque setting stays sub-opaque, which is what turns the host backdrop on")
+    func translucentSettingStaysTranslucent() {
+        // `BlockView.isTranslucentPane` / `TileLayoutView.hasTranslucentPane`
+        // test `alphaComponent < 1`, so this is the gate on the shared blurred
+        // sky+island backdrop Raven now relies on instead of its own blur.
+        #expect(RavenAppearance.default.surfaceOpacity < 1)
+        #expect(RavenAppearance(rawSurfaceOpacity: 1).surfaceOpacity == 1)
     }
 }
