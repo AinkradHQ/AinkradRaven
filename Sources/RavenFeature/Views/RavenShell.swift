@@ -55,6 +55,19 @@ public struct RavenShell: View {
         GeometryReader { proxy in
             split(availableWidth: proxy.size.width)
         }
+        // Sage's `open_compose` action lands a draft in the publisher; raising
+        // the overlay is the shell's job because the shell owns `composing`.
+        // `.new`, not a reply: an agent-drafted message carries its own
+        // recipients and body, and stamping it onto a thread it did not name
+        // would file it into a conversation nobody asked for. `ComposeSurface`
+        // consumes the request in `prefillIfNeeded`.
+        //
+        // Opening the composer is the whole of it — nothing here queues or
+        // sends. The user reviews the draft and presses Send themselves.
+        .onChange(of: ComposeDraftPublisher.shared.requestedPrefill) { _, requested in
+            guard requested != nil, composing == nil else { return }
+            composing = .new
+        }
     }
 
     private func split(availableWidth: CGFloat) -> some View {
@@ -114,6 +127,16 @@ public struct RavenShell: View {
                     // short window (Raven runs in the host's overlay
                     // presentation as well as a full pane).
                     .frame(maxHeight: Self.composeHeight)
+                    // Mounted HERE, not inside `ComposeSurface`, and that is
+                    // load-bearing: `.ainkradToastHost()` re-injects its own
+                    // `AinkradToastCenter` for its content, so the view that
+                    // mounts it reads the environment DEFAULT (a fresh instance
+                    // per read) and would call `show(_:)` on a center nothing
+                    // renders. Wrapping the composer makes it the content.
+                    //
+                    // Scoped to the composer's bounds so send feedback appears
+                    // over the message it is about, not in the window corner.
+                    .ainkradToastHost()
             }
         }
         // LAST in the chain, deliberately. `.ravenTranslucentModal`'s content is

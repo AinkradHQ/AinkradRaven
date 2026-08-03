@@ -70,6 +70,7 @@ public enum ComposeContext: Equatable, Sendable {
         return OutgoingMessage(
             to: message.to,
             cc: message.cc,
+            bcc: message.bcc,
             subject: message.subject,
             bodyText: message.bodyText,
             inReplyToMessageID: threads ? thread.lastMessageRFC822ID : nil,

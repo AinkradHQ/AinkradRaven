@@ -149,11 +149,22 @@ public enum SendAttempt {
         guard let accountID = message.accountID ?? outbox.accountID,
               let account = store.accounts().first(where: { $0.id == accountID }),
               !account.signature.isEmpty else { return message }
-        return OutgoingMessage(to: message.to, cc: message.cc, subject: message.subject,
+        // Every field is carried through explicitly, and that is the point of
+        // the long call: this rebuild used to omit `attachments` and
+        // `icsReply`, so signing a message SILENTLY DROPPED its attachments and
+        // any calendar RSVP part — for every account with a non-empty
+        // signature, which is the normal configuration. Adding `bcc` to the
+        // omitted set would have made the same mistake in the field where it
+        // is least visible: nobody can tell from the received copy that a
+        // blind recipient was dropped.
+        return OutgoingMessage(to: message.to, cc: message.cc, bcc: message.bcc,
+                               subject: message.subject,
                                bodyText: message.bodyText + sigdash + account.signature,
                                inReplyToMessageID: message.inReplyToMessageID,
                                threadID: message.threadID,
-                               accountID: message.accountID)
+                               accountID: message.accountID,
+                               attachments: message.attachments,
+                               icsReply: message.icsReply)
     }
 
     /// Shared wording, so the composer banner and the agent's tool result say

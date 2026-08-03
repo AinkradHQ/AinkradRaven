@@ -221,6 +221,7 @@ public enum RavenMCPOperations {
             let draft = OutgoingMessage(
                 to: to,
                 cc: (args["cc"] as? [String] ?? []).compactMap { MailAddress(rfc5322: $0) },
+                bcc: (args["bcc"] as? [String] ?? []).compactMap { MailAddress(rfc5322: $0) },
                 subject: args["subject"] as? String ?? "",
                 bodyText: args["body"] as? String ?? "",
                 inReplyToMessageID: args["in_reply_to"] as? String,

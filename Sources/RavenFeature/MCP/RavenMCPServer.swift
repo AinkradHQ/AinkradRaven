@@ -102,6 +102,9 @@ public enum RavenMCPServer {
                     + "several accounts connected and no thread_id, account_id is required.",
              schemaJSON: schema([("to", "array", "Recipient addresses."),
                                  ("cc", "array", "CC addresses."),
+                                 ("bcc", "array",
+                                  "Blind-copy addresses. These recipients receive the message "
+                                  + "and are not visible to the To/Cc recipients."),
                                  ("subject", "string", "Subject line."),
                                  ("body", "string", "Plain-text body."),
                                  ("in_reply_to", "string", "RFC822 message id being replied to."),

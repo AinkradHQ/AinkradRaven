@@ -12,8 +12,16 @@ struct RecipientChipField: View {
     let label: String
     @Binding var chips: [RecipientChip]
     let candidates: [RecipientSuggestions.Candidate]
+    /// "Reply only to this person" — replaces the whole field with the one
+    /// chip. Owned by the caller because on a reply-all it also has to clear
+    /// Cc/Bcc, which this field cannot see. `nil` where narrowing makes no
+    /// sense (a brand-new message's To).
+    var onIsolate: ((RecipientChip) -> Void)?
 
     @State private var typed = ""
+    /// Which chip's detail popover is open, by index. One at a time — a
+    /// recipient list with three popovers up is unreadable.
+    @State private var detailIndex: Int?
     @FocusState private var isFocused: Bool
 
     @Environment(\.ainkradTheme) private var theme
@@ -37,6 +45,22 @@ struct RecipientChipField: View {
                         AinkradChip(label: chip.displayLabel,
                                    systemName: chip.isValid ? nil : "exclamationmark.triangle",
                                    onRemove: { chips.remove(at: index) })
+                            .onTapGesture { detailIndex = index }
+                            .ainkradContextMenu(menuItems(for: chip, at: index))
+                            // The kit's anchored HUD popover, not the system
+                            // `.popover`: a recipient's full address and how
+                            // often this account has mailed them is a detail
+                            // ABOUT the chip, and a chip is too small to carry
+                            // it inline without wrecking the wrap layout.
+                            // The index guard is not belt-and-braces: removing a
+                            // chip shifts every index after it, so a stale
+                            // `detailIndex` would open a popover for whichever
+                            // recipient slid into that slot.
+                            .ainkradPopover(isPresented: Binding(
+                                get: { detailIndex == index && chips.indices.contains(index) },
+                                set: { if !$0, detailIndex == index { detailIndex = nil } })) {
+                                RecipientDetail(chip: chip, candidates: candidates)
+                            }
                     }
                     TextField("", text: $typed)
                         .textFieldStyle(.plain)
@@ -61,6 +85,21 @@ struct RecipientChipField: View {
                         }
                 }
             }
+            // **Deliberately inline, and deliberately NOT `.ainkradPopover`.**
+            //
+            // The kit's popover is the right control for the chip detail above
+            // — one discrete, click-triggered panel. It is the wrong one here:
+            // it is backed by `AinkradFloatingPanel`, a real borderless
+            // `NSPanel`, and this list appears, re-filters and disappears on
+            // EVERY KEYSTROKE. Creating and tearing down a window per character,
+            // with dismissal wired to outside-click and to the parent window's
+            // key state, is a focus hazard on the one control where losing focus
+            // mid-word loses the recipient being typed.
+            //
+            // The inline list already has the two properties the popover would
+            // have been adopted for: it is on `ravenSurface`, so it obeys the
+            // user's transparency setting and adds no second blur, and it is a
+            // sibling of the field so it cannot outlive it.
             if !suggestions.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(suggestions.indices, id: \.self) { index in
@@ -97,6 +136,31 @@ struct RecipientChipField: View {
         return "\(name) <\(address.email)>"
     }
 
+    /// The chip's right-click menu. Copy is first because it is the only
+    /// non-mutating item; "reply only to this person" is offered ONLY when the
+    /// caller supplied a way to narrow (a reply-all), since on a new message it
+    /// would just be "delete everyone else" wearing a friendlier label.
+    private func menuItems(for chip: RecipientChip, at index: Int) -> [AinkradMenuItem] {
+        var items = [
+            AinkradMenuItem(title: "Copy Address", systemName: "doc.on.doc") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(chip.address?.email ?? chip.raw, forType: .string)
+            },
+        ]
+        if let onIsolate, chip.isValid {
+            items.append(AinkradMenuItem(title: "Reply Only To This Person",
+                                         systemName: "arrowshape.turn.up.left") {
+                onIsolate(chip)
+            })
+        }
+        items.append(AinkradMenuItem(title: "Remove", systemName: "xmark",
+                                     isDestructive: true) {
+            guard chips.indices.contains(index) else { return }
+            chips.remove(at: index)
+        })
+        return items
+    }
+
     private func commit() {
         let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -105,10 +169,68 @@ struct RecipientChipField: View {
     }
 }
 
-/// Minimal label + content wrapper matching the visual weight of
-/// `AinkradTextField` without requiring a second, chip-aware component in
-/// AinkradAppKitUI — Compose is the only caller that needs a labeled chip
-/// field today.
+/// What a chip is actually addressing, and how well the account knows them.
+///
+/// Shown in an `AinkradPopover` on click. The reason this exists at all: a chip
+/// shows `displayLabel`, which for a named contact is the NAME — so the address
+/// mail will actually go to is invisible on exactly the chips most likely to be
+/// wrong. "Ahmed" could be either of two Ahmeds.
+struct RecipientDetail: View {
+    let chip: RecipientChip
+    let candidates: [RecipientSuggestions.Candidate]
+
+    @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradTypography) private var typo
+
+    private var candidate: RecipientSuggestions.Candidate? {
+        guard let email = chip.address?.email.lowercased() else { return nil }
+        return candidates.first { $0.address.email.lowercased() == email }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
+            if let name = chip.address?.name, !name.isEmpty {
+                Text(name)
+                    .font(AinkradFontResolver.font(.body, weight: .semibold, typography: typo))
+                    .foregroundStyle(theme.foreground)
+            }
+            Text(chip.address?.email ?? chip.raw)
+                .font(AinkradFontResolver.font(.caption, typography: typo))
+                .foregroundStyle(theme.foreground.opacity(0.8))
+                .textSelection(.enabled)
+            if !chip.isValid {
+                AinkradBanner(message: "Not a valid address", status: .danger)
+            } else if let candidate {
+                Text("On \(candidate.frequency) thread\(candidate.frequency == 1 ? "" : "s") "
+                     + "you have loaded, most recently "
+                     + MailDateLabel.short(for: candidate.mostRecent))
+                    .font(AinkradFontResolver.font(.caption, typography: typo))
+                    .foregroundStyle(theme.foreground.opacity(0.55))
+            } else {
+                // Said plainly rather than left blank: "you have never mailed
+                // this person" is the single most useful thing to know before
+                // sending, and it is what `LookalikeAddress` acts on too.
+                Text("You have not mailed this address before.")
+                    .font(AinkradFontResolver.font(.caption, typography: typo))
+                    .foregroundStyle(theme.foreground.opacity(0.55))
+            }
+        }
+        .frame(maxWidth: 260, alignment: .leading)
+    }
+}
+
+/// Label + content row for the composer's fields.
+///
+/// The label column is now `AinkradCaptionedRow` — the kit's own fixed-width
+/// caption column — rather than a hand-rolled `Text().frame(width: 28)`. That
+/// 28pt column was too narrow for the words in it ("From", "Subject", "Bcc")
+/// and, being a different width from every other captioned form in the host,
+/// made the composer the one surface whose rows did not line up with anything.
+///
+/// The chamfer field chrome stays local: `AinkradCaptionedRow` supplies the
+/// caption column and nothing else, which is the correct division — a caption
+/// column has no opinion about whether the thing beside it is a text field, a
+/// segmented picker, or a wrapping chip stack.
 struct ComposeFieldWrap<Content: View>: View {
     let label: String
     @ViewBuilder let content: () -> Content
@@ -118,17 +240,29 @@ struct ComposeFieldWrap<Content: View>: View {
     @Environment(\.ravenAppearance) private var appearance
 
     var body: some View {
-        HStack(alignment: .top, spacing: AinkradSpacing.sm) {
-            Text(label)
-                .font(AinkradFontResolver.font(.caption, weight: .semibold, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(0.55))
-                .frame(width: 28, alignment: .leading)
-                .padding(.top, AinkradSpacing.xs)
+        AinkradCaptionedRow(label) {
             content()
                 .padding(.horizontal, AinkradSpacing.sm)
                 .padding(.vertical, AinkradSpacing.xs)
+                // Without this the row's trailing `Spacer(minLength: 0)` wins
+                // and the field shrink-wraps its content — a To field exactly as
+                // wide as the one chip in it.
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(ComposeFieldChrome(appearance: appearance))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The chamfer + elevated fill + accent hairline that makes a chip field and an
+/// `AinkradTextField` read as one family. Extracted so the subject/body fields
+/// and the chip fields cannot drift apart.
+struct ComposeFieldChrome: ViewModifier {
+    let appearance: RavenAppearance
+
+    @Environment(\.ainkradTheme) private var theme
+
+    func body(content: Content) -> some View {
+        content
         // Theme surface, not `Color.gray`: the field has to sit correctly on
         // whichever theme the host is running, and a fixed grey wash reads as
         // dirty on the light ones and invisible on the dark ones. Matches

@@ -34,9 +34,16 @@ public struct ComposeSurface: View {
     let showsDraftsRail: Bool
     let onClose: () -> Void
 
-    @State private var activeContext: ComposeContext
+    @State var activeContext: ComposeContext
     @State var toChips: [RecipientChip] = []
     @State var ccChips: [RecipientChip] = []
+    /// Blind carbon copies. Behind the `Cc & Bcc` disclosure with `ccChips` —
+    /// see `ComposeRecipients` for why they are collapsed by default.
+    @State var bccChips: [RecipientChip] = []
+    /// Whether that disclosure is open. Opened automatically whenever the
+    /// fields behind it are non-empty, so a collapsed section can never hide a
+    /// recipient.
+    @State var copyFieldsExpanded = false
     @State var subject = ""
     @State var bodyText = ""
     /// Files the user attached via `ComposeAttachmentPicker`, in pick order. Emitted as
@@ -48,12 +55,14 @@ public struct ComposeSurface: View {
     /// removed the draft. See `ComposeDraftKeeper`.
     @State var keeper = ComposeDraftKeeper()
     @State private var isSending = false
-    @State private var errorMessage: String?
-    /// Styling for `errorMessage`. A still-queued send is not a failure, and
-    /// showing it in red invites the user to press Send again — which queues a
-    /// SECOND message that will also go out. Warning styling matches what the
-    /// text actually says.
-    @State private var errorStatus: AinkradStatus = .danger
+    /// The `.confirm` findings a Send press stopped on, and the dialog showing
+    /// them. Emptied on confirm or cancel — never remembered, so a user who
+    /// fixes the problem and presses Send again is not shown the stale warning.
+    @State private var pendingConfirmations: [ComposeFinding] = []
+    @State private var isConfirmingSend = false
+    /// "Saving…" / "Draft saved" under the footer. `nil` before the first
+    /// autosave of a session.
+    @State var draftStateText: String?
     /// Bumped after every draft mutation so the list re-reads `DraftBox`,
     /// which is a plain in-memory box rather than an `@Observable` type.
     @State var draftsVersion = 0
@@ -78,8 +87,21 @@ public struct ComposeSurface: View {
     /// overwrites what the user has since typed.
     @State var didPrefill = false
 
-    @Environment(\.ainkradTheme) private var theme
-    @Environment(\.ainkradTypography) private var typo
+    /// Send/queued/scheduled feedback. Replaces the `AinkradBanner` that used to
+    /// sit between the body field and the footer: a banner there pushed the
+    /// fields around while the user was reading it, and stayed until dismissed
+    /// even after they had moved on. Toasts stack top-trailing over the
+    /// composer, out of the form's way.
+    ///
+    /// The host is mounted in `RavenShell` around this view rather than on it —
+    /// `.ainkradToastHost()` re-injects its own center for its CONTENT, so a
+    /// view that mounts the host cannot read the center it renders from.
+    @Environment(\.ainkradToastCenter) private var toasts
+
+    /// Dwell time for a toast the user may need to ACT on — a failed queue, a
+    /// refused route, an oversized attachment. The kit's 3s default is right for
+    /// "Sent." and much too short to read a sentence explaining what to do next.
+    static let alertToast: TimeInterval = 9
 
     public init(runtime: RavenRuntime, context: ComposeContext = .new,
                 showsDraftsRail: Bool = true,
@@ -99,8 +121,9 @@ public struct ComposeSurface: View {
     /// — exactly the case `send()` still refuses rather than guesses.
     ///
     /// Irrelevant to a reply, which is always attributed to the thread's own
-    /// account by `ComposeContext.stamp`, never to this picker.
-    private var effectiveAccountID: String? {
+    /// account by `ComposeContext.stamp`, never to this picker. Internal, not
+    /// private: `ComposeSurfaceAdvice` needs it to resolve the sending address.
+    var effectiveAccountID: String? {
         selectedFromAccountID ?? runtime.composingAccountID
     }
 
@@ -131,6 +154,16 @@ public struct ComposeSurface: View {
             }
         }
         .task { prefillIfNeeded() }
+        // Publishes the draft as agent context on every edit, keyed on the same
+        // digest the autosave debounces on — so "make this more formal" reaches
+        // Sage as the text actually on screen. Nothing here calls a model; see
+        // `ComposeDraftPublisher`.
+        .onChange(of: autosaveKey, initial: true) { _, _ in
+            ComposeDraftPublisher.shared.publish(stampedMessage())
+        }
+        // The composer is closed, so there is no open draft. Left set, Sage
+        // would answer "shorten this" about a message the user walked away from.
+        .onDisappear { ComposeDraftPublisher.shared.publish(nil) }
         // The autosave. `.task(id:)` is the debounce: SwiftUI cancels the
         // in-flight task and starts a new one every time `autosaveKey` changes,
         // so a burst of keystrokes performs exactly one write, `delay` after the
@@ -140,15 +173,21 @@ public struct ComposeSurface: View {
         // flushes a change made inside the debounce window when the overlay is
         // dismissed in that window.
         .onDisappear(perform: preserveDraft)
+        // Scoped to the composer's own bounds, which is what makes this the
+        // right control for the job: the guards are about THIS message, and a
+        // window-level alert would dim the mail list the user may want to check
+        // before answering.
+        //
+        // Confirm, never block. `ComposeFinding.Severity.confirm` is documented
+        // for why: a client that refuses an empty-subject send is wrong about
+        // the user's intent some of the time, and unappealable while wrong.
+        .ainkradConfirmDialog(
+            isPresented: $isConfirmingSend,
+            title: "Before This Goes Out",
+            message: pendingConfirmations.map(\.message).joined(separator: "\n\n"),
+            confirmTitle: scheduledSendAt == nil ? "Send Anyway" : "Schedule Anyway",
+            onConfirm: performSend)
     }
-
-    /// Suggestion pool for both the To and Cc fields, rebuilt from whatever
-    /// month shards the Inbox has already loaded (`RavenViewModel.summaries`).
-    /// This never issues its own fetch — it only ranks what is already local.
-    private var suggestionCandidates: [RecipientSuggestions.Candidate] {
-        RecipientSuggestions.candidates(from: runtime.model.summaries)
-    }
-
     // MARK: Drafts rail
 
     /// The width the rail earns when it is shown. Matches
@@ -198,6 +237,7 @@ public struct ComposeSurface: View {
         keeper.adopt(id)
         toChips = message.to.map { RecipientChip(raw: rfc5322(for: $0)) }
         ccChips = message.cc.map { RecipientChip(raw: rfc5322(for: $0)) }
+        bccChips = message.bcc.map { RecipientChip(raw: rfc5322(for: $0)) }
         subject = message.subject
         bodyText = message.bodyText
         attachments = message.attachments
@@ -221,8 +261,9 @@ public struct ComposeSurface: View {
     /// explicitly, because `clear` is also how a session legitimately starts over
     /// and a retire there would be silent.
     private func clear() {
-        toChips = []; ccChips = []; subject = ""; bodyText = ""
+        toChips = []; ccChips = []; bccChips = []; subject = ""; bodyText = ""
         attachments = []
+        copyFieldsExpanded = false
         selectedFromAccountID = nil
         scheduledSendAt = nil
         isScheduling = false
@@ -233,30 +274,38 @@ public struct ComposeSurface: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
-            // Only a NEW message has a From to choose. A reply's account is the
-            // thread's, with no override — offering a picker that `stamp` would
-            // then ignore is worse than offering none.
-            if activeContext.thread == nil, runtime.accounts.count > 1 {
-                ComposeFromPicker(runtime: runtime, selection: $selectedFromAccountID)
-            } else if let thread = activeContext.thread,
-                      let address = runtime.ownAddress(for: thread.accountID) {
-                ComposeFieldWrap(label: "From") {
-                    Text(address)
-                        .font(AinkradFontResolver.font(.caption, typography: typo))
-                        .foregroundStyle(theme.foreground.opacity(0.7))
-                }
-            }
-            RecipientChipField(label: "To", chips: $toChips, candidates: suggestionCandidates)
-            RecipientChipField(label: "Cc", chips: $ccChips, candidates: suggestionCandidates)
+            ComposeRecipients(runtime: runtime, context: activeContext,
+                              toChips: $toChips, ccChips: $ccChips, bccChips: $bccChips,
+                              selectedFromAccountID: $selectedFromAccountID,
+                              isExpanded: $copyFieldsExpanded,
+                              candidates: suggestionCandidates)
             AinkradTextField(text: $subject, placeholder: "Subject")
-            AinkradTextArea(text: $bodyText, placeholder: "Write your message…", minHeight: 140)
+            AinkradTextArea(text: $bodyText, placeholder: "Write your message\u{2026}",
+                            minHeight: 140)
+                // **Base text direction, set — not implemented.**
+                //
+                // An Arabic message typed into an implicitly left-to-right
+                // editor has its cursor, its alignment and its punctuation on
+                // the wrong side, and the same message arrives laid out
+                // left-to-right at the far end. Handing the direction to
+                // SwiftUI's `layoutDirection` (and, in the sent message, to an
+                // HTML `dir` attribute — see `GmailProvider.rfc822`) lets the
+                // system's Unicode bidi algorithm do the reordering it already
+                // does correctly. The only thing it cannot infer is the
+                // paragraph's base direction, and that is the one thing set
+                // here.
+                //
+                // Scoped to the editor alone, deliberately: mirroring the whole
+                // composer would move the Send button and the drafts rail, which
+                // are app chrome and belong wherever the host's own layout
+                // direction puts them.
+                .environment(\.layoutDirection,
+                             BaseTextDirection.detect(bodyText) == .rightToLeft
+                                ? .rightToLeft : .leftToRight)
+
+            ComposeAdviceView(findings: findings, onApply: apply)
 
             ComposeAttachmentsRow(attachments: $attachments)
-
-            if let errorMessage {
-                AinkradBanner(message: errorMessage, status: errorStatus,
-                              onDismiss: { self.errorMessage = nil })
-            }
 
             // Shown for the length of the undo-send hold window right after
             // `send()` queues a message — see `undoableEntryID`. Pressing Undo
@@ -279,46 +328,19 @@ public struct ComposeSurface: View {
         }
     }
 
-    /// Attach, schedule, save and send on one row. These used to be three
-    /// separate stacked rows of full-width buttons, which made the composer
-    /// taller than the message being written.
+    /// Attach, schedule, save and send on one row. Lives in
+    /// `ComposeFooterBar` — extracted when the schedule presets arrived and
+    /// this file was already near the 500-line cap.
     private var footer: some View {
-        HStack(spacing: AinkradSpacing.xs) {
-            AinkradIconButton(systemName: "paperclip", size: 26, tooltip: "Attach files…") {
-                attachments.append(contentsOf: ComposeAttachmentPicker.pick())
-            }
-            AinkradIconButton(systemName: "clock", size: 26,
-                              tooltip: isScheduling ? "Cancel scheduling" : "Schedule for later") {
-                isScheduling.toggle()
-                if !isScheduling { scheduledSendAt = nil }
-            }
-            if isScheduling { schedulePicker }
-            Spacer(minLength: AinkradSpacing.xs)
-            AinkradButton(title: "Save Draft", style: .ghost, action: saveDraft)
-            AinkradButton(title: scheduledSendAt == nil ? "Send" : "Schedule Send",
-                          style: .primary, icon: "paperplane",
-                          isLoading: isSending, action: send)
-                .disabled(!ComposeValidation.canSend(toChips) || isSending)
-        }
-    }
-
-    /// Scheduled send: a simple future-time affordance, deliberately not
-    /// over-built. Made plain in the UI (not just a code comment) that this
-    /// only fires while the app is running — a message scheduled for 3am
-    /// while the Mac is asleep sends when the app next wakes, not at 3am.
-    private var schedulePicker: some View {
-        HStack(spacing: AinkradSpacing.xs) {
-            DatePicker("", selection: Binding(
-                get: { scheduledSendAt ?? Date().addingTimeInterval(3600) },
-                set: { scheduledSendAt = $0 }),
-                in: Date()...,
-                displayedComponents: [.date, .hourAndMinute])
-                .labelsHidden()
-            AinkradIconGlyph(systemName: "info.circle")
-                .ainkradTooltip("Raven must be running at the scheduled time for this to send — "
-                                + "a message scheduled while your Mac is asleep sends when the "
-                                + "app next wakes, not exactly at the time you picked.")
-        }
+        ComposeFooterBar(
+            canSend: ComposeValidation.canSend(toChips),
+            isSending: isSending,
+            isScheduling: $isScheduling,
+            scheduledSendAt: $scheduledSendAt,
+            draftStateText: draftStateText,
+            onAttach: { attachments.append(contentsOf: ComposeAttachmentPicker.pick()) },
+            onSaveDraft: saveDraft,
+            onSend: send)
     }
 
     private func undoSend() {
@@ -342,6 +364,7 @@ public struct ComposeSurface: View {
         OutgoingMessage(
             to: ComposeValidation.validAddresses(toChips),
             cc: ComposeValidation.validAddresses(ccChips),
+            bcc: ComposeValidation.validAddresses(bccChips),
             subject: subject,
             bodyText: bodyText,
             attachments: attachments)
@@ -360,10 +383,10 @@ public struct ComposeSurface: View {
     /// visible result rather than a 600ms wait.
     private func saveDraft() {
         guard keeper.save(stampedMessage(), generation: keeper.generation) != nil else {
-            errorMessage = "Could not save draft."
-            errorStatus = .danger
+            toasts.show("Could not save draft.", status: .danger, duration: Self.alertToast)
             return
         }
+        draftStateText = "Draft saved"
         draftsVersion += 1
     }
 
@@ -380,7 +403,26 @@ public struct ComposeSurface: View {
     /// `draftID: nil` and no `sendAt` — a strict subset. Routing them here
     /// means a reply gets the undo window and scheduling the composer is
     /// showing, instead of a schedule picker that would be silently ignored.
+    /// The Send button. Runs the guards first and stops on anything that needs
+    /// a human answer; `performSend` is the half that actually queues.
+    ///
+    /// The split matters: the confirm dialog's Confirm calls `performSend`
+    /// DIRECTLY, so confirming cannot re-run the guards and stop again on the
+    /// same finding, and cannot pick up a finding that appeared while the dialog
+    /// was up.
     private func send() {
+        guard ComposeValidation.canSend(toChips) else { return }
+        let confirmations = ComposeAdvice.confirmations(findings)
+        guard confirmations.isEmpty else {
+            pendingConfirmations = confirmations
+            isConfirmingSend = true
+            return
+        }
+        performSend()
+    }
+
+    private func performSend() {
+        pendingConfirmations = []
         guard ComposeValidation.canSend(toChips) else { return }
         let outgoing = stampedMessage()
         // Refuses rather than guessing which mailbox this goes out from — see
@@ -388,13 +430,12 @@ public struct ComposeSurface: View {
         // queued, so nothing can later leave from the wrong address. A reply is
         // always attributed (to the thread's account) and so never lands here.
         guard outgoing.accountID != nil else {
-            errorMessage = "Several accounts are connected, so Raven cannot tell which one " +
-                           "should send this. Choose a From account above; nothing was queued."
-            errorStatus = .warning
+            toasts.show("Several accounts are connected, so Raven cannot tell which one should "
+                        + "send this. Choose a From account above; nothing was queued.",
+                        status: .warning, duration: Self.alertToast)
             return
         }
         isSending = true
-        errorMessage = nil
         let draftID = keeper.draftID
         let holdUntil = Date().addingTimeInterval(runtime.holdWindow)
         let scheduledFor = scheduledSendAt
@@ -418,6 +459,7 @@ public struct ComposeSurface: View {
                     // next autosave create a duplicate of it.
                     keeper.retire()
                     clear()
+                    toasts.show("Sent.", status: .success)
                 } else if result.outcome.isBenign {
                     // Held (undo window) and/or scheduled: the message left
                     // the composer, exactly like a genuine send, but stays
@@ -429,21 +471,26 @@ public struct ComposeSurface: View {
                     keeper.retire()
                     undoableEntryID = result.entryID
                     undoDeadline = holdUntil
+                    // Read BEFORE `clear()`, which resets `scheduledSendAt`.
+                    let scheduleNote = scheduledFor.map {
+                        "Scheduled for " + MailDateLabel.short(for: $0) + "."
+                    }
                     clear()
+                    draftStateText = nil
+                    toasts.show(scheduleNote ?? "Queued — you can still undo it.",
+                                status: .success)
                 } else {
-                    errorMessage = result.message
-                    errorStatus = .danger
+                    toasts.show(result.message, status: .danger, duration: Self.alertToast)
                 }
                 draftsVersion += 1
             } catch MailError.attachmentsTooLarge(let message) {
                 // Refused before anything was queued (see `AttachmentSizeGuard`)
                 // — the message itself already says what to do about it.
-                errorMessage = message
-                errorStatus = .warning
+                toasts.show(message, status: .warning, duration: Self.alertToast)
             } catch {
-                errorMessage = "Could not queue send: \(error). Your message was not sent " +
-                               "and has been left in the composer."
-                errorStatus = .danger
+                toasts.show("Could not queue send: \(error). Your message was not sent and has "
+                            + "been left in the composer.",
+                            status: .danger, duration: Self.alertToast)
             }
             isSending = false
         }

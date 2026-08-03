@@ -55,6 +55,20 @@ public struct ICSReply: Codable, Equatable, Sendable {
 public struct OutgoingMessage: Codable, Equatable, Sendable {
     public let to: [MailAddress]
     public let cc: [MailAddress]
+    /// Blind carbon copies. These recipients receive the message and **must
+    /// not appear in the headers any other recipient can see** — that is the
+    /// entire meaning of the field, and getting it wrong discloses a private
+    /// distribution list.
+    ///
+    /// How that is achieved is provider-specific and is documented at the one
+    /// place it happens, `GmailProvider.rfc822`: Gmail's `messages/send` takes
+    /// the whole RFC822 message as `raw` and derives the envelope from its
+    /// headers, so the `Bcc:` header MUST be present there for the copy to be
+    /// delivered at all, and Gmail is the party that strips it before handing
+    /// the message to each recipient. Omitting the header would silently drop
+    /// the recipient; writing our own envelope is not an option this API
+    /// offers.
+    public let bcc: [MailAddress]
     public let subject: String
     public let bodyText: String
     /// Set when this is a reply, so the provider can thread it correctly.
@@ -86,11 +100,12 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     /// exactly one candidate.
     public let accountID: String?
 
-    public init(to: [MailAddress], cc: [MailAddress] = [], subject: String,
+    public init(to: [MailAddress], cc: [MailAddress] = [], bcc: [MailAddress] = [],
+                subject: String,
                 bodyText: String, inReplyToMessageID: String? = nil,
                 threadID: String? = nil, accountID: String? = nil,
                 attachments: [OutgoingAttachment] = [], icsReply: ICSReply? = nil) {
-        self.to = to; self.cc = cc; self.subject = subject
+        self.to = to; self.cc = cc; self.bcc = bcc; self.subject = subject
         self.bodyText = bodyText; self.inReplyToMessageID = inReplyToMessageID
         self.threadID = threadID; self.accountID = accountID
         self.attachments = attachments; self.icsReply = icsReply
@@ -103,6 +118,10 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         to = try c.decode([MailAddress].self, forKey: .to)
         cc = try c.decodeIfPresent([MailAddress].self, forKey: .cc) ?? []
+        // Absent from every draft and outbox entry persisted before Bcc
+        // existed — decoded as empty rather than throwing, for the same reason
+        // `cc`/`attachments` are: a queued send must not fail to load.
+        bcc = try c.decodeIfPresent([MailAddress].self, forKey: .bcc) ?? []
         subject = try c.decode(String.self, forKey: .subject)
         bodyText = try c.decode(String.self, forKey: .bodyText)
         inReplyToMessageID = try c.decodeIfPresent(String.self, forKey: .inReplyToMessageID)
@@ -117,7 +136,7 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     /// from-picker, `create_draft`'s explicit `account_id`, a reply resolving
     /// the account from its thread).
     public func attributed(to accountID: String?) -> OutgoingMessage {
-        OutgoingMessage(to: to, cc: cc, subject: subject, bodyText: bodyText,
+        OutgoingMessage(to: to, cc: cc, bcc: bcc, subject: subject, bodyText: bodyText,
                         inReplyToMessageID: inReplyToMessageID, threadID: threadID,
                         accountID: accountID, attachments: attachments, icsReply: icsReply)
     }
