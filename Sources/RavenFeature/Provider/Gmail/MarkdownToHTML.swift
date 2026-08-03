@@ -21,6 +21,9 @@ import Foundation
 ///    `<p>line one line two</p>`: quote markers stripped, lines merged, and
 ///    the original author's words presented as the sender's own. Gmail
 ///    displays `text/html`, so that is what recipients actually saw.
+///    (A reply's quoted trailer no longer reaches this parser at all — see
+///    `renderComposed` and `QuotedRegion` — but `blockQuote` is still mapped,
+///    because a user may legitimately type a `>` quote in their own body.)
 /// 2. The `-- ` sigdash is a valid setext-h2 underline, so the last line of
 ///    every signed body became a `header` block and was dropped outright.
 ///    (`Signature.split` now keeps the sigdash away from the parser entirely;
@@ -49,23 +52,47 @@ enum MarkdownToHTML {
         return renderBlocks(attributed)
     }
 
-    /// Renders a *composed* body — the `body + "\n-- \n" + signature` string
-    /// `SendAttempt` builds — without ever letting the Markdown parser see the
-    /// sigdash.
+    /// Renders a *composed* body — what `ComposeSurface`/`ReplyComposer` typed
+    /// and `SendAttempt` then appended a signature to — by first taking it
+    /// APART, so that only the user's own newly-typed text is ever handed to
+    /// the Markdown parser.
     ///
-    /// This is the fix for the sigdash-as-setext-heading defect: `--` under a
-    /// line of text is a valid setext h2 underline, so feeding the concatenated
-    /// string to `AttributedString(markdown:)` turned the body's last line into
-    /// a heading and consumed the separator. Splitting first means the parser
-    /// only ever sees the body's own Markdown, and the signature is emitted as
-    /// literal escaped text after an explicit separator that keeps it
-    /// recognisable as a signature in the HTML part too — matching the plain
-    /// part, which stays exactly `body + "\n-- \n" + signature`.
+    /// Two regions must not be parsed as Markdown, for the same underlying
+    /// reason — they are records of text, not authored Markdown, and letting a
+    /// parser find structure in them rewrites what someone actually wrote:
+    ///
+    /// - **The signature.** `--` under a line of text is a valid setext h2
+    ///   underline, so the concatenated string turned the body's last line into
+    ///   a heading and consumed the `-- ` separator recipients' clients use to
+    ///   trim a signature.
+    /// - **The quoted original.** `ReplyComposer.quoteBody` emits it as plain
+    ///   text, so a quoted `-- `, `---`, `# heading`, `*bullet*`, or an
+    ///   underscore inside a quoted URL all became structure in the *sender's*
+    ///   reply. See `QuotedRegion`.
+    ///
+    /// Emission order, which holds when all three regions are present:
+    /// **typed body (Markdown) → signature (literal) → quoted original
+    /// (literal)**. The signature sits above the quote because it belongs to
+    /// the new message, not to the thing being quoted. The plain-text part is
+    /// untouched by any of this and keeps its own order and its `> ` prefixes.
     static func renderComposed(_ composed: String) -> String {
-        let (body, signature) = Signature.split(composed)
-        let bodyHTML = render(body)
-        guard let signature else { return bodyHTML }
-        return bodyHTML + "<div class=\"sig\">-- <br>\(literalLines(signature))</div>"
+        // Signature first: `SendAttempt` appends it last, so it is the outermost
+        // layer. Its `\n-- \n` cannot collide with a quoted sigdash, which
+        // arrives as `\n> -- \n`.
+        let (withoutSignature, signature) = Signature.split(composed)
+        let quote = QuotedRegion.split(withoutSignature)
+
+        var html = render(quote.body)
+        if let signature {
+            html += "<div class=\"sig\">-- <br>\(literalLines(signature))</div>"
+        }
+        if let quotedLines = quote.quotedLines {
+            if let attribution = quote.attribution {
+                html += "<p>\(escape(attribution))</p>"
+            }
+            html += "<blockquote>\(literalLines(quotedLines.joined(separator: "\n")))</blockquote>"
+        }
+        return html
     }
 
     /// Escaped text with its line breaks preserved as `<br>` — for content
