@@ -197,7 +197,8 @@ import AinkradAppKit
             MailMessage(id: "m1", threadID: "t1", from: MailAddress(email: "b@x.com"),
                         subject: "S", date: Date(), labelIDs: ["INBOX"], snippet: "s")
         ]))
-        try runtime.store.saveBody(MessageBody(messageID: "m1", plainText: "private", html: nil))
+        try runtime.store.saveBody(MessageBody(messageID: "m1", plainText: "private", html: nil),
+                                   accountID: "a1")
         runtime.outbox.accountID = "a1"
         try runtime.outbox.enqueue(.send(OutgoingMessage(to: [MailAddress(email: "b@x.com")],
                                                          subject: "s", bodyText: "b")))

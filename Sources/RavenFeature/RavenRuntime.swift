@@ -381,7 +381,9 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
             let body = try await Task.detached {
                 try await provider.fetchBody(messageID: message.id)
             }.value
-            try? store.saveBody(body)
+            // Attributed to the account that fetched it, so sign-out can purge
+            // it even if this message's thread document never lands.
+            try? store.saveBody(body, accountID: providerProxy.accountID)
             return body
         } catch {
             host.log.error("RavenRuntime.loadBody failed for \(message.id): \(error)")

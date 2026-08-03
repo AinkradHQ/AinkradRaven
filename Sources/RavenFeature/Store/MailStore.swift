@@ -24,7 +24,7 @@ public struct MessageBody: Codable, Equatable, Sendable {
     func removeThread(_ id: String, accountID: String, date: Date) throws
 
     func body(messageID: String) -> MessageBody?
-    func saveBody(_ body: MessageBody) throws
+    func saveBody(_ body: MessageBody, accountID: String) throws
 
     func labels(accountID: String) -> [MailLabel]
     func saveLabels(_ labels: [MailLabel], accountID: String) throws

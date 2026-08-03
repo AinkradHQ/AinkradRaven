@@ -80,6 +80,10 @@ final class FakeMailProvider: MailProvider, @unchecked Sendable {
     private var sendEntryWaiter: CheckedContinuation<Void, Never>?
     private var sendHasBeenEntered = false
     private var gateIsOpen = false
+    /// Thrown by `send` AFTER it is released from the gate, so a test can
+    /// model "the network call was already in flight and then failed" — the
+    /// case where the entry leaves the queue with nothing transmitted.
+    var sendErrorAfterGate: Error?
 
     /// Resolves once `send` has actually been entered and is parked, so the
     /// test never races the drain it is trying to overlap.
@@ -115,6 +119,7 @@ final class FakeMailProvider: MailProvider, @unchecked Sendable {
                 sendEntryWaiter = nil
             }
         }
+        if let error = sendErrorAfterGate { throw error }
         sentMessages.append(message)
         return "sent-\(sentMessages.count)"
     }

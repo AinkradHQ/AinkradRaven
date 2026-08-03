@@ -180,6 +180,14 @@ import AinkradAppKit
             }
             documents.setData(nil, forKey: indexKey)
         }
+        // Then every body the account ever wrote, including any whose thread
+        // document never landed and which the walk above therefore could not
+        // reach. See `saveBody` for why the walk alone is not enough.
+        let bodyIndexKey = DocumentKeys.bodyIndex(accountID: accountID)
+        for messageID in load([String].self, bodyIndexKey) ?? [] {
+            documents.setData(nil, forKey: DocumentKeys.body(messageID))
+        }
+        documents.setData(nil, forKey: bodyIndexKey)
         documents.setData(nil, forKey: monthsKey)
         documents.setData(nil, forKey: DocumentKeys.labels(accountID: accountID))
         try removeAccount(accountID)
@@ -191,8 +199,25 @@ import AinkradAppKit
         load(MessageBody.self, DocumentKeys.body(messageID))
     }
 
-    public func saveBody(_ body: MessageBody) throws {
+    /// `accountID` is required so the body can be registered for purging.
+    /// Walking index rows into thread documents is NOT sufficient to find
+    /// every body at sign-out: if the thread write failed (or the thread was
+    /// later removed) after the body landed, that body has no path leading to
+    /// it and would survive sign-out — mail still readable on disk after the
+    /// user disconnected the account, which is the exact thing `purge` exists
+    /// to prevent. The registry below is written FIRST, so a body is
+    /// discoverable before it exists rather than after.
+    public func saveBody(_ body: MessageBody, accountID: String) throws {
+        try registerBody(body.messageID, accountID: accountID)
         try save(body, DocumentKeys.body(body.messageID))
+    }
+
+    private func registerBody(_ messageID: String, accountID: String) throws {
+        let key = DocumentKeys.bodyIndex(accountID: accountID)
+        var ids = try loadStrict([String].self, key) ?? []
+        guard !ids.contains(messageID) else { return }
+        ids.append(messageID)
+        try save(ids, key)
     }
 
     public func labels(accountID: String) -> [MailLabel] {

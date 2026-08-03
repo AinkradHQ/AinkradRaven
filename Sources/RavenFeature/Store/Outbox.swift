@@ -37,6 +37,21 @@ import AinkradAppKit
     /// account is never drained — see `OutboxEntry.accountID`.
     public var accountID: String?
 
+    /// Ids `drain()` saw returned successfully from the provider. This is the
+    /// ONLY evidence `outcome(for:)` accepts as success — see its
+    /// documentation. In-memory and per-process by design: a caller only ever
+    /// asks about an id it was just handed by `enqueue`, and a process that
+    /// died mid-send is already handled by the `needsReview` conversion in
+    /// `init`, which must not be second-guessed by a persisted "it was sent"
+    /// claim we could not actually verify.
+    private var transmitted: Set<UUID> = []
+    /// Insertion order for `transmitted`, so it can be trimmed. Without a cap
+    /// this set would grow for the life of the process; outcomes are only ever
+    /// queried immediately after the drain that produced them, so a small
+    /// window is ample.
+    private var transmittedOrder: [UUID] = []
+    private static let transmittedMemory = 256
+
     /// Set whenever the most recent attempt to persist the queue failed. Never
     /// swallowed silently — callers (and tests) can inspect this to know the
     /// on-disk queue may be stale relative to memory.
@@ -109,12 +124,20 @@ import AinkradAppKit
         return entry.id
     }
 
-    /// What actually became of one queued operation. The only path to `.sent`
-    /// is the entry having left the queue entirely, which happens in exactly
-    /// one place: immediately after `provider.send`/`applyLabels` returned
-    /// without throwing.
+    /// What actually became of one queued operation.
+    ///
+    /// `.sent` is returned ONLY for an id `drain()` recorded as genuinely
+    /// transmitted. Absence from the queue is deliberately NOT treated as
+    /// success: `purge(accountID:)` and `discard(_:)` also remove entries, so
+    /// "not found" would otherwise mean a sign-out (or a discard) racing a
+    /// suspended `drain()` reports `.sent` for a message that never left the
+    /// machine — the user is told "Sent" and their draft is deleted. That is
+    /// precisely the false-success class this whole outcome type exists to
+    /// eliminate, so success must be RECORDED, never inferred.
     public func outcome(for id: UUID) -> OutboxSendOutcome {
-        guard let entry = entries.first(where: { $0.id == id }) else { return .sent }
+        if transmitted.contains(id) { return .sent }
+        guard let entry = entries.first(where: { $0.id == id })
+        else { return .removedWithoutSending }
         if entry.isDeadLettered { return .deadLettered(lastError: entry.lastError) }
         if entry.needsReview { return .needsReview }
         return .queued(inFlight: entry.inFlightAt != nil)
@@ -158,6 +181,10 @@ import AinkradAppKit
                 case .send(let message):
                     _ = try await provider.send(message)
                 }
+                // Record the success BEFORE removing the entry. From here on
+                // this id is the only kind of "gone" that means sent; every
+                // other removal (purge, discard) leaves no such record.
+                recordTransmitted(entry.id)
                 entries.removeAll { $0.id == entry.id }
                 persistRecordingFailure()
             } catch {
@@ -188,6 +215,14 @@ import AinkradAppKit
     /// provider call is made. This is the write that lets a future launch
     /// recognize "this operation's outcome is unknown" instead of blindly
     /// resending it.
+    private func recordTransmitted(_ id: UUID) {
+        guard transmitted.insert(id).inserted else { return }
+        transmittedOrder.append(id)
+        while transmittedOrder.count > Self.transmittedMemory {
+            transmitted.remove(transmittedOrder.removeFirst())
+        }
+    }
+
     private func markInFlight(_ id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].inFlightAt = Date()

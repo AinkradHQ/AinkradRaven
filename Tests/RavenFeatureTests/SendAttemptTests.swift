@@ -88,6 +88,84 @@ import Foundation
         DraftBox.shared.remove(draftID)
     }
 
+    /// The false-success bug reintroduced by the purge added in the previous
+    /// wave: `outcome(for:)` used to read "id not found" as success, and
+    /// `purge` is a second way for an id to vanish. Signing out mid-send would
+    /// therefore report "Sent draft X" and delete the draft for a message that
+    /// never left the machine.
+    @Test("an account signed out mid-send does not report the send as successful")
+    func purgeMidSendIsNotSuccess() async throws {
+        let provider = FakeMailProvider()
+        provider.holdsSend = true
+        // The call was on the wire when the user signed out, and then failed.
+        // Nothing reached the recipient — so nothing may report as sent.
+        provider.sendErrorAfterGate = MailError.providerFailed(status: 500, message: "boom")
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
+                            accountID: "a1")
+        let draftID = try DraftBox.shared.save(message())
+
+        // Start the send and let it park inside `provider.send`.
+        var entryID: UUID?
+        let attempt = Task { () -> SendAttempt.Result in
+            try await SendAttempt.send(self.message(), draftID: draftID, outbox: outbox,
+                                       drain: outbox.drain)
+        }
+        await provider.waitUntilSendEntered()
+        entryID = outbox.inFlight().first?.id
+        #expect(entryID != nil)
+
+        // The user signs out while the send is still on the wire.
+        outbox.purge(accountID: "a1")
+        #expect(outbox.outcome(for: try #require(entryID)) != .sent,
+                "a purged entry never reached the provider; absence is not success")
+
+        provider.releaseSend()
+        let result = try await attempt.value
+
+        #expect(result.isSent == false)
+        #expect(result.outcome == .removedWithoutSending)
+        #expect(provider.sentMessages.isEmpty)
+        #expect(DraftBox.shared.draft(draftID) != nil,
+                "signing out mid-send must not destroy the user's draft")
+        DraftBox.shared.remove(draftID)
+    }
+
+    @Test("a discarded entry reports removed-without-sending, not sent")
+    func discardIsNotSuccess() async throws {
+        let provider = FakeMailProvider()
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
+        let entryID = try outbox.enqueue(.send(message()))
+
+        try outbox.discard(entryID)
+
+        #expect(outbox.outcome(for: entryID) == .removedWithoutSending)
+        #expect(provider.sentMessages.isEmpty)
+    }
+
+    @Test("a genuinely transmitted entry still reports sent after it leaves the queue")
+    func transmittedEntryStillReportsSent() async throws {
+        let provider = FakeMailProvider()
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
+        let entryID = try outbox.enqueue(.send(message()))
+
+        await outbox.drain()
+
+        #expect(provider.sentMessages.count == 1)
+        #expect(outbox.outcome(for: entryID) == .sent,
+                "recording success must not break the success path itself")
+    }
+
+    @Test("a queued outcome is benign so the composer does not style it as an error")
+    func queuedOutcomeIsBenign() {
+        #expect(OutboxSendOutcome.queued(inFlight: false).isBenign)
+        #expect(OutboxSendOutcome.queued(inFlight: true).isBenign)
+        // Everything that is genuinely wrong must NOT be benign.
+        #expect(OutboxSendOutcome.deadLettered(lastError: "x").isBenign == false)
+        #expect(OutboxSendOutcome.needsReview.isBenign == false)
+        #expect(OutboxSendOutcome.removedWithoutSending.isBenign == false)
+        #expect(OutboxSendOutcome.sent.isBenign == false)
+    }
+
     @Test("send_draft and the compose Send button share one outcome decision")
     func bothPathsShareTheSameLogic() async throws {
         // Same provider behaviour, same expectation, two entry points. The

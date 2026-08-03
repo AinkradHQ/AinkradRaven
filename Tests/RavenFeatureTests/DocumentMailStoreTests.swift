@@ -62,7 +62,8 @@ import Foundation
     @Test("bodies live in their own documents")
     func bodiesSeparate() throws {
         let (store, documents) = makeStore()
-        try store.saveBody(MessageBody(messageID: "m1", plainText: "hello", html: nil))
+        try store.saveBody(MessageBody(messageID: "m1", plainText: "hello", html: nil),
+                           accountID: "a1")
         #expect(documents.storage["body-m1"] != nil)
         #expect(store.body(messageID: "m1")?.plainText == "hello")
     }
@@ -186,8 +187,10 @@ import Foundation
                                           messages: [message("m1", thread: "t1", date: january)]))
         try store.upsertThread(MailThread(id: "t2", accountID: "a1",
                                           messages: [message("m2", thread: "t2", date: march)]))
-        try store.saveBody(MessageBody(messageID: "m1", plainText: "secret", html: nil))
-        try store.saveBody(MessageBody(messageID: "m2", plainText: "secret", html: nil))
+        try store.saveBody(MessageBody(messageID: "m1", plainText: "secret", html: nil),
+                           accountID: "a1")
+        try store.saveBody(MessageBody(messageID: "m2", plainText: "secret", html: nil),
+                           accountID: "a1")
         try store.saveLabels([MailLabel(id: "INBOX", name: "Inbox", kind: .system)],
                              accountID: "a1")
 
@@ -204,6 +207,27 @@ import Foundation
                                                      month: MonthShard.key(for: march))] == nil)
         #expect(documents.storage[DocumentKeys.labels(accountID: "a1")] == nil)
         #expect(documents.storage[DocumentKeys.indexMonths(accountID: "a1")] == nil)
+    }
+
+    /// The walk from index rows into thread documents cannot reach a body
+    /// whose thread write never landed. Mail must not remain readable after
+    /// sign-out, so the body registry has to catch it.
+    @Test("purge removes a body whose thread document does not exist")
+    func purgeRemovesOrphanedBody() throws {
+        let (store, documents) = makeStore()
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "me@x.com", displayName: "Me"))
+        // A body landed, but the thread write failed — no index row, no thread
+        // document, nothing pointing at this body.
+        try store.saveBody(MessageBody(messageID: "orphan", plainText: "private", html: nil),
+                           accountID: "a1")
+        #expect(documents.storage["body-orphan"] != nil)
+
+        try store.purge(accountID: "a1")
+
+        #expect(documents.storage["body-orphan"] == nil,
+                "an unreachable body must not survive sign-out")
+        #expect(documents.storage[DocumentKeys.bodyIndex(accountID: "a1")] == nil)
     }
 
     @Test("purge leaves another account's documents alone")

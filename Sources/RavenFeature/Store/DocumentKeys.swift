@@ -14,6 +14,12 @@ public enum DocumentKeys {
     public static func indexMonths(accountID: String) -> String {
         "index-months-\(accountID)"
     }
+    /// Every message id an account has stored a body for. Bodies are keyed by
+    /// message id alone, so without this a sign-out purge can only find the
+    /// ones still reachable through a thread document.
+    public static func bodyIndex(accountID: String) -> String {
+        "body-index-\(accountID)"
+    }
     public static func thread(_ id: String) -> String { "thread-\(id)" }
     public static func body(_ messageID: String) -> String { "body-\(messageID)" }
     public static func labels(accountID: String) -> String { "labels-\(accountID)" }

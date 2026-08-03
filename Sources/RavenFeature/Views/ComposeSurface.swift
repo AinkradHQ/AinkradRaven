@@ -16,6 +16,11 @@ public struct ComposeSurface: View {
     @State private var editingDraftID: String?
     @State private var isSending = false
     @State private var errorMessage: String?
+    /// Styling for `errorMessage`. A still-queued send is not a failure, and
+    /// showing it in red invites the user to press Send again — which queues a
+    /// SECOND message that will also go out. Warning styling matches what the
+    /// text actually says.
+    @State private var errorStatus: AinkradStatus = .danger
     /// Bumped after every draft mutation so the list re-reads `DraftBox`,
     /// which is a plain in-memory box rather than an `@Observable` type.
     @State private var draftsVersion = 0
@@ -90,7 +95,7 @@ public struct ComposeSurface: View {
                             minHeight: 200)
 
             if let errorMessage {
-                AinkradBanner(message: errorMessage, status: .danger,
+                AinkradBanner(message: errorMessage, status: errorStatus,
                               onDismiss: { self.errorMessage = nil })
             }
 
@@ -123,6 +128,7 @@ public struct ComposeSurface: View {
             draftsVersion += 1
         } catch {
             errorMessage = "Could not save draft: \(error)"
+            errorStatus = .danger
         }
     }
 
@@ -147,11 +153,13 @@ public struct ComposeSurface: View {
                     clear()
                 } else {
                     errorMessage = result.message
+                    errorStatus = result.outcome.isBenign ? .warning : .danger
                 }
                 draftsVersion += 1
             } catch {
                 errorMessage = "Could not queue send: \(error). Your message was not sent " +
                                "and has been left in the composer."
+                errorStatus = .danger
             }
             isSending = false
         }

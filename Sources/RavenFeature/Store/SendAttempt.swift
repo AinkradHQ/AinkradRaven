@@ -15,8 +15,21 @@ public enum OutboxSendOutcome: Equatable, Sendable {
     /// A previous process died mid-operation; whether it reached the provider
     /// is unknown, so it is held rather than guessed at.
     case needsReview
+    /// The entry left the queue without any record of having been
+    /// transmitted — it was purged by a sign-out, or discarded, while the
+    /// send was still in progress. NOT a success: nothing was sent.
+    case removedWithoutSending
 
     public var isSent: Bool { self == .sent }
+
+    /// True when nothing went wrong and the operation is simply not finished.
+    /// Used to style the composer banner: a red "error" for a benign queued
+    /// send invites the user to press Send again, which enqueues a SECOND
+    /// message that will also transmit.
+    public var isBenign: Bool {
+        if case .queued = self { return true }
+        return false
+    }
 }
 
 /// The one place that turns "the user asked to send this" into an outcome.
@@ -85,6 +98,10 @@ public enum SendAttempt {
             return "The outcome of sending \(subject) is unknown — the app may have quit "
                 + "mid-send. The draft was kept; confirm in Accounts whether it actually "
                 + "went out before resending."
+        case .removedWithoutSending:
+            return "\(subject.prefix(1).uppercased() + subject.dropFirst()) was removed from "
+                + "the outbox before it could be sent — the account was signed out, or the "
+                + "queued send was discarded. Nothing was transmitted and the draft was kept."
         }
     }
 }
