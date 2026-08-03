@@ -395,4 +395,139 @@ import Foundation
         #expect(revived.outcome(for: scheduledID) == .queued(inFlight: false))
         #expect(revived.pending().isEmpty)
     }
+
+    // MARK: One-shot wake (undo-send/scheduled-send skew fix)
+
+    /// Requirement 1: a held entry drains promptly once its window elapses —
+    /// via the one-shot wake `Outbox.enqueue` schedules — WITHOUT anyone
+    /// calling `drain()` again after the initial (unsuccessful, because
+    /// still held) one. A real 120s backstop tick is never simulated here;
+    /// the hold below is a fraction of a second.
+    @Test("a held entry drains on its own once its hold elapses, without the 120s tick")
+    func wakeDrainsWhenHoldElapses() async throws {
+        let provider = FakeMailProvider()
+        let (outbox, _) = makeOutbox(provider)
+        try outbox.enqueue(.send(aMessage()), accountID: nil,
+                           holdUntil: Date().addingTimeInterval(0.15),
+                           sendAt: nil, draftID: nil)
+
+        // Nothing has transmitted yet — the hold has not elapsed.
+        #expect(provider.sentMessages.isEmpty)
+
+        // Wait past the hold WITHOUT calling drain() ourselves — only the
+        // scheduled wake may cause this to transmit.
+        try await Task.sleep(for: .seconds(1))
+        #expect(provider.sentMessages.count == 1,
+                "the one-shot wake must have drained this on its own")
+        #expect(outbox.pending().isEmpty)
+    }
+
+    /// Requirement 2: with several pending entries, the wake targets the
+    /// SOONEST one, and cancelling it moves the target to the next-soonest
+    /// — not just "some" entry, and not stuck on the one just removed.
+    @Test("the wake targets the soonest pending entry, and retargets when it is cancelled")
+    func wakeRetargetsToNextSoonestOnCancel() async throws {
+        let provider = FakeMailProvider()
+        let (outbox, _) = makeOutbox(provider)
+        // B is soonest, A is second-soonest.
+        let laterID = try outbox.enqueue(.send(aMessage()), accountID: nil,
+                                         holdUntil: Date().addingTimeInterval(0.5),
+                                         sendAt: nil, draftID: nil)
+        let soonerID = try outbox.enqueue(.send(aMessage()), accountID: nil,
+                                          holdUntil: Date().addingTimeInterval(0.15),
+                                          sendAt: nil, draftID: nil)
+
+        // Cancel the soonest one before it fires — the wake must now be
+        // retargeted at the later entry instead of firing (for nothing) at
+        // the cancelled one's original due time.
+        #expect(outbox.cancelHeld(soonerID) != nil)
+
+        // Wait past what WAS the soonest entry's due time. If the wake had
+        // not been retargeted, nothing would be left to observe either way
+        // (the cancelled entry is gone) — the real assertion is below, once
+        // we also pass the later entry's due time.
+        try await Task.sleep(for: .seconds(0.3))
+        #expect(provider.sentMessages.isEmpty,
+                "the cancelled entry must not have transmitted, and the later one is not due yet")
+
+        // Now pass the later (originally second-soonest, now the ONLY, and
+        // therefore the retargeted wake's) entry's due time.
+        try await Task.sleep(for: .seconds(0.5))
+        #expect(provider.sentMessages.count == 1,
+                "the retargeted wake must still fire for the remaining entry")
+        #expect(outbox.outcome(for: laterID) == .sent)
+    }
+
+    /// Requirement 3: an entry that came due while the app was "closed" —
+    /// simulated by constructing a fresh `Outbox` from persisted documents
+    /// whose entry's `holdUntil` is already in the past — drains on launch,
+    /// via the wake `init` re-derives from what it just loaded, not by
+    /// waiting for the first 120s tick.
+    @Test("an entry that came due while the app was closed drains on launch")
+    func wakeDrainsPastDueEntryOnLaunch() async throws {
+        let provider = FakeMailProvider()
+        let documents = InMemoryDocumentStore()
+        let pastDue = OutboxEntry(operation: .send(aMessage()),
+                                  holdUntil: Date().addingTimeInterval(-30))
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        documents.setData(try encoder.encode([pastDue]), forKey: DocumentKeys.outbox)
+
+        // Constructing this is "launch" — nothing here calls drain()
+        // explicitly.
+        let revived = Outbox(documents: documents, provider: provider, maxAttempts: 3)
+        #expect(provider.sentMessages.isEmpty, "not yet — only the wake, not the constructor itself, may drain")
+
+        try await Task.sleep(for: .seconds(0.3))
+        #expect(provider.sentMessages.count == 1,
+                "the wake re-derived on launch must have drained the already-past-due entry")
+        #expect(revived.pending().isEmpty)
+    }
+
+    /// Requirement 4: tearing down must cancel the pending wake — a torn-
+    /// down instance must never fire. `teardownWake()` is what
+    /// `RavenRuntime.teardown()` calls; exercised directly here since a full
+    /// `RavenRuntime` is unnecessary to prove the `Outbox`-level guarantee.
+    @Test("teardownWake cancels the pending wake — no drain fires after teardown")
+    func teardownCancelsPendingWake() async throws {
+        let provider = FakeMailProvider()
+        let (outbox, _) = makeOutbox(provider)
+        try outbox.enqueue(.send(aMessage()), accountID: nil,
+                           holdUntil: Date().addingTimeInterval(0.15),
+                           sendAt: nil, draftID: nil)
+
+        outbox.teardownWake()
+
+        // Fast-forward well past the due time. With the wake cancelled,
+        // nothing may transmit — only the (absent, in this test) 120s tick
+        // or an explicit drain() could, and neither happens here.
+        try await Task.sleep(for: .seconds(1))
+        #expect(provider.sentMessages.isEmpty,
+                "a torn-down instance's cancelled wake must never fire")
+        #expect(outbox.pending().count == 1, "the entry is eligible now, but nothing drained it")
+    }
+
+    /// Requirement 5: the 120s tick is a backstop that must still work even
+    /// if the wake never fires (e.g. was never scheduled, or was cancelled
+    /// by a `teardownWake()` that a caller then continues to use the
+    /// instance past). Simulated here exactly as in the previous test —
+    /// wake cancelled — but this time by explicitly calling `drain()`
+    /// ourselves, standing in for the next scheduled tick.
+    @Test("drain() still catches a due entry even if the wake never fires")
+    func drainBackstopsAMissedWake() async throws {
+        let provider = FakeMailProvider()
+        let (outbox, _) = makeOutbox(provider)
+        try outbox.enqueue(.send(aMessage()), accountID: nil,
+                           holdUntil: Date().addingTimeInterval(0.05),
+                           sendAt: nil, draftID: nil)
+        outbox.teardownWake()   // the wake will never fire
+
+        try await Task.sleep(for: .seconds(0.2))
+        #expect(provider.sentMessages.isEmpty, "confirms the wake really did not fire")
+
+        // Stand-in for the sync timer's next tick.
+        await outbox.drain()
+        #expect(provider.sentMessages.count == 1,
+                "the backstop drain must still transmit the now-due entry")
+    }
 }

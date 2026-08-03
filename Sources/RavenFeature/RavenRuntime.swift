@@ -169,6 +169,12 @@ public enum ArchiveSearchState: Equatable {
         let outbox = Outbox(documents: host.documents, router: providers)
         self.outbox = outbox
         self.model = RavenViewModel(store: store, outbox: outbox)
+        // The one-shot wake `Outbox` schedules for the earliest held/
+        // scheduled entry calls back into `drainOutbox()` (not `outbox.
+        // drain()` directly) so a wake also refreshes the dead-letter/
+        // needs-review snapshots the Accounts surface renders — see
+        // `Outbox.onWake`'s own documentation.
+        outbox.onWake = { [weak self] in await self?.drainOutbox() }
 
         // Baked credentials (see `BakedOAuthCredentials` / `isCredentialsBaked`)
         // are preferred over anything the user typed in manually — that is
@@ -231,6 +237,7 @@ public enum ArchiveSearchState: Equatable {
     public func teardown() {
         syncTask?.cancel()
         syncTask = nil
+        outbox.teardownWake()
         for task in backfillTasks.values { task.cancel() }
         backfillTasks = [:]
         backfillingAccounts = []

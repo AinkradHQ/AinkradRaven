@@ -212,13 +212,33 @@ public struct ComposeSurface: View {
     /// Shown for the length of the undo-send hold window right after `send()`
     /// queues a message — see `undoableEntryID`. Pressing Undo pulls the
     /// entry back out of the outbox via `Outbox.cancelHeld` and restores it
-    /// as an editable draft; letting the deadline pass just lets the normal
-    /// 120s timer drain (and transmit) it, no special-casing needed.
+    /// as an editable draft; letting the deadline pass just lets the
+    /// scheduled wake (or, failing that, the 120s backstop timer) drain and
+    /// transmit it — no special-casing needed here.
+    ///
+    /// Live, not static: a `TimelineView` redraws this once a second so the
+    /// remaining time actually counts down instead of being frozen at
+    /// whatever it read when the banner first appeared — the defect this
+    /// view exists to fix (a user watching "Undo (20s)" with no way to tell
+    /// whether it is running at all).
+    ///
+    /// `AinkradAppKitUI` was checked for an existing countdown/progress
+    /// affordance first (see `AinkradMeter`, a determinate radial gauge
+    /// driven by `value`/`total`) — it exists and fits exactly, so this
+    /// reuses it rather than building a bespoke ring or bar. Only the
+    /// second-by-second re-render (via `TimelineView`) and the remaining-
+    /// seconds label next to it are specific to Compose.
     private func undoBanner(deadline: Date) -> some View {
-        HStack {
-            Text("Sending in \(max(0, Int(deadline.timeIntervalSinceNow)))s…")
-                .font(.caption).foregroundStyle(.secondary)
-            AinkradButton(title: "Undo", style: .secondary, action: undoSend)
+        let started = runtime.holdWindow
+        return TimelineView(.periodic(from: .now, by: 1)) { context in
+            let remaining = max(0, deadline.timeIntervalSince(context.date))
+            HStack(spacing: AinkradSpacing.sm) {
+                AinkradMeter(value: remaining, total: max(started, 1),
+                            label: "undo", size: 36)
+                Text("Sending in \(Int(remaining.rounded(.up)))s…")
+                    .font(.caption).foregroundStyle(.secondary)
+                AinkradButton(title: "Undo", style: .secondary, action: undoSend)
+            }
         }
     }
 

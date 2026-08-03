@@ -82,6 +82,22 @@ extension MutationOutbox {
     /// on-disk queue may be stale relative to memory.
     public private(set) var lastPersistenceError: String?
 
+    /// The single outstanding one-shot wake, if any — see `scheduleWake()`.
+    /// Exactly one at a time; scheduling a new one always cancels whatever
+    /// was here first. `DispatchWorkItem` + `DispatchQueue.main.asyncAfter`
+    /// on purpose, matching `GmailAuth.Coordinator`'s OAuth-listener-timeout
+    /// discipline (see that type's `timeoutWorkItem`): a stored, cancellable
+    /// work item on the main queue, not an unstructured `Task` (which would
+    /// run on the concurrent executor) and not a second polling loop.
+    private var wakeWorkItem: DispatchWorkItem?
+    /// Invoked when the one-shot wake fires, instead of calling `drain()`
+    /// directly. `RavenRuntime` sets this to its own `drainOutbox()` so the
+    /// dead-letter/needs-review snapshots the Accounts surface renders are
+    /// refreshed too — `Outbox` itself has no knowledge of `RavenRuntime`, so
+    /// it cannot do that refresh on its own. `nil` (the default, and every
+    /// existing test) falls back to calling `drain()` alone.
+    public var onWake: (() async -> Void)?
+
     /// Single-provider form, kept for the one-account/test case: every entry
     /// this outbox is willing to drain goes through `provider`, and an entry
     /// stamped for an account other than `accountID` is refused (see
@@ -115,6 +131,13 @@ extension MutationOutbox {
                 return entry
             }
         }
+        // Re-derive the wake from whatever was just loaded, so a hold or
+        // scheduled send that came due while the app was closed does not
+        // have to wait for the first sync-timer tick (which, in the real
+        // runtime, already runs immediately on launch) or, for an `Outbox`
+        // used standalone (a test, or an MCP-only host), for a wake that
+        // otherwise would never be scheduled at all.
+        scheduleWake()
     }
 
     /// Entries eligible for the next `drain()` pass.
@@ -243,6 +266,7 @@ extension MutationOutbox {
                                 holdUntil: holdUntil, sendAt: sendAt, draftID: draftID)
         entries.append(entry)
         persistRecordingFailure()
+        scheduleWake()
         return entry.id
     }
 
@@ -262,6 +286,7 @@ extension MutationOutbox {
         guard let holdUntil = entry.holdUntil, Date() < holdUntil else { return nil }
         entries.remove(at: index)
         persistRecordingFailure()
+        scheduleWake()
         return message
     }
 
@@ -290,6 +315,7 @@ extension MutationOutbox {
     public func purge(accountID: String) {
         entries.removeAll { $0.accountID == accountID }
         persistRecordingFailure()
+        scheduleWake()
     }
 
     /// One pass over the queue. Called after a mutation and on the sync timer.
@@ -312,7 +338,11 @@ extension MutationOutbox {
     public func drain() async {
         guard !isDraining else { return }
         isDraining = true
-        defer { isDraining = false }
+        // Recomputed unconditionally on the way out — whether every entry
+        // transmitted, failed and backed off, or nothing was eligible at
+        // all — since any of those can change which entry (if any) is now
+        // the earliest still waiting on a future `holdUntil`/`sendAt`.
+        defer { isDraining = false; scheduleWake() }
         for entry in pending() {
             // Resolved per entry, never once per pass: two accounts' entries
             // can sit in the same queue and each must leave through its own
@@ -365,6 +395,7 @@ extension MutationOutbox {
     public func discard(_ id: UUID) throws {
         entries.removeAll { $0.id == id }
         persistRecordingFailure()
+        scheduleWake()
     }
 
     /// Marks the entry as in-flight and persists that immediately, before the
@@ -396,5 +427,67 @@ extension MutationOutbox {
 
     private func persist() throws {
         documents.setData(try encoder.encode(entries), forKey: DocumentKeys.outbox)
+    }
+
+    // MARK: One-shot wake (undo-send/scheduled-send skew fix)
+
+    /// The soonest time at which SOME pending-shaped entry becomes eligible,
+    /// or `nil` if none carries a `holdUntil`/`sendAt` gate at all. Mirrors
+    /// `pending()`'s own filter (dead-lettered, needing review, in-flight,
+    /// and unroutable entries are excluded identically) so this never
+    /// schedules a wake for an entry `drain()` would refuse to touch anyway.
+    ///
+    /// Deliberately NOT restricted to a date still in the future: an entry
+    /// whose gate already elapsed — most notably one restored from disk on
+    /// launch after sitting held/scheduled while the app was closed — must
+    /// still produce a due date here, so `scheduleWake()` below fires for it
+    /// essentially immediately instead of silently waiting for the next
+    /// mutation or the 120s backstop tick.
+    ///
+    /// `due` for an entry is the LATER of its `holdUntil`/`sendAt` — matching
+    /// `OutboxEntry.isEligible`, which requires BOTH (when set) to have
+    /// passed, not either.
+    private func earliestDueDate() -> Date? {
+        entries.compactMap { entry -> Date? in
+            guard !entry.isDeadLettered, !entry.needsReview, entry.inFlightAt == nil,
+                  provider(forEntryAccount: entry.accountID) != nil else { return nil }
+            return [entry.holdUntil, entry.sendAt].compactMap { $0 }.max()
+        }.min()
+    }
+
+    /// Replaces whatever wake was scheduled with one for the new earliest
+    /// due time — ONE outstanding `DispatchWorkItem` at a time, never one
+    /// per entry. Called after every mutation that could change which entry
+    /// is soonest (`enqueue`, `cancelHeld`, `discard`, `purge`, the end of
+    /// every `drain()` pass) and once from `init` so a relaunch re-derives
+    /// it from whatever was just loaded, rather than waiting for the next
+    /// mutation to schedule the first one.
+    private func scheduleWake() {
+        wakeWorkItem?.cancel()
+        wakeWorkItem = nil
+        guard let due = earliestDueDate() else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let onWake = self.onWake {
+                    await onWake()
+                } else {
+                    await self.drain()
+                }
+            }
+        }
+        wakeWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, due.timeIntervalSinceNow),
+                                      execute: workItem)
+    }
+
+    /// Cancels the pending wake, same discipline as `RavenRuntime.teardown()`
+    /// cancelling the sync timer's `Task`. Called from `RavenRuntime.
+    /// teardown()` — a torn-down runtime must never fire a wake into a
+    /// provider it has already released. Safe to call more than once.
+    public func teardownWake() {
+        wakeWorkItem?.cancel()
+        wakeWorkItem = nil
     }
 }
