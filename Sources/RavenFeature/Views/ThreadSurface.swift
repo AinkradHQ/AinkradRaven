@@ -196,12 +196,30 @@ private struct AttachmentChipRow: View {
     }
 }
 
-/// The raw-HTML "Show original" view. Remote images are stripped out of the
-/// markup before it is loaded, so nothing phones home to a tracking pixel
-/// merely by opening this sheet; "Load images" re-loads the untouched HTML
-/// for this viewing and — for a sender not already allow-listed — persists
-/// the choice via `RemoteImageAllowList` so future messages from the SAME
-/// sender auto-load. A sender never seen before still defaults to blocked.
+/// The raw-HTML "Show original" view.
+///
+/// Nothing in an unopened-sender's message may reach the network. The previous
+/// implementation only blanked `<img src>` and claimed that was enough — CSS
+/// `background-image`, `<link rel=stylesheet>`, `<iframe>` and `@font-face`
+/// all still phoned home, and the `WKWebView` ran JavaScript with no
+/// restrictions at all. The claim is now backed by three things, in order of
+/// how much they are actually relied on:
+///
+/// 1. **A Content Security Policy injected ahead of the message markup**
+///    (`RawHTMLWebView.policy`). This is the real control: `default-src 'none'`
+///    denies every fetch WebKit can make — images, CSS, fonts, frames,
+///    scripts, XHR — regardless of which element or stylesheet property
+///    requests it. CSP composes restrictively, so a policy the message
+///    supplies itself cannot widen ours.
+/// 2. **JavaScript disabled** on the web view's configuration, so no script
+///    can rewrite the DOM to route around the above.
+/// 3. `blockingRemoteImages`, which still blanks remote `<img src>` values.
+///    Belt-and-braces on top of the CSP, not the protection itself.
+///
+/// "Load images" re-loads with an image-permitting policy (scripts and frames
+/// stay denied) and — for a sender not already allow-listed — persists the
+/// choice via `RemoteImageAllowList` so future messages from the SAME sender
+/// auto-load. A sender never seen before still defaults to blocked.
 private struct RawHTMLSheet: View {
     let html: String
     let sender: String?
@@ -236,7 +254,8 @@ private struct RawHTMLSheet: View {
             }
             .padding(AinkradSpacing.md)
 
-            RawHTMLWebView(html: imagesAllowed ? html : Self.blockingRemoteImages(html))
+            RawHTMLWebView(html: imagesAllowed ? html : Self.blockingRemoteImages(html),
+                           allowsRemoteLoads: imagesAllowed)
         }
         .frame(minWidth: 560, minHeight: 480)
     }
@@ -245,6 +264,10 @@ private struct RawHTMLSheet: View {
     /// pixel merely by being displayed. `cid:` inline images (which never
     /// leave the message) are left untouched, matching what
     /// `BodySanitizer.remoteImageURLs` itself treats as remote.
+    ///
+    /// This is a second layer only — `RawHTMLWebView`'s CSP is what actually
+    /// guarantees no remote load, including the ones this cannot see
+    /// (`background-image`, `<link>`, `<iframe>`, `@font-face`).
     static func blockingRemoteImages(_ html: String) -> String {
         var blocked = html
         for url in Set(BodySanitizer.remoteImageURLs(inHTML: html)) {
@@ -254,17 +277,56 @@ private struct RawHTMLSheet: View {
     }
 }
 
+/// Renders one message's raw HTML with remote loading governed by a Content
+/// Security Policy rather than by markup rewriting, and with JavaScript off in
+/// both states.
 private struct RawHTMLWebView: NSViewRepresentable {
     let html: String
+    /// False until the user (or a previous allow-list decision) opts in.
+    let allowsRemoteLoads: Bool
+
+    /// `default-src 'none'` is the whole point: it denies every fetch type
+    /// WebKit has, so a remote reference introduced by a CSS property, a
+    /// stylesheet `<link>`, an `<iframe>`, or an `@font-face` is refused
+    /// without this code having to recognise the syntax that requested it.
+    /// Inline styles stay allowed so the message is still readable, and `data:`
+    /// / `cid:` images carry no network traffic.
+    ///
+    /// When images are allowed, exactly two source lists widen —
+    /// `img-src`/`style-src`/`font-src` for presentation. `script-src`,
+    /// `frame-src`, `object-src` and `connect-src` remain `'none'` in BOTH
+    /// states: opting into a sender's images is not opting into their code.
+    private var policy: String {
+        let shared = "default-src 'none'; script-src 'none'; object-src 'none'; "
+            + "frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"
+        return allowsRemoteLoads
+            ? shared + "; img-src http: https: data: cid:; "
+                + "style-src 'unsafe-inline' http: https:; font-src http: https: data:"
+            : shared + "; img-src data: cid:; style-src 'unsafe-inline'"
+    }
+
+    /// The policy is prepended rather than merged into an existing `<head>`:
+    /// WebKit hoists a leading `<meta http-equiv>` into the head it
+    /// synthesises, and CSP intersects, so a policy the message declares for
+    /// itself can only narrow this one further — never widen it.
+    private var policedHTML: String {
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"\(policy)\">\n" + html
+    }
+
+    private func makeConfiguration() -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        return configuration
+    }
 
     func makeNSView(context: Context) -> WKWebView {
-        let view = WKWebView()
-        view.loadHTMLString(html, baseURL: nil)
+        let view = WKWebView(frame: .zero, configuration: makeConfiguration())
+        view.loadHTMLString(policedHTML, baseURL: nil)
         return view
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
-        nsView.loadHTMLString(html, baseURL: nil)
+        nsView.loadHTMLString(policedHTML, baseURL: nil)
     }
 }
 
@@ -313,15 +375,20 @@ private struct ReplyPanel: View {
                     Spacer()
                     AinkradButton(title: "Send", style: .primary, icon: "paperplane",
                                   isLoading: isSending, action: send)
-                        .disabled(isSending || (mode != .forward && recipients.isEmpty))
+                        // A forward is NOT exempt from needing a recipient.
+                        // Exempting it queued `To: ` empty and dead-lettered a
+                        // message the user never addressed.
+                        .disabled(isSending || recipients.isEmpty)
                 }
             }
         }
         .padding(AinkradSpacing.md)
     }
 
+    /// Parsed via `AddressListParser` rather than a comma split, so a pasted
+    /// `"Smith, Bea" <bea@x.com>` stays one recipient instead of becoming zero.
     private var recipients: [MailAddress] {
-        to.split(separator: ",").compactMap { MailAddress(rfc5322: String($0)) }
+        AddressListParser.parse(to)
     }
 
     private func open(_ newMode: ReplyComposer.Mode) {
@@ -337,7 +404,7 @@ private struct ReplyPanel: View {
     }
 
     private func send() {
-        guard mode == .forward || !recipients.isEmpty else { return }
+        guard !recipients.isEmpty else { return }
         isSending = true
         statusMessage = nil
         let outgoing = OutgoingMessage(

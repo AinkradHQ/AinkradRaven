@@ -18,3 +18,4 @@ Sources/RavenFeature/Generated/BakedOAuthCredentials.swift
 # ~/.config/ainkrad-raven/raw-fixtures/, outside this repo, and must never be
 # committed even if something goes wrong and a copy ends up inside it.
 raw-fixtures/
+.build/

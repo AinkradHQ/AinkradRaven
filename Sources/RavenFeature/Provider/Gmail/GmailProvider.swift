@@ -226,49 +226,66 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
 
     /// RFC822, base64url encoded as Gmail's `raw` field requires.
     ///
-    /// `Subject` (and any `To`/`Cc` display name) is RFC 2047 encoded-word
-    /// wrapped via `RFC2047.encode` whenever it contains non-ASCII — RFC 5322
-    /// header field bodies are ASCII-only, so a literal non-ASCII byte there
-    /// is either mangled or rejected by a strict parser. A pure-ASCII value
-    /// is left unencoded.
+    /// **Every** header line is built by `MIMEHeader`, which sanitizes each
+    /// value before encoding it. That is not stylistic: `RFC2047.encode`
+    /// returns pure-ASCII input unchanged, so nothing used to validate an
+    /// ASCII header value, and reply/forward subjects come from
+    /// `thread.subject` while `In-Reply-To` is a raw remote `Message-ID` —
+    /// both attacker-controlled. A subject of `"hello\r\nBcc: evil@x"` emitted
+    /// a real `Bcc:` header. See `MIMEHeader` for why nothing here formats a
+    /// `"Name: value"` string itself.
     ///
-    /// The body is sent as `multipart/alternative`: the plain text exactly as
-    /// typed (the fallback part, kept byte-for-byte — see `OutgoingMessage.
-    /// bodyText`'s callers, which append the signature before this is ever
-    /// called) alongside an HTML part rendered from that same text via
-    /// `MarkdownToHTML`, so a richer client can show the formatted version
-    /// while a plain-text client still gets something readable. The boundary
-    /// is a fresh random token checked against both parts before use, and
-    /// every line — headers, part headers, and the boundary delimiters — uses
-    /// CRLF, per RFC 5322/2046; a bare `\n` anywhere in a MIME structure this
-    /// picky is exactly how a recipient ends up seeing raw boundary markers.
+    /// `Subject` and any `To`/`Cc` display name is RFC 2047 encoded-word
+    /// wrapped whenever it contains non-ASCII — RFC 5322 header field bodies
+    /// are ASCII-only. A pure-ASCII value is left unencoded.
+    ///
+    /// The body is sent as `multipart/alternative`:
+    /// - the plain part is `bodyText` as typed — including the
+    ///   `body + "\n-- \n" + signature` its callers assembled — with only its
+    ///   line endings normalised to CRLF, which RFC 2046 requires of a `text/*`
+    ///   part and boundary recognition depends on. A bare `\n` in a MIME
+    ///   structure this picky is exactly how a recipient ends up seeing raw
+    ///   boundary markers;
+    /// - the HTML part renders that same text via
+    ///   `MarkdownToHTML.renderComposed`, which splits the signature off before
+    ///   parsing so the sigdash is never mistaken for a setext heading.
+    ///
+    /// Both parts declare `Content-Transfer-Encoding: base64` and are actually
+    /// base64d. They previously emitted raw UTF-8 under an implicit `7bit`,
+    /// which was untrue of the bytes and left one long typed paragraph free to
+    /// blow RFC 5322's 998-octet line limit. The boundary is a fresh random
+    /// token checked against both parts before use, and every structural line
+    /// uses CRLF.
     static func rfc822(_ message: OutgoingMessage) -> String {
-        let html = MarkdownToHTML.render(message.bodyText)
+        let html = MarkdownToHTML.renderComposed(message.bodyText)
         let boundary = randomBoundary(avoiding: [message.bodyText, html])
 
         var lines = [
-            "To: \(encodedAddressList(message.to))",
-            "Subject: \(RFC2047.encode(message.subject))",
-            "MIME-Version: 1.0",
+            MIMEHeader.addressLine("To", message.to),
+            MIMEHeader.line("Subject", message.subject),
+            MIMEHeader.literalLine("MIME-Version", "1.0"),
         ]
         if !message.cc.isEmpty {
-            lines.append("Cc: \(encodedAddressList(message.cc))")
+            lines.append(MIMEHeader.addressLine("Cc", message.cc))
         }
         if let inReplyTo = message.inReplyToMessageID {
-            lines.append("In-Reply-To: \(inReplyTo)")
-            lines.append("References: \(inReplyTo)")
+            lines.append(MIMEHeader.literalLine("In-Reply-To", inReplyTo))
+            lines.append(MIMEHeader.literalLine("References", inReplyTo))
         }
-        lines.append("Content-Type: multipart/alternative; boundary=\"\(boundary)\"")
+        lines.append(MIMEHeader.literalLine(
+            "Content-Type", "multipart/alternative; boundary=\"\(boundary)\""))
 
         let body = [
             "--\(boundary)",
-            "Content-Type: text/plain; charset=UTF-8",
+            MIMEHeader.literalLine("Content-Type", "text/plain; charset=UTF-8"),
+            MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"),
             "",
-            message.bodyText,
+            MIMEHeader.base64Body(message.bodyText),
             "--\(boundary)",
-            "Content-Type: text/html; charset=UTF-8",
+            MIMEHeader.literalLine("Content-Type", "text/html; charset=UTF-8"),
+            MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"),
             "",
-            html,
+            MIMEHeader.base64Body(html),
             "--\(boundary)--",
             "",
         ].joined(separator: "\r\n")
@@ -291,15 +308,6 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
             boundary = "raven-\(UUID().uuidString)"
         }
         return boundary
-    }
-
-    private static func encodedAddressList(_ addresses: [MailAddress]) -> String {
-        addresses.map(encodedAddress).joined(separator: ", ")
-    }
-
-    private static func encodedAddress(_ address: MailAddress) -> String {
-        guard let name = address.name, !name.isEmpty else { return address.email }
-        return "\(RFC2047.encode(name)) <\(address.email)>"
     }
 
     private func rfc822(_ message: OutgoingMessage) -> String { Self.rfc822(message) }

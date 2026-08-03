@@ -184,11 +184,21 @@ public struct InboxSurface: View {
 
     /// `j`/`k` move focus, `e` archives, `u` toggles read on whatever is
     /// currently active (multi-selection, else the focused row), and `/`
-    /// hands focus to the search field. This only ever fires while the list
-    /// itself holds keyboard focus — `AinkradSearchField`'s `TextField`
-    /// consumes character input for its own focus, so typing "j" while
-    /// searching types the letter rather than moving anything.
+    /// hands focus to the search field.
+    ///
+    /// Two guards, both of which were previously left to luck:
+    ///
+    /// - **Unmodified keys only.** `press.modifiers` was ignored, so ⌘E, ⌘U,
+    ///   ⌘J and ⌘K all fired these actions and could collide with the host
+    ///   app's own shortcuts. A bare `e` is the shortcut; `⌘E` is somebody
+    ///   else's.
+    /// - **Not while searching.** Relying on `AinkradSearchField`'s `TextField`
+    ///   to consume character input first is incidental, not guaranteed — a
+    ///   focus change or a future field could hand the key here and archive a
+    ///   thread because the user typed "e" into a search box. `searchFocused`
+    ///   is checked explicitly instead.
     private func handle(_ press: KeyPress) -> KeyPress.Result {
+        guard press.modifiers.isEmpty, !searchFocused else { return .ignored }
         switch press.characters {
         case "j": model.moveFocus(by: 1); return .handled
         case "k": model.moveFocus(by: -1); return .handled

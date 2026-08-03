@@ -18,10 +18,13 @@ public enum GmailMapping {
         func header(_ name: String) -> String? {
             headers.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.value
         }
+        // `AddressListParser`, not `split(separator: ",")`: a display name may
+        // be a quoted string containing commas, so `"Smith, Bea" <bea@x.com>`
+        // used to split into a non-address (`"Smith`, dropped) and a mangled
+        // remainder. That silently lost a participant — load-bearing now that
+        // reply-all builds its recipients from parsed `To`/`Cc`.
         func addresses(_ name: String) -> [MailAddress] {
-            (header(name) ?? "").split(separator: ",").compactMap {
-                MailAddress(rfc5322: String($0))
-            }
+            AddressListParser.parse(header(name) ?? "")
         }
         let labels = dto.labelIds ?? []
         let milliseconds = Double(dto.internalDate ?? "0") ?? 0

@@ -90,7 +90,12 @@ public enum SendAttempt {
     /// exactly `-- ` (dash dash space), which mail clients treat specially
     /// (e.g. trimming it on reply). Only ever written when there is a
     /// non-empty signature to follow it.
-    private static let sigdash = "\n-- \n"
+    ///
+    /// Shared with `MarkdownToHTML.renderComposed` via `Signature`, which
+    /// splits it back off before Markdown parsing — `--` is a valid setext h2
+    /// underline, so a parser handed the concatenated string turns the body's
+    /// last line into a heading and eats the separator.
+    private static let sigdash = Signature.sigdash
 
     /// Appends the account's signature to `message.bodyText`, or returns
     /// `message` unchanged if the account is unknown or its signature is
