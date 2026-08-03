@@ -101,6 +101,17 @@ public struct RavenShell: View {
                     .frame(maxHeight: Self.composeHeight)
             }
         }
+        // LAST in the chain, deliberately. `.ravenTranslucentModal`'s content is
+        // a SIBLING of the view it is attached to, not a descendant of it, so an
+        // environment modifier written above the modal reaches the panes and
+        // misses the composer — which is the same class of omission that left
+        // `ComposeFields` on the kit's opaque default in the first place.
+        // Outermost, it reaches both.
+        //
+        // Read here, in `body`, so the `@Observable` access is tracked and the
+        // slider repaints every surface together. See `RavenSectionFrame.swift`
+        // for why the deeper surfaces read this rather than take an argument.
+        .ravenAppearanceEnvironment(runtime.appearanceStore.appearance)
     }
 
     /// Wide enough for the drafts rail plus a composer that does not wrap a

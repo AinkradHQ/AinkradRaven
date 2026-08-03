@@ -37,6 +37,11 @@ public struct InboxSurface: View {
     @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradTypography) private var typo
 
+    /// Straight off the runtime's observable store rather than the environment,
+    /// because this view already holds the runtime — the environment value
+    /// exists for the surfaces that do not (see `RavenSectionFrame.swift`).
+    private var appearance: RavenAppearance { runtime.appearanceStore.appearance }
+
     public init(model: RavenViewModel, runtime: RavenRuntime) {
         self.model = model
         self.runtime = runtime
@@ -125,8 +130,16 @@ public struct InboxSurface: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, AinkradSpacing.xs)
         .padding(.vertical, AinkradSpacing.xs)
+        // Derived from the rail's own translucency, not the fixed 0.28/0.55
+        // this was. Over a rail painted at 0.42 those composite to 0.58 and
+        // 0.74, so the toolbar was the most solid band on the pane and the
+        // selected state was nearly opaque. The two states still differ — the
+        // unread/read lifts are the same pair of budgets every other Raven
+        // surface picks between — they just differ within the setting instead of
+        // on top of it.
         .background(ChamferShape(cut: AinkradRadius.sm)
-            .fill(theme.surfaceElevated.opacity(selectionCount > 0 ? 0.55 : 0.28)))
+            .fill(theme.surfaceElevated
+                .opacity(appearance.cardFillOpacity(isRead: selectionCount == 0))))
     }
 
     /// Whether the mutating toolbar controls render at all.
@@ -213,7 +226,9 @@ public struct InboxSurface: View {
             AinkradErrorState(message: "Search all mail failed: \(message)")
                 .frame(height: 96)
         case .results(let hits):
-            AinkradSectionFrame(title: hits.isEmpty
+            // `RavenSectionFrame`: inside the translucent rail, the kit
+            // component's fixed 0.35 fill reads as a dark card on glass.
+            RavenSectionFrame(title: hits.isEmpty
                                 ? "All mail: no matches"
                                 : "All mail (\(hits.count))") {
                 if hits.isEmpty {

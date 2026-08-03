@@ -43,6 +43,41 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
         AnyView(RavenShell(runtime: runtime(host: host)))
     }
 
+    /// The window's own background fill — the hook that makes the title bar
+    /// part of the same glass as the panes.
+    ///
+    /// Raven returned the protocol's default `nil` until now, and `nil` is not
+    /// a neutral answer in the host: `BlockView.headerBackground` falls back to
+    /// `surfaceElevated.opacity(0.92)`, so the title bar was a near-solid bar
+    /// sitting on top of surfaces painted at 0.42 — the seam the user is
+    /// looking at. It also gates more than the header. `BlockView.
+    /// isTranslucentPane` and `TileLayoutView.hasTranslucentPane` both test
+    /// `NSColor(chromeFill()).alphaComponent < 1`, and they are what turn on
+    /// the host's own blurred sky+island backdrop behind the pane. Returning
+    /// `nil` declared Raven opaque, so the host skipped rendering the very
+    /// thing Raven's translucency was meant to reveal.
+    ///
+    /// The colour is the theme background at the user's `surfaceOpacity` —
+    /// literally the same expression `ravenSurface` paints over its blur (see
+    /// `RavenSurface`), so header and pane are the same fill by construction
+    /// rather than by two numbers kept in step by hand.
+    ///
+    /// `static` with only a `HostServices` to work from is not a problem: the
+    /// opacity lives in `RavenRuntime.appearanceStore`, and the per-host
+    /// runtime is reachable here exactly as it is in `makeRootView`. Because
+    /// the host calls this closure from inside its own `body` (it is stored as
+    /// `RegisteredApp.chromeFill`, a `@MainActor () -> Color?`, and invoked in
+    /// `headerBackground`), the `@Observable` read below is tracked by
+    /// SwiftUI — so the title bar follows the transparency slider live, in the
+    /// same frame as the panes, with no relaunch.
+    public static func chromeFill(host: HostServices) -> Color? {
+        // `theme.tokens` (not the `HostTheme` wrapper) is the colour snapshot,
+        // and reading it here also means a theme change repaints the header —
+        // `HostTheme` is `@Observable` and the host calls this from its `body`.
+        host.theme.tokens.background
+            .opacity(runtime(host: host).appearanceStore.appearance.surfaceOpacity)
+    }
+
     /// The fallback the protocol describes, for a host that does not consume
     /// `settingsCatalog`. Deliberately thin now: `RavenSettingsView` stacks the
     /// same group views the catalog publishes, in the same order, so this

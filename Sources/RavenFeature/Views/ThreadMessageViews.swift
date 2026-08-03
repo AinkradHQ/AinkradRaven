@@ -269,7 +269,12 @@ struct CalendarInviteCard: View {
         // that component is. It also supplies the chamfer, border and accent
         // tick from the theme, replacing `Color.accentColor` (SwiftUI's own
         // accent, not the host's).
-        AinkradSectionFrame(title: "Invitation") {
+        // `RavenSectionFrame` rather than the kit's `AinkradSectionFrame`
+        // for the fill only: this block is nested two surfaces deep (pane,
+        // then message card), and the kit's hardcoded 0.35 stacked there is
+        // the darkest region in the thread. Everything else about the look
+        // — accent tick, chamfer, border, spacing — is unchanged.
+        RavenSectionFrame(title: "Invitation") {
             VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
                 HStack(spacing: AinkradSpacing.sm) {
                     AinkradIconGlyph(systemName: "calendar", filled: true)

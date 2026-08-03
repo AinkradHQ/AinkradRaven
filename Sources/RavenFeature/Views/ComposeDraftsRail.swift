@@ -30,7 +30,11 @@ struct ComposeDraftsRail: View {
     @Environment(\.ainkradTypography) private var typo
 
     var body: some View {
-        AinkradSectionFrame(title: "Drafts") {
+        // `RavenSectionFrame`, not the kit's: this block sits inside the
+        // compose overlay, and the kit component's hardcoded 0.35 of
+        // `surfaceElevated` composites over the panel to a dark card in the
+        // middle of glass. Same look, appearance-derived fill.
+        RavenSectionFrame(title: "Drafts") {
             let drafts = { _ = version; return DraftBox.shared.all() }()
             ScrollView {
                 LazyVStack(spacing: 2) {

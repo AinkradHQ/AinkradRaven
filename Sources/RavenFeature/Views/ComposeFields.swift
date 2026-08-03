@@ -18,6 +18,7 @@ struct RecipientChipField: View {
 
     @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradTypography) private var typo
+    @Environment(\.ravenAppearance) private var appearance
 
     private var suggestions: [RecipientSuggestions.Candidate] {
         guard isFocused, !typed.isEmpty else { return [] }
@@ -79,7 +80,14 @@ struct RecipientChipField: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .ainkradPanel()
+                // `ravenSurface`, not the bare `.ainkradPanel()` this was.
+                // With no arguments that call takes `AinkradPanel`'s default
+                // `backgroundOpacity: 0.94` — an opaque slab floating inside a
+                // compose overlay whose own panel is a few percent, which is
+                // the most solid thing on the screen while a recipient is being
+                // typed. Same modifier every Raven pane uses, so it is glass at
+                // the user's setting.
+                .ravenSurface(appearance)
             }
         }
     }
@@ -107,6 +115,7 @@ struct ComposeFieldWrap<Content: View>: View {
 
     @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradTypography) private var typo
+    @Environment(\.ravenAppearance) private var appearance
 
     var body: some View {
         HStack(alignment: .top, spacing: AinkradSpacing.sm) {
@@ -125,7 +134,16 @@ struct ComposeFieldWrap<Content: View>: View {
         // dirty on the light ones and invisible on the dark ones. Matches
         // `AinkradTextField`'s own treatment (chamfer + elevated fill + accent
         // hairline) so a chip field and a text field are visibly one family.
-        .background(ChamferShape(cut: AinkradRadius.sm).fill(theme.surfaceElevated.opacity(0.45)))
+        //
+        // The fill is the shared card budget, not the fixed 0.45 it was. 0.45
+        // over a compose panel that itself sits on the scrim composites to
+        // roughly 0.7 — a field well darker than the modal holding it, and the
+        // second-most solid thing in the overlay after the suggestion popover
+        // above. `cardFillOpacity(isRead: false)` is the same lift a hovered
+        // inbox row and an unread message card spend, so a field reads as
+        // raised without being a slab.
+        .background(ChamferShape(cut: AinkradRadius.sm)
+            .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false))))
         .overlay(ChamferShape(cut: AinkradRadius.sm)
             .strokeBorder(theme.accentPrimary.opacity(0.2), lineWidth: 1))
     }
