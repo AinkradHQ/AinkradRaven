@@ -19,6 +19,11 @@ struct MessageRow: View {
     @State private var quotedExpanded = false
     @State private var showingOriginal = false
 
+    /// The live surface setting. Read through the runtime's observable store so
+    /// dragging the transparency slider in Settings repaints these cards
+    /// immediately rather than at the next unrelated invalidation.
+    private var appearance: RavenAppearance { runtime.appearanceStore.appearance }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
             HStack(spacing: AinkradSpacing.sm) {
@@ -47,8 +52,14 @@ struct MessageRow: View {
         .padding(AinkradSpacing.md)
         // Theme surface, not `Color.primary` — the host is themeable and a
         // primary-derived wash reads as grey on a tinted theme.
+        //
+        // Scaled by the user's surface opacity so a card cannot be more solid
+        // than the pane holding it: at full transparency the old fixed 0.28/
+        // 0.45 wash was the thing still reading as an opaque slab even after
+        // the pane behind it went to glass. `cardOpacity` also documents why
+        // cards get no blur of their own.
         .background(ChamferShape(cut: AinkradRadius.sm)
-            .fill(theme.surfaceElevated.opacity(message.isRead ? 0.28 : 0.45)))
+            .fill(theme.surfaceElevated.opacity(appearance.cardOpacity(isRead: message.isRead))))
         .overlay(alignment: .leading) {
             // Unread messages carry an accent edge rather than a colour swap,
             // matching `AinkradListRow`'s own selected treatment.
@@ -80,17 +91,26 @@ struct MessageRow: View {
         } else if let body = loadedBody {
             let split = QuoteTrimmer.split(body.plainText)
             VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
+                // Body text is the thing transparency most easily ruins, so
+                // both its opacity and its halo come from `appearance` rather
+                // than the old fixed 0.9/0.55 — see `RavenAppearance.
+                // bodyTextOpacity`. At full opacity these evaluate to exactly
+                // the previous numbers and the halo to nothing, so an opaque
+                // Raven looks unchanged.
                 Text(split.visible)
                     .font(AinkradFontResolver.font(.body, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.9))
+                    .foregroundStyle(theme.foreground.opacity(appearance.bodyTextOpacity))
                     .textSelection(.enabled)
+                    .ravenLegibleText(appearance)
 
                 if let quoted = split.quoted {
                     AinkradDisclosureGroup(title: "Show quoted text", isExpanded: $quotedExpanded) {
                         Text(quoted)
                             .font(AinkradFontResolver.font(.body, typography: typo))
-                            .foregroundStyle(theme.foreground.opacity(0.55))
+                            .foregroundStyle(theme.foreground
+                                .opacity(appearance.secondaryTextOpacity))
                             .textSelection(.enabled)
+                            .ravenLegibleText(appearance)
                     }
                 }
 

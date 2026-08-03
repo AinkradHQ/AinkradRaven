@@ -74,8 +74,16 @@ public struct RavenShell: View {
         // recipient row wants). A sheet is edge-anchored and full-bleed on its
         // cross axis, which suits a filter or a detail drawer, not a form the
         // user will spend a minute inside.
-        .ainkradModal(isPresented: isComposing,
-                     contentWidth: Self.composeWidth(in: availableWidth)) {
+        // `ravenTranslucentModal`, not `.ainkradModal`: same scrim, same
+        // dismissal, same transition, but the panel takes the user's
+        // transparency setting instead of the kit's fixed 0.94 — which is why
+        // the composer read as an opaque slab over a blurred island. See
+        // `RavenTranslucentModal` for why that modifier is local. It also
+        // publishes `ravenModalPresented` so the inbox rail's focus ring stops
+        // painting over this scrim.
+        .ravenTranslucentModal(isPresented: isComposing,
+                              contentWidth: Self.composeWidth(in: availableWidth),
+                              appearance: runtime.appearanceStore.appearance) {
             if let composing {
                 ComposeSurface(runtime: runtime, context: composing,
                               // Below the threshold the rail is dropped rather

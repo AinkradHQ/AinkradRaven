@@ -36,6 +36,16 @@ public enum ArchiveSearchState: Equatable {
     /// same failure paths as before rather than a special case.
     public let providers: MailProviderRouter
 
+    /// Surface translucency/blur, observable so the settings slider repaints
+    /// the mail panes live — see `RavenAppearanceStore` for why it is its own
+    /// object rather than a computed property here like `holdWindow`.
+    public let appearanceStore: RavenAppearanceStore
+
+    /// Transient settings-form text (the OAuth client id/secret pair) that must
+    /// survive the host rebuilding the settings catalog on every render pass.
+    /// See `RavenSettingsDraft`.
+    public let settingsDraft = RavenSettingsDraft()
+
     private let host: HostServices
     private var auth: GmailAuth?
     /// One engine per connected account. Not `private` — see `syncEngine`
@@ -169,6 +179,7 @@ public enum ArchiveSearchState: Equatable {
         let outbox = Outbox(documents: host.documents, router: providers)
         self.outbox = outbox
         self.model = RavenViewModel(store: store, outbox: outbox)
+        self.appearanceStore = RavenAppearanceStore(documents: host.documents)
         // The one-shot wake `Outbox` schedules for the earliest held/
         // scheduled entry calls back into `drainOutbox()` (not `outbox.
         // drain()` directly) so a wake also refreshes the dead-letter/
@@ -271,6 +282,19 @@ public enum ArchiveSearchState: Equatable {
     public var isCredentialsBaked: Bool {
         BakedOAuthCredentials.clientID != nil && BakedOAuthCredentials.clientSecret != nil
     }
+
+    /// Whether Connect could possibly succeed: credentials are either baked
+    /// into the app (the shipped case) or have been saved by the user.
+    /// Enabled-but-guaranteed-to-fail is worse than disabled.
+    ///
+    /// Lives on the runtime rather than in a view because BOTH settings
+    /// surfaces need it now — the catalog's Connect action and the fallback
+    /// pane's button — and two copies of this rule is how one of them ends up
+    /// offering a button that cannot work. Note it asks whether credentials are
+    /// SAVED, not whether something is typed: on the catalog surface saving is
+    /// its own explicit action (`Save client credentials`), so "typed but not
+    /// saved" is no longer a state Connect should accept.
+    public var canConnectAccount: Bool { isCredentialsBaked || hasCredentials }
 
     public func saveCredentials(clientID: String, clientSecret: String) {
         guard let data = clientID.data(using: .utf8) else { return }

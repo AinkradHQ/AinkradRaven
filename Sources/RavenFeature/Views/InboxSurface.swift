@@ -61,9 +61,14 @@ public struct InboxSurface: View {
             archiveSearchSection
         }
         .padding(AinkradSpacing.md)
-        .ainkradPanel()
+        .ravenSurface(runtime.appearanceStore.appearance)
         .focusable()
         .focused($listFocused)
+        // `.focusable()` is here for `onKeyPress` (j/k/e/u//), not for the ring
+        // AppKit draws as a side effect of it. `ravenFocusRing` disables that
+        // system ring and substitutes a restrained theme-coloured one that is
+        // also suppressed while a modal covers this pane — see `RavenFocusRing`.
+        .ravenFocusRing(isFocused: listFocused)
         .onKeyPress { press in handle(press) }
         .onAppear {
             model.reload()
@@ -273,58 +278,26 @@ public struct InboxSurface: View {
 
     // MARK: Rows
 
-    /// One thread row: unread/star state as the leading glyph, the subject as
-    /// the title, sender + snippet as the subtitle, and the date in the
-    /// trailing column. All five facts a mail row needs, in the kit's own
-    /// `AinkradListRow` (which supplies exactly two text lines), with no
-    /// per-row action buttons crowding them out.
+    /// One thread row — see `InboxRow`, which owns the layout and the line
+    /// limits that keep the rail scannable. This supplies only the facts the
+    /// row cannot know for itself (selection, which badges apply) and the
+    /// interaction, which stays here because both route into `model`.
     private func row(for summary: ThreadSummary) -> some View {
         let isFocused = model.focusedThreadID == summary.id
         let isMultiSelected = model.multiSelection.contains(summary.id)
-        let isUnread = summary.unreadCount > 0
-        return AinkradListRow(
+        return InboxRow(
+            summary: summary,
             isSelected: model.selectedThread?.id == summary.id || isFocused || isMultiSelected,
-            onTap: nil,
-            leading: {
-                // Starred wins over unread in the glyph because it is the state
-                // the user set deliberately; unread is still carried by the
-                // filled treatment and the bold subject.
-                AinkradIconGlyph(systemName: leadingGlyph(for: summary), filled: isUnread)
-            },
-            title: summary.subject.isEmpty ? "(no subject)" : summary.subject,
-            subtitle: subtitle(for: summary),
-            trailing: {
-                VStack(alignment: .trailing, spacing: AinkradSpacing.xs) {
-                    Text(MailDateLabel.short(for: summary.lastMessageDate))
-                        .font(AinkradFontResolver.font(.caption, typography: typo))
-                        .foregroundStyle(theme.foreground.opacity(isUnread ? 0.85 : 0.5))
-                        .monospacedDigit()
-                    HStack(spacing: AinkradSpacing.xs) {
-                        if let error = model.rowErrors[summary.id] {
-                            AinkradBadge(text: "!", status: .danger).ainkradTooltip(error)
-                        }
-                        if let accountLabel = accountBadgeLabel(for: summary) {
-                            AinkradBadge(text: accountLabel, status: .neutral)
-                        }
-                        if isUnread {
-                            AinkradBadge(text: "\(summary.unreadCount)", status: .success)
-                        }
-                    }
-                }
-            })
-            .contentShape(Rectangle())
-            .onTapGesture {
+            isUnread: summary.unreadCount > 0,
+            accountLabel: accountBadgeLabel(for: summary),
+            rowError: model.rowErrors[summary.id],
+            onTap: {
                 let modifiers = NSApp.currentEvent?.modifierFlags ?? []
                 model.clickRow(summary.id,
                                shift: modifiers.contains(.shift),
                                command: modifiers.contains(.command))
-            }
+            })
             .ainkradContextMenu(contextMenuItems(for: summary))
-    }
-
-    private func leadingGlyph(for summary: ThreadSummary) -> String {
-        if summary.isStarred { return "star.fill" }
-        return summary.unreadCount > 0 ? "envelope.badge" : "envelope.open"
     }
 
     /// The right-click menu is where a SINGLE row's own actions still live —
@@ -360,11 +333,6 @@ public struct InboxSurface: View {
         guard runtime.accounts.count > 1, model.accountID == nil else { return nil }
         let address = model.address(ofAccount: summary.accountID) ?? summary.accountID
         return String(address.split(separator: "@").first ?? Substring(address))
-    }
-
-    private func subtitle(for summary: ThreadSummary) -> String {
-        let sender = summary.participants.first?.displayLabel ?? "Unknown sender"
-        return summary.snippet.isEmpty ? sender : "\(sender) — \(summary.snippet)"
     }
 
     /// `j`/`k` move focus, `e` archives, `u` toggles read on whatever is

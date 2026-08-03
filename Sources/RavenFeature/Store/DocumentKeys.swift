@@ -13,6 +13,11 @@ public enum DocumentKeys {
     /// scoped per-account: the same sender address means the same person
     /// regardless of which of the user's own accounts received the mail.
     public static let remoteImageAllowList = "remote-image-allow-list"
+    /// Surface translucency and blur choice — see `RavenAppearance`. A
+    /// preference, so a plain document like `rules`, and NOT per-account: how
+    /// see-through the reading pane is is a property of the window, not of
+    /// whose mail is in it.
+    public static let appearance = "appearance"
     public static func index(accountID: String, month: String) -> String {
         "index-\(accountID)-\(month)"
     }

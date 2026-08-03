@@ -43,8 +43,29 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
         AnyView(RavenShell(runtime: runtime(host: host)))
     }
 
+    /// The fallback the protocol describes, for a host that does not consume
+    /// `settingsCatalog`. Deliberately thin now: `RavenSettingsView` stacks the
+    /// same group views the catalog publishes, in the same order, so this
+    /// surface cannot silently lose a setting the catalog has — but the catalog
+    /// is the real surface, and this is what a generation-7 host gets.
     public static func makeSettingsView(host: HostServices) -> AnyView {
         AnyView(RavenSettingsView(runtime: runtime(host: host)))
+    }
+
+    /// Raven's settings published as descriptors so the host can index them,
+    /// deep-link into them, and lay them out with every other setting using its
+    /// own `SettingsPageView`/`SettingsGroupView`/`SettingsRow`. See
+    /// `RavenSettingsCatalog` for the group breakdown, why the paths are
+    /// relative, and why the tab bar the five groups produce is the host's
+    /// rather than ours.
+    ///
+    /// `host.theme` is passed through because the host does NOT apply its theme
+    /// bridge to this closure the way it does to `makeRootView`/
+    /// `makeSettingsView` — see `RavenSettingsCatalog.pane`.
+    public static func settingsCatalog(host: HostServices) -> SettingsPage? {
+        let runtime = runtime(host: host)
+        return RavenSettingsCatalog.page(runtime: runtime, draft: runtime.settingsDraft,
+                                        theme: host.theme)
     }
 
     public static func makeMCPServer(host: HostServices) -> MCPAppServer {

@@ -61,7 +61,12 @@ public struct ThreadSurface: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ainkradPanel()
+        .ravenSurface(runtime.appearanceStore.appearance)
+        // Deliberately still the kit's opaque modal, unlike the composer: this
+        // presents a message's ORIGINAL HTML, authored against whatever
+        // background its sender assumed. Rendering someone else's markup over a
+        // see-through backing is how you get white-on-white mail. A composer is
+        // Raven's own chrome and can be glass; a foreign document cannot.
         .ainkradModal(isPresented: $showingOriginal, contentWidth: 640) {
             if let message = originalMessage {
                 ThreadOriginalLoader(message: message, runtime: runtime,
@@ -77,11 +82,34 @@ public struct ThreadSurface: View {
     /// subject and a message count, so a thread with six participants looked
     /// identical to a one-to-one.
     private func header(_ thread: MailThread) -> some View {
-        VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
-            Text(thread.subject.isEmpty ? "(no subject)" : thread.subject)
+        let subject = thread.subject.isEmpty ? "(no subject)" : thread.subject
+        return VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
+            // One line, tail-truncated, full text on hover.
+            //
+            // `fixedSize(horizontal: false, vertical: true)` is gone: that is
+            // what let a long subject grow the header downward, and combined
+            // with the pane's width it produced the wrapped-then-truncated mess
+            // in the screenshot.
+            //
+            // No `multilineTextAlignment` and no explicit alignment on the Text
+            // itself: subjects here are routinely Arabic/Latin mixed, and the
+            // ONLY correct handling is to set the limit and let the system's
+            // bidi algorithm lay the run out. Forcing `.leading` would be
+            // hardcoding LTR and would break an RTL subject's natural
+            // alignment. The enclosing VStack's `.leading` positions the Text
+            // box, which is width-filling, and does not override the text
+            // direction inside it.
+            Text(subject)
                 .font(AinkradFontResolver.font(.title, weight: .semibold, typography: typo))
                 .foregroundStyle(theme.foreground)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // The truncation has to be recoverable — a truncated subject
+                // the user cannot read in full is information deleted, not
+                // deferred. `AinkradTooltipPopover`'s own modifier, the same
+                // idiom the toolbar glyphs and the Read-only badge already use.
+                .ainkradTooltip(subject)
             HStack(spacing: AinkradSpacing.xs) {
                 Text(participantLabel(thread))
                     .font(AinkradFontResolver.font(.caption, typography: typo))
