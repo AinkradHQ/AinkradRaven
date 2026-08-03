@@ -35,6 +35,15 @@ public struct RavenSettingsView: View {
             clientID = runtime.savedClientID ?? clientID
             signature = runtime.accounts.first?.signature ?? ""
         }
+        // `runtime.accounts` is a plain snapshot method, not `@Observable`
+        // storage, so nothing re-reads it just because `runtime.syncState`
+        // changed underneath. This is the push replacement for the old
+        // polling: `SyncEngine.onChange` (via `RavenRuntime.mirrorSyncEngineState`)
+        // updates `syncState` on every backfill page and on every delta sync,
+        // and THIS is what turns each of those pushes into a fresh read of
+        // `runtime.accounts` — including the final one, where `state`/
+        // `lastSyncedAt`/`lastError` land after a backfill or delta finishes.
+        .onChange(of: runtime.syncState) { _, _ in accountsVersion += 1 }
     }
 
     // MARK: Credentials
@@ -185,10 +194,11 @@ public struct RavenSettingsView: View {
             HStack {
                 AinkradButton(title: "Resync From Scratch", style: .secondary,
                               icon: "arrow.triangle.2.circlepath") {
-                    Task {
-                        await runtime.resyncFromScratch()
-                        accountsVersion += 1
-                    }
+                    // Kicks off and returns immediately — see
+                    // `RavenRuntime.resyncFromScratch`'s documentation. Progress
+                    // reaches this view via the `.onChange(of: runtime.syncState)`
+                    // below, not a poll.
+                    runtime.resyncFromScratch()
                 }
                 AinkradButton(title: "Sync Now", style: .ghost, icon: "arrow.clockwise") {
                     Task {

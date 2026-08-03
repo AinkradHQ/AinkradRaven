@@ -152,6 +152,58 @@ import AinkradAppKit
         }
     }
 
+    // MARK: resyncFromScratch cannot run twice concurrently
+
+    @Test("a second resync while one is running is refused, and a failure in the walk is still observable")
+    func resyncRefusesConcurrentAndSurfacesFailure() async throws {
+        let host = FakeHostServices()
+        let runtime = RavenRuntime(host: host)
+        // Stop the real poll loop for the same reason `syncOnceRecordsTransientFailure`
+        // does — nothing here should race a background tick.
+        runtime.teardown()
+
+        try runtime.store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
+                                                   displayName: "Me", state: .ready))
+        let provider = FakeMailProvider(accountID: "a1")
+        // Parks the walk mid-page so this test has a deterministic window in
+        // which to attempt (and prove refused) a second concurrent resync,
+        // rather than racing scheduling to try to catch it in flight.
+        provider.holdsFetchThreads = true
+        provider.pages = [ThreadPage(threads: [], nextPageToken: nil)]
+        // Scripts the walk to fail after it resumes, so this test also proves
+        // the failure isn't swallowed by having gone through the detached
+        // `resyncFromScratch()` path instead of the old inline-awaited one.
+        provider.failures["fetchLabels"] = [MailError.providerFailed(status: 500, message: "boom")]
+        runtime.syncEngine = SyncEngine(store: runtime.store, provider: provider, accountID: "a1")
+
+        runtime.resyncFromScratch()
+        await provider.waitUntilFetchThreadsEntered()
+        #expect(runtime.isResyncing == true)
+
+        // A second call while the first is still parked inside fetchThreads
+        // must be refused outright — not queued, not started as a second
+        // competing walk over the same store.
+        runtime.resyncFromScratch()
+        #expect(provider.fetchThreadsCallCount == 1)
+
+        provider.releaseFetchThreads()
+        // Let the (now-failing) walk run to completion.
+        while runtime.isResyncing {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        #expect(provider.fetchThreadsCallCount == 1)
+        #expect(runtime.lastSyncError != nil)
+        if case .failed = runtime.syncState {
+            // expected
+        } else {
+            Issue.record("expected .failed, got \(runtime.syncState)")
+        }
+        let account = try #require(runtime.store.accounts().first(where: { $0.id == "a1" }))
+        #expect(account.state == .failed)
+        #expect(account.lastError != nil)
+    }
+
     // MARK: account row is read-modify-written, never clobbered by a snapshot
 
     /// The Settings signature field wrote back a `MailAccount` captured when

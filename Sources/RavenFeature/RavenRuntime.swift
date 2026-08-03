@@ -93,6 +93,17 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     /// for an account that no longer exists locally cannot keep writing to
     /// the store underneath it.
     private var backfillTask: Task<Void, Never>?
+    /// Guards `resyncFromScratch` against a second concurrent walk. Set
+    /// `true` synchronously inside `startBackfill()` — before the `Task` it
+    /// creates has had any chance to actually run — and reset `false` at the
+    /// end of `runBackfill()`, on sign-out, and on teardown. See
+    /// `resyncFromScratch`'s documentation for why this refuses a second
+    /// call rather than cancelling-and-restarting: `SyncEngine.backfill()`
+    /// never checks `Task.isCancelled`, so cancelling the wrapper `Task`
+    /// alone cannot be trusted to stop a real network walk already in
+    /// flight, and two overlapping walks writing into the same store is
+    /// exactly what must never happen.
+    private var isBackfilling = false
     private var contextToken: PluginContextToken?
     private var actionTokens: [AgentActionToken] = []
 
@@ -187,6 +198,7 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         syncTask = nil
         backfillTask?.cancel()
         backfillTask = nil
+        isBackfilling = false
         if let contextToken {
             host.context.remove(contextToken)
             self.contextToken = nil
@@ -259,9 +271,14 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     /// whoever calls this (`connectAccount`, `resyncFromScratch`) does not
     /// block on it. Cancels any backfill already in flight first — starting
     /// a second one for the same runtime while the first is still walking
-    /// pages would race writes into the same store.
+    /// pages would race writes into the same store. `isBackfilling` is set
+    /// here, synchronously, BEFORE the `Task` below is even scheduled to
+    /// run — not inside `runBackfill()` — so there is no window between a
+    /// caller checking it and this method flipping it in which a second
+    /// caller on the same main actor could slip through.
     private func startBackfill() {
         backfillTask?.cancel()
+        isBackfilling = true
         backfillTask = Task { [weak self] in
             await self?.runBackfill()
         }
@@ -297,6 +314,7 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
             // instance no longer has a provider for.
             backfillTask?.cancel()
             backfillTask = nil
+            isBackfilling = false
             providerProxy.current = nil
             syncEngine = nil
             outbox.accountID = nil
@@ -307,13 +325,35 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         model.reload()
     }
 
-    /// Re-walks the full sync window from scratch. `SyncEngine.backfill()`
-    /// always does a fresh page walk (not a delta against the stored cursor),
-    /// so calling it again IS the "resync from scratch" the Accounts surface
-    /// offers — no separate code path needed.
-    public func resyncFromScratch() async {
-        await runBackfill()
+    /// Re-walks the full sync window from scratch, kicking the walk off and
+    /// returning immediately — exactly the shape `connectAccount` uses for
+    /// its own backfill (see `startBackfill`), and for the same reason:
+    /// awaiting `runBackfill()` here froze the "Resync from scratch" button
+    /// for the length of a full 90-day walk, the same defect already fixed
+    /// for Connect. `SyncEngine.backfill()` always does a fresh page walk
+    /// (not a delta against the stored cursor), so kicking it off again IS
+    /// the "resync from scratch" the Accounts surface offers — no separate
+    /// code path needed.
+    ///
+    /// REFUSES a second call while one is already running, rather than
+    /// cancelling the first and coalescing into the new one — see
+    /// `isBackfilling`'s documentation for why cancellation of the wrapper
+    /// `Task` alone is not good enough here. A caller that wants to know
+    /// whether the request was actually honored can check `isResyncing`
+    /// immediately after calling this.
+    public func resyncFromScratch() {
+        guard !isBackfilling else {
+            host.log.info("Raven: resync already in progress; ignoring the new request.")
+            return
+        }
+        startBackfill()
     }
+
+    /// Whether a backfill (from `connectAccount` or `resyncFromScratch`) is
+    /// currently walking pages. Exposed read-only so a caller — tests in
+    /// particular — can confirm a `resyncFromScratch()` call was refused
+    /// rather than silently starting a second walk.
+    public var isResyncing: Bool { isBackfilling }
 
     public func syncNow() async {
         guard let syncEngine else { return }
@@ -368,39 +408,45 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         model.reload()
     }
 
-    /// Runs a full backfill and, for as long as it is in flight, mirrors
-    /// `syncEngine.state` (which `SyncEngine.backfill()` updates to
-    /// `.backfilling(threadsSynced:)` after every page) into `syncState` and
-    /// re-reloads `model` every half second. That is what lets the Accounts
-    /// surface show "Syncing… N threads" instead of a blank spinner, and lets
-    /// the Inbox populate underneath as pages land — the whole point of the
-    /// store being offline-first. The poller and `syncEngine.backfill()` are
-    /// both `@MainActor`, so they interleave cooperatively at suspension
-    /// points (network awaits) without racing each other's reads/writes.
+    /// Runs a full backfill. Progress reaches the Accounts surface via
+    /// `SyncEngine.onChange` (wired in `attach()`), which pushes every
+    /// `state`/`lastBackfillTruncated` change straight into `mirrorSyncEngineState()`
+    /// as it happens — see that property's documentation. This used to poll
+    /// `syncEngine.state` off a 500ms timer instead; the timer is gone, not
+    /// just idle, so there is no periodic task left running for as long as a
+    /// backfill happens to take.
     ///
     /// A failure here is NOT swallowed: `SyncEngine.backfill()` already
     /// records it onto the account's `state`/`lastError` before rethrowing
     /// (see that method), and the `catch` below additionally surfaces it via
     /// `lastSyncError`, matching `syncNow()`/`syncOnce()`'s existing
-    /// convention — so a failure in this now-detached call still reaches the
-    /// UI exactly as it did when `connectAccount` awaited it inline.
+    /// convention — so a failure in this detached call still reaches the UI
+    /// exactly as it did when `connectAccount` awaited it inline.
+    ///
+    /// `isBackfilling` is reset here, unconditionally, whether the walk
+    /// succeeded, failed, or was cancelled — this is the one place a
+    /// `resyncFromScratch()` guarded on it is guaranteed to unblock.
     private func runBackfill() async {
+        defer { isBackfilling = false }
         guard let syncEngine else { return }
-        let progressTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled, let self, let syncEngine = self.syncEngine else { return }
-                self.syncState = syncEngine.state
-                self.model.reload()
-            }
-        }
         do {
             try await syncEngine.backfill()
             lastSyncError = nil
         } catch {
             lastSyncError = String(describing: error)
         }
-        progressTask.cancel()
+        syncState = syncEngine.state
+        lastBackfillTruncated = syncEngine.lastBackfillTruncated
+        model.reload()
+    }
+
+    /// Mirrors `syncEngine.state`/`lastBackfillTruncated` into this
+    /// `@Observable` instance's own properties and reloads `model`. Wired as
+    /// `SyncEngine.onChange` by `attach()` so every page of a backfill (and
+    /// every `syncDelta()` state transition) pushes here instead of the
+    /// Accounts surface having to poll for it.
+    private func mirrorSyncEngineState() {
+        guard let syncEngine else { return }
         syncState = syncEngine.state
         lastBackfillTruncated = syncEngine.lastBackfillTruncated
         model.reload()
@@ -412,7 +458,9 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         // Stamps everything queued from here on with this account, so it can
         // never be transmitted through a different one later.
         outbox.accountID = accountID
-        syncEngine = SyncEngine(store: store, provider: provider, accountID: accountID)
+        let engine = SyncEngine(store: store, provider: provider, accountID: accountID)
+        engine.onChange = { [weak self] in self?.mirrorSyncEngineState() }
+        syncEngine = engine
     }
 
     /// Read-modify-write of the CURRENT account row.

@@ -34,6 +34,29 @@ import Foundation
         #expect(ids == ["t1", "t2"])
     }
 
+    @Test("state changes push through onChange with no timer involved")
+    func stateChangesPushThroughOnChange() async throws {
+        let provider = FakeMailProvider()
+        provider.pages = [
+            ThreadPage(threads: [thread("t1", date: Date())], nextPageToken: "p2"),
+            ThreadPage(threads: [thread("t2", date: Date())], nextPageToken: nil),
+        ]
+        let (engine, _) = makeEngine(provider)
+
+        var observedStates: [SyncState] = []
+        engine.onChange = { observedStates.append(engine.state) }
+
+        try await engine.backfill()
+
+        // No timer anywhere in this test — every entry below was pushed
+        // synchronously by a `state` mutation inside `backfill()` itself
+        // (one per page, plus the terminal `.idle`), not sampled off a poll.
+        #expect(observedStates.contains(.backfilling(threadsSynced: 1)))
+        #expect(observedStates.contains(.backfilling(threadsSynced: 2)))
+        #expect(observedStates.last == .idle)
+        #expect(observedStates.count >= 3)
+    }
+
     @Test("backfill seeds the account cursor so deltas can start")
     func seedsCursor() async throws {
         let provider = FakeMailProvider()

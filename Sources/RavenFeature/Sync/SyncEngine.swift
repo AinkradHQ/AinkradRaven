@@ -17,11 +17,24 @@ import Foundation
     private let accountID: String
     private let windowDays: Int
     private let maxPages: Int
-    public private(set) var state: SyncState = .idle
+    public private(set) var state: SyncState = .idle {
+        didSet { onChange?() }
+    }
     /// Set when the page cap (or a repeated page token) cut a backfill short.
     /// Checked by callers/UI that want to surface "sync stopped early" rather
     /// than silently reporting a clean completion.
-    public private(set) var lastBackfillTruncated = false
+    public private(set) var lastBackfillTruncated = false {
+        didSet { onChange?() }
+    }
+    /// Invoked (synchronously, on this class's own `@MainActor`) every time
+    /// `state` or `lastBackfillTruncated` changes, including every page
+    /// during a `backfill()`. This is the push `RavenRuntime.attach` wires up
+    /// so the Accounts surface can mirror progress into its own `@Observable`
+    /// properties without polling — see `RavenRuntime.runBackfill`'s history:
+    /// it used to re-read `state` off a 500ms timer for exactly this reason.
+    /// `nil` until wired; a caller that never sets it just gets no callbacks,
+    /// same as before this existed.
+    public var onChange: (() -> Void)?
 
     public init(store: MailStore, provider: MailProvider,
                 accountID: String, windowDays: Int = 90,

@@ -27,8 +27,45 @@ final class FakeMailProvider: MailProvider, @unchecked Sendable {
         throw error
     }
 
+    /// When true, `fetchThreads` parks on entry until released — the window
+    /// in which a test can prove a second `resyncFromScratch()` was refused
+    /// (or, if it weren't, would start a second overlapping page walk).
+    var holdsFetchThreads = false
+    private var fetchThreadsGates: [CheckedContinuation<Void, Never>] = []
+    private var fetchThreadsEntryWaiter: CheckedContinuation<Void, Never>?
+    private var fetchThreadsHasBeenEntered = false
+    /// Counts every call, gated or not — the concurrency test's proof that a
+    /// refused `resyncFromScratch()` never reached the provider at all.
+    private(set) var fetchThreadsCallCount = 0
+
+    /// Resolves once `fetchThreads` has actually parked, so a test never
+    /// races the backfill it is trying to hold open.
+    func waitUntilFetchThreadsEntered() async {
+        if fetchThreadsHasBeenEntered { return }
+        await withCheckedContinuation { continuation in
+            fetchThreadsEntryWaiter = continuation
+        }
+    }
+
+    /// Releases every parked `fetchThreads` call.
+    func releaseFetchThreads() {
+        holdsFetchThreads = false
+        let gates = fetchThreadsGates
+        fetchThreadsGates = []
+        for gate in gates { gate.resume() }
+    }
+
     func fetchThreads(since: Date, pageToken: String?) async throws -> ThreadPage {
         try failIfScripted("fetchThreads")
+        fetchThreadsCallCount += 1
+        if holdsFetchThreads {
+            await withCheckedContinuation { continuation in
+                fetchThreadsGates.append(continuation)
+                fetchThreadsHasBeenEntered = true
+                fetchThreadsEntryWaiter?.resume()
+                fetchThreadsEntryWaiter = nil
+            }
+        }
         guard pageIndex < pages.count else { return ThreadPage(threads: [], nextPageToken: nil) }
         defer { pageIndex += 1 }
         return pages[pageIndex]
