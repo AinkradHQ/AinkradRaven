@@ -1,4 +1,4 @@
-name: AinkradMail
+name: AinkradRaven
 options:
   bundleIdPrefix: com.ainkrad
   deploymentTarget: { macOS: "14.0" }

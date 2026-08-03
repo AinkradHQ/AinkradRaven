@@ -104,14 +104,20 @@ import Foundation
         }
     }
 
-    /// Incremental sync. Falls back to a full backfill when there is no cursor
-    /// or the provider rejects the one we hold — a cursor that is too old is a
-    /// normal event after the app has been closed for a while, not an error.
-    /// Any other `fetchDelta` failure (rate limiting, transient network errors)
-    /// is NOT treated as a rejected cursor: a full re-walk is expensive and a
-    /// backfill would mask what is really a transient problem, so we leave the
-    /// cursor untouched, record the error, and let the next scheduled sync
-    /// retry cheaply against the same cursor.
+    /// Incremental sync. Falls back to a full backfill in exactly two cases:
+    /// there is no cursor at all, or the provider answered the history request
+    /// with a **404 or 410** — the two statuses that actually mean "the cursor
+    /// you hold is gone", which is a normal event after the app has been
+    /// closed for a while, not an error.
+    ///
+    /// EVERY other failure — 401, 403, 429, 500, 503, a network blip — is NOT
+    /// evidence the cursor is bad, and must not trigger a backfill. This is
+    /// not hypothetical: `GmailProvider.perform` maps every non-2xx/404/429
+    /// status onto `providerFailed`, so treating the whole case as
+    /// "cursor expired" made a single 500 kick off a complete 90-day re-walk
+    /// on every 120-second timer tick. Such failures leave the cursor
+    /// untouched, record the error, and let the next scheduled sync retry
+    /// cheaply against the same cursor.
     public func syncDelta() async throws {
         guard let cursor = store.accounts().first(where: { $0.id == accountID })?.syncCursor else {
             try await backfill()
@@ -121,12 +127,13 @@ import Foundation
         let delta: MailDelta
         do {
             delta = try await provider.fetchDelta(cursor: cursor)
-        } catch MailError.providerFailed(let status, let message) {
-            // A provider-level rejection (e.g. a 404/410 on the history
-            // endpoint) plausibly means the cursor itself is expired/invalid —
-            // fall back to a full backfill to recover.
+        } catch MailError.providerFailed(let status, _) where status == 404 || status == 410 {
+            // 404/410 on the history endpoint is the provider saying the
+            // cursor itself is gone — the one case where a full backfill is
+            // the right recovery. Narrow on purpose: see this method's doc
+            // comment for why any wider match re-walks the mailbox on every
+            // transient server error.
             state = .idle
-            _ = (status, message)
             try await backfill()
             return
         } catch {

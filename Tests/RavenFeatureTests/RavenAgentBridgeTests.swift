@@ -151,4 +151,64 @@ import AinkradAppKit
             Issue.record("expected .failed, got \(runtime.syncState)")
         }
     }
+
+    // MARK: account row is read-modify-written, never clobbered by a snapshot
+
+    /// The Settings signature field wrote back a `MailAccount` captured when
+    /// the row was rendered, so every keystroke restored a stale
+    /// `syncCursor`/`lastSyncedAt`/`state`/`lastError`. Rolling the cursor
+    /// back re-walks mail; rolling it to nil forces a full backfill.
+    @Test("editing the signature preserves the rest of the account row")
+    func signatureEditDoesNotClobberSyncState() throws {
+        let host = FakeHostServices()
+        let runtime = RavenRuntime(host: host)
+        runtime.teardown()
+        try runtime.store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
+                                                  displayName: "Me", syncCursor: "cursor-9",
+                                                  state: .ready, lastSyncedAt: Date(),
+                                                  lastError: nil, signature: "old"))
+        // A stale snapshot, exactly as SwiftUI would have captured at render.
+        let stale = try #require(runtime.store.accounts().first)
+        // Sync moves on underneath the open Settings pane.
+        var advanced = stale
+        advanced.syncCursor = "cursor-42"
+        advanced.state = .ready
+        try runtime.store.saveAccount(advanced)
+
+        runtime.updateSignature("new signature", accountID: "a1")
+
+        let saved = try #require(runtime.store.accounts().first)
+        #expect(saved.signature == "new signature")
+        #expect(saved.syncCursor == "cursor-42",
+                "a signature keystroke must not roll the sync cursor back")
+        #expect(stale.syncCursor == "cursor-9")   // proves the snapshot really was stale
+    }
+
+    // MARK: sign-out leaves nothing behind
+
+    @Test("signing out purges the account's local mail and its queued sends")
+    func signOutPurgesMailAndOutbox() throws {
+        let host = FakeHostServices()
+        let runtime = RavenRuntime(host: host)
+        runtime.teardown()
+        try runtime.store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
+                                                  displayName: "Me", state: .ready))
+        try runtime.store.upsertThread(MailThread(id: "t1", accountID: "a1", messages: [
+            MailMessage(id: "m1", threadID: "t1", from: MailAddress(email: "b@x.com"),
+                        subject: "S", date: Date(), labelIDs: ["INBOX"], snippet: "s")
+        ]))
+        try runtime.store.saveBody(MessageBody(messageID: "m1", plainText: "private", html: nil))
+        runtime.outbox.accountID = "a1"
+        try runtime.outbox.enqueue(.send(OutgoingMessage(to: [MailAddress(email: "b@x.com")],
+                                                         subject: "s", bodyText: "b")))
+
+        runtime.signOut("a1")
+
+        #expect(runtime.store.accounts().isEmpty)
+        #expect(runtime.store.thread("t1") == nil, "mail must not stay readable after sign-out")
+        #expect(runtime.store.body(messageID: "m1") == nil)
+        #expect(host.documents.data(forKey: DocumentKeys.thread("t1")) == nil)
+        #expect(runtime.outbox.pending().isEmpty,
+                "a send queued for a1 must not survive to transmit from the next account")
+    }
 }

@@ -14,6 +14,9 @@ public struct MessageBody: Codable, Equatable, Sendable {
     func accounts() -> [MailAccount]
     func saveAccount(_ account: MailAccount) throws
     func removeAccount(_ id: String) throws
+    /// Removes the account row AND every local document belonging to it.
+    /// `removeAccount` alone leaves the mail readable on disk indefinitely.
+    func purge(accountID: String) throws
 
     func summaries(accountID: String, months: [String]) -> [ThreadSummary]
     func upsertThread(_ thread: MailThread) throws

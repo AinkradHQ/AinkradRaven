@@ -122,6 +122,52 @@ struct GmailProviderTests {
         #expect(thread.messages.isEmpty == false)
     }
 
+    // MARK: fetchThreads must not silently drop mail
+
+    /// Backfill seeds the sync cursor on success, so a thread quietly dropped
+    /// here is filed behind the cursor and never re-delivered — permanent,
+    /// invisible loss. A transient failure must therefore surface, not be
+    /// swallowed by `try?`.
+    @Test("a transient failure on one thread fails the whole page instead of dropping it")
+    func transientThreadFailureDuringListingIsNotSwallowed() async throws {
+        let provider = makeProvider()
+        StubURLProtocol.handler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/threads") {
+                return (200, [:], Data(#"{"threads":[{"id":"t1"},{"id":"t2"}]}"#.utf8))
+            }
+            return (500, [:], Data(#"{"error":{"message":"backend error"}}"#.utf8))
+        }
+        defer { StubURLProtocol.handler = nil }
+
+        await #expect(throws: MailError.self) {
+            _ = try await provider.fetchThreads(since: Date(timeIntervalSince1970: 0),
+                                                pageToken: nil)
+        }
+    }
+
+    @Test("a thread that is genuinely gone (404) is skipped, and the rest of the page still loads")
+    func vanishedThreadDuringListingIsSkipped() async throws {
+        let provider = makeProvider()
+        let threadFixture = try fixture("thread-0")
+        StubURLProtocol.handler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/threads") {
+                return (200, [:],
+                        Data(#"{"threads":[{"id":"gone"},{"id":"19fc3a0d1591338e"}]}"#.utf8))
+            }
+            if path.hasSuffix("/threads/gone") {
+                return (404, [:], Data(#"{"error":{"message":"not found"}}"#.utf8))
+            }
+            return (200, [:], threadFixture)
+        }
+        defer { StubURLProtocol.handler = nil }
+
+        let page = try await provider.fetchThreads(since: Date(timeIntervalSince1970: 0),
+                                                   pageToken: nil)
+        #expect(page.threads.map(\.id) == ["19fc3a0d1591338e"])
+    }
+
     // MARK: send() / raw RFC822 encoding
 
     @Test("send's raw RFC822 round-trips an ASCII subject and body correctly")

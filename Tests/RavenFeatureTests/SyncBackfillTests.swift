@@ -97,6 +97,49 @@ import Foundation
         #expect(engine.lastBackfillTruncated == true)
     }
 
+    /// The mail-loss guard. `backfill()` seeds `syncCursor` on success, so if
+    /// a transient per-thread failure were swallowed the missing threads would
+    /// be filed behind the cursor and no delta would ever re-deliver them.
+    /// Failing the backfill — and therefore NOT seeding the cursor — is what
+    /// makes the loss impossible.
+    @Test("a transient failure during backfill does not seed the cursor past the missing mail")
+    func transientFailureDoesNotSeedCursor() async throws {
+        let provider = FakeMailProvider()
+        provider.failures["fetchThreads"] = [MailError.providerFailed(status: 500, message: "boom")]
+        provider.cursor = "c-would-skip-the-missing-thread"
+        let (engine, store) = makeEngine(provider)
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "me@x.com", displayName: "Me"))
+
+        await #expect(throws: MailError.self) { try await engine.backfill() }
+
+        #expect(store.accounts().first?.syncCursor == nil,
+                "seeding the cursor here would strand the unfetched threads forever")
+        #expect(store.accounts().first?.state == .failed)
+    }
+
+    @Test("a retried backfill after a transient failure completes and only then seeds the cursor")
+    func backfillRecoversAndSeedsCursor() async throws {
+        let now = Date()
+        let provider = FakeMailProvider()
+        provider.failures["fetchThreads"] = [MailError.providerFailed(status: 500, message: "boom")]
+        provider.pages = [ThreadPage(threads: [thread("t1", date: now)], nextPageToken: nil)]
+        provider.cursor = "c42"
+        let (engine, store) = makeEngine(provider)
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "me@x.com", displayName: "Me"))
+
+        await #expect(throws: MailError.self) { try await engine.backfill() }
+        #expect(store.accounts().first?.syncCursor == nil)
+
+        // Backfill is a fresh page walk and upsert is idempotent, so simply
+        // running it again is a complete recovery — that is why failing is a
+        // safe response to a transient error here, unlike in syncDelta.
+        try await engine.backfill()
+        #expect(store.thread("t1") != nil)
+        #expect(store.accounts().first?.syncCursor == "c42")
+    }
+
     @Test("windowStart is pinned to UTC, matching MonthShard's convention")
     func windowStartUsesUTC() throws {
         let df = ISO8601DateFormatter()

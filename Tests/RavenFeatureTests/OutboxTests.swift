@@ -4,10 +4,16 @@ import Foundation
 
 @Suite("Outbox")
 @MainActor struct OutboxTests {
-    private func makeOutbox(_ provider: FakeMailProvider, maxAttempts: Int = 3)
+    private func makeOutbox(_ provider: FakeMailProvider, maxAttempts: Int = 3,
+                            accountID: String? = nil)
         -> (Outbox, InMemoryDocumentStore) {
         let documents = InMemoryDocumentStore()
-        return (Outbox(documents: documents, provider: provider, maxAttempts: maxAttempts), documents)
+        return (Outbox(documents: documents, provider: provider, maxAttempts: maxAttempts,
+                       accountID: accountID), documents)
+    }
+
+    private func aMessage() -> OutgoingMessage {
+        OutgoingMessage(to: [MailAddress(email: "b@x.com")], subject: "Hi", bodyText: "There")
     }
 
     @Test("a successful mutation leaves the queue empty")
@@ -118,5 +124,92 @@ import Foundation
         // Draining the revived outbox must not resend the in-flight entry.
         await revived.drain()
         #expect(provider.sentMessages.count == 1)
+    }
+
+    // MARK: Reentrancy
+
+    @Test("two overlapping drains transmit a queued send exactly once")
+    func overlappingDrainsSendOnce() async throws {
+        let provider = FakeMailProvider()
+        provider.holdsSend = true
+        let (outbox, _) = makeOutbox(provider)
+        try outbox.enqueue(.send(aMessage()))
+
+        // Drain A starts and parks inside `provider.send`, having freed the
+        // main actor exactly as a real network call does.
+        let drainA = Task { await outbox.drain() }
+        await provider.waitUntilSendEntered()
+
+        // Open the gate for any FURTHER send, so drain B cannot park and this
+        // test can never deadlock: B either declines to send (correct) or
+        // sends immediately (the defect). A stays parked.
+        provider.allowFutureSends()
+
+        // Drain B — this is the sync timer's tick, a `send_draft` call, or the
+        // Settings retry button arriving while A is still on the wire. Before
+        // the fix it saw the same entry as pending, re-marked it in-flight and
+        // sent the email a second time.
+        await outbox.drain()
+        #expect(provider.sentMessages.isEmpty,
+                "the overlapping drain must not transmit the entry A already has in flight")
+
+        provider.releaseSend()
+        await drainA.value
+
+        #expect(provider.sentMessages.count == 1, "the recipient must not get the email twice")
+        #expect(outbox.pending().isEmpty)
+        #expect(outbox.inFlight().isEmpty)
+        #expect(outbox.deadLettered().isEmpty)
+    }
+
+    @Test("an entry a drain has in flight is not pending, and reads as queued rather than sent")
+    func inFlightEntryIsNotPendingAndNotSent() async throws {
+        let provider = FakeMailProvider()
+        provider.holdsSend = true
+        let (outbox, _) = makeOutbox(provider)
+        let entryID = try outbox.enqueue(.send(aMessage()))
+
+        let drainA = Task { await outbox.drain() }
+        await provider.waitUntilSendEntered()
+
+        #expect(outbox.pending().isEmpty, "an in-flight entry must never be re-eligible")
+        #expect(outbox.inFlight().map(\.id) == [entryID])
+        // The load-bearing part: while the send is unconfirmed, nothing may
+        // read it as a success — that is what would destroy a user's draft.
+        #expect(outbox.outcome(for: entryID) == .queued(inFlight: true))
+
+        provider.releaseSend()
+        await drainA.value
+        #expect(outbox.outcome(for: entryID) == .sent)
+    }
+
+    // MARK: Account scoping
+
+    @Test("a send queued for one account is never transmitted from another")
+    func queuedSendCannotCrossAccounts() async throws {
+        let provider = FakeMailProvider()
+        let (outbox, _) = makeOutbox(provider, accountID: "a1")
+        try outbox.enqueue(.send(aMessage()))
+
+        // A different account connects (sign out of a1, sign in to a2).
+        outbox.accountID = "a2"
+        await outbox.drain()
+
+        #expect(provider.sentMessages.isEmpty,
+                "a1's queued mail must not go out from a2's mailbox")
+        #expect(outbox.pending().isEmpty)
+    }
+
+    @Test("purging an account drops only that account's entries")
+    func purgeDropsOnlyThatAccount() async throws {
+        let provider = FakeMailProvider()
+        let (outbox, _) = makeOutbox(provider, accountID: "a1")
+        try outbox.enqueue(.send(aMessage()))
+        outbox.accountID = "a2"
+        let keep = try outbox.enqueue(.send(aMessage()))
+
+        outbox.purge(accountID: "a1")
+
+        #expect(outbox.pending().map(\.id) == [keep])
     }
 }

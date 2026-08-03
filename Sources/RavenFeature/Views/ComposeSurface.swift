@@ -126,20 +126,32 @@ public struct ComposeSurface: View {
         }
     }
 
+    /// Clears the composer and deletes the draft ONLY when the send genuinely
+    /// went out. Every other outcome — queued, dead-lettered, held for review,
+    /// or a failure to even queue — keeps the typed text and the draft, and
+    /// says what happened. `SendAttempt` is the same function the MCP
+    /// `send_draft` tool calls, so the human path and the agent path cannot
+    /// drift apart on the one operation that can't be undone.
     private func send() {
         guard !recipients.isEmpty else { return }
         isSending = true
+        errorMessage = nil
         let outgoing = message()
         let draftID = editingDraftID
         Task {
             do {
-                try runtime.outbox.enqueue(.send(outgoing))
-                await runtime.drainOutbox()
-                if let draftID { DraftBox.shared.remove(draftID) }
-                clear()
+                let result = try await SendAttempt.send(outgoing, draftID: draftID,
+                                                        outbox: runtime.outbox,
+                                                        drain: runtime.drainOutbox)
+                if result.isSent {
+                    clear()
+                } else {
+                    errorMessage = result.message
+                }
                 draftsVersion += 1
             } catch {
-                errorMessage = "Could not queue send: \(error)"
+                errorMessage = "Could not queue send: \(error). Your message was not sent " +
+                               "and has been left in the composer."
             }
             isSending = false
         }

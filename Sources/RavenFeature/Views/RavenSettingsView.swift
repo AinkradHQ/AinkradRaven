@@ -84,7 +84,14 @@ public struct RavenSettingsView: View {
                     // host, or a browser that fails to focus) where that
                     // doesn't visibly happen. The URL carries no secret — see
                     // `GmailAuth.authorize`'s own documentation of this point.
-                    print("Raven: open this URL to finish connecting Gmail: \(url)")
+                    //
+                    // Goes to `host.log`, not `print()`: a shipped plugin's
+                    // stdout is not somewhere the user or the host can read.
+                    // This callback is `@Sendable` and arrives off the main
+                    // actor, hence the hop.
+                    Task { @MainActor in
+                        runtime.log("Raven: open this URL to finish connecting Gmail: \(url)")
+                    }
                 })
                 accountsVersion += 1
                 signature = runtime.accounts.first?.signature ?? signature
@@ -137,10 +144,14 @@ public struct RavenSettingsView: View {
             }
             AinkradFormRow(title: "Signature") {
                 AinkradTextArea(text: $signature, placeholder: "Signature", minHeight: 60)
+                    // Read-modify-write the CURRENT row rather than writing
+                    // back `account`, which is a snapshot captured when this
+                    // row was rendered: writing that back on every keystroke
+                    // clobbered syncCursor/lastSyncedAt/state/lastError with
+                    // stale values, silently re-walking (or fully
+                    // re-backfilling) the mailbox.
                     .onChange(of: signature) { _, newValue in
-                        var updated = account
-                        updated.signature = newValue
-                        try? runtime.store.saveAccount(updated)
+                        runtime.updateSignature(newValue, accountID: account.id)
                     }
             }
             HStack {

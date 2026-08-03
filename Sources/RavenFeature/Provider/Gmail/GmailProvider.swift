@@ -93,9 +93,25 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
 
         var threads: [MailThread] = []
         for reference in list.threads ?? [] {
-            // A thread listed on page N can be gone by the time we fetch it.
-            guard let thread = try? await fetchThread(id: reference.id) else { continue }
-            threads.append(thread)
+            do {
+                threads.append(try await fetchThread(id: reference.id))
+            } catch MailError.unknownThread {
+                // Genuinely gone: a thread listed on page N can be deleted
+                // before we fetch it. Skipping is correct — there is nothing
+                // to store and it will never come back.
+                continue
+            }
+            // Everything else (429, 500, a network blip) is TRANSIENT and is
+            // deliberately rethrown rather than swallowed. `SyncEngine.
+            // backfill()` seeds `syncCursor` on success, so a silently dropped
+            // thread here would be filed behind the cursor and no delta would
+            // ever re-deliver it — permanent, invisible mail loss. Failing the
+            // page instead means the cursor is NOT seeded and the next
+            // backfill re-walks: backfill is a fresh page walk and
+            // `upsertThread` is idempotent, so retrying costs bandwidth and
+            // nothing else. That is the opposite trade from `syncDelta`, where
+            // the *cursor* is the thing that cannot be replayed. Do not
+            // "simplify" this back into `try?`.
         }
         return ThreadPage(threads: threads, nextPageToken: list.nextPageToken)
     }

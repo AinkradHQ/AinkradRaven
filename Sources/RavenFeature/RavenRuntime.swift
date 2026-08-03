@@ -119,7 +119,8 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         let accountID = store.accounts().first?.id ?? ""
         let proxy = RavenProviderProxy(accountID: accountID)
         self.providerProxy = proxy
-        let outbox = Outbox(documents: host.documents, provider: proxy)
+        let outbox = Outbox(documents: host.documents, provider: proxy,
+                            accountID: accountID.isEmpty ? nil : accountID)
         self.outbox = outbox
         self.model = RavenViewModel(store: store, outbox: outbox)
 
@@ -134,6 +135,13 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         }
         model.reload()
         refreshOutboxSnapshots()
+        if let corrupt = store.lastCorruptDocumentKey {
+            // Never silent: a document that exists but cannot be decoded is
+            // surfaced, and the store refuses to overwrite it (see
+            // `DocumentMailStore.loadStrict`).
+            host.log.error("Raven: document '\(corrupt)' is present but could not be decoded; " +
+                           "it will not be overwritten.")
+        }
 
         let registration = RavenAgentBridge.register(host: host, model: model)
         contextToken = registration.context
@@ -198,12 +206,34 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         await runBackfill()
     }
 
+    /// Signing out must leave nothing of the account behind. Three things go,
+    /// in this order:
+    ///
+    /// 1. the refresh token (`auth.signOut`);
+    /// 2. every queued outbox entry for the account — otherwise, because the
+    ///    outbox transmits through whatever provider is attached *now*, a send
+    ///    queued for this account would go out from the next account someone
+    ///    connects. `OutboxEntry.accountID` blocks that even if this purge is
+    ///    somehow missed; the purge is what stops it lingering at all;
+    /// 3. every local document — threads, bodies, index shards, labels, and
+    ///    the account row. Leaving the mail readable on disk after the user
+    ///    has disconnected the account is not a cache.
     public func signOut(_ accountID: String) {
         auth?.signOut(accountID: accountID)
-        try? store.removeAccount(accountID)
+        outbox.purge(accountID: accountID)
+        do {
+            try store.purge(accountID: accountID)
+        } catch {
+            // A corrupt document can block the purge. Say so rather than
+            // pretending the mail is gone.
+            host.log.error("Raven: signing out \(accountID) could not fully purge local mail: " +
+                           "\(error)")
+        }
+        refreshOutboxSnapshots()
         if providerProxy.accountID == accountID {
             providerProxy.current = nil
             syncEngine = nil
+            outbox.accountID = nil
         }
         if model.accountID == accountID {
             model.accountID = store.accounts().first?.id
@@ -288,7 +318,35 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     private func attach(provider: GmailProvider, accountID: String) {
         providerProxy.accountID = accountID
         providerProxy.current = provider
+        // Stamps everything queued from here on with this account, so it can
+        // never be transmitted through a different one later.
+        outbox.accountID = accountID
         syncEngine = SyncEngine(store: store, provider: provider, accountID: accountID)
+    }
+
+    /// Read-modify-write of the CURRENT account row.
+    ///
+    /// The Settings signature field used to write back a `MailAccount` value
+    /// captured when the row was rendered, so every keystroke clobbered
+    /// `syncCursor`, `lastSyncedAt`, `state` and `lastError` with whatever
+    /// they were at render time — rolling the cursor back re-walks mail, and
+    /// rolling it to `nil` forces a full backfill. Only the signature may
+    /// change here.
+    public func updateSignature(_ signature: String, accountID: String) {
+        guard var account = store.accounts().first(where: { $0.id == accountID }),
+              account.signature != signature else { return }
+        account.signature = signature
+        do {
+            try store.saveAccount(account)
+        } catch {
+            host.log.error("Raven: could not save the signature: \(error)")
+        }
+    }
+
+    /// Routes a diagnostic line to the host's logger. Views must not `print()`
+    /// — a shipped plugin's stdout goes nowhere the user or the host can see.
+    public func log(_ message: String) {
+        host.log.info(message)
     }
 
     // MARK: Outbox

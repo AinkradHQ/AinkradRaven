@@ -64,8 +64,57 @@ final class FakeMailProvider: MailProvider, @unchecked Sendable {
         appliedMutations.append(mutation)
     }
 
+    // MARK: Gated send
+    //
+    // Lets a test hold `send` suspended mid-call — the exact window in which
+    // `Outbox.drain()` has freed the main actor and a second drain can start.
+    // Without a real suspension there is no way to prove non-reentrancy;
+    // `Task.yield()` alone would be a race, not a proof.
+
+    /// When true, `send` parks on entry until released.
+    var holdsSend = false
+    /// A LIST, not a single slot: a reentrant drain enters `send` a second
+    /// time, and a single slot would drop the first continuation and deadlock
+    /// — turning a real defect into a hung test instead of a failed assertion.
+    private var sendGates: [CheckedContinuation<Void, Never>] = []
+    private var sendEntryWaiter: CheckedContinuation<Void, Never>?
+    private var sendHasBeenEntered = false
+    private var gateIsOpen = false
+
+    /// Resolves once `send` has actually been entered and is parked, so the
+    /// test never races the drain it is trying to overlap.
+    func waitUntilSendEntered() async {
+        if sendHasBeenEntered { return }
+        await withCheckedContinuation { continuation in
+            sendEntryWaiter = continuation
+        }
+    }
+
+    /// Opens the gate for any FUTURE `send` without releasing the one already
+    /// parked. This is what makes the overlap test deterministic: the second
+    /// drain either refuses to enter `send` at all (correct) or runs straight
+    /// through it and transmits a duplicate (the defect) — never parks, so the
+    /// test cannot deadlock and cannot pass by lucky scheduling.
+    func allowFutureSends() { gateIsOpen = true }
+
+    /// Releases every parked `send`.
+    func releaseSend() {
+        gateIsOpen = true
+        let gates = sendGates
+        sendGates = []
+        for gate in gates { gate.resume() }
+    }
+
     func send(_ message: OutgoingMessage) async throws -> String {
         try failIfScripted("send")
+        if holdsSend && !gateIsOpen {
+            await withCheckedContinuation { continuation in
+                sendGates.append(continuation)
+                sendHasBeenEntered = true
+                sendEntryWaiter?.resume()
+                sendEntryWaiter = nil
+            }
+        }
         sentMessages.append(message)
         return "sent-\(sentMessages.count)"
     }

@@ -130,6 +130,44 @@ import Foundation
         #expect(store.thread("t1") != nil)
     }
 
+    /// `GmailProvider.perform` maps EVERY non-2xx/404/429 status onto
+    /// `providerFailed`, so matching the whole case as "cursor expired" meant
+    /// a single 500 kicked off a complete 90-day re-walk on every 120-second
+    /// timer tick. Only 404/410 may mean the cursor is gone.
+    @Test("a non-404 providerFailed does not trigger a full backfill")
+    func serverErrorDoesNotBackfill() async throws {
+        let now = Date()
+        let provider = FakeMailProvider()
+        provider.failures["fetchDelta"] = [MailError.providerFailed(status: 500, message: "boom")]
+        // If a backfill wrongly ran, this page would land and the cursor would
+        // be replaced — both are asserted against below.
+        provider.pages = [ThreadPage(threads: [thread("t-backfilled", date: now)],
+                                     nextPageToken: nil)]
+        provider.cursor = "c-backfill"
+        let (engine, store) = try setUp(provider, cursor: "c1")
+
+        try await engine.syncDelta()
+
+        #expect(store.accounts().first?.syncCursor == "c1",
+                "a 500 is transient; the cursor must be held, not replaced by a backfill cursor")
+        #expect(store.thread("t-backfilled") == nil, "no full re-walk may have happened")
+        #expect(store.accounts().first?.lastError != nil)
+    }
+
+    @Test("a 410 Gone on the history endpoint still means the cursor expired")
+    func goneCursorRebackfills() async throws {
+        let now = Date()
+        let provider = FakeMailProvider()
+        provider.failures["fetchDelta"] = [MailError.providerFailed(status: 410, message: "gone")]
+        provider.pages = [ThreadPage(threads: [thread("t9", date: now)], nextPageToken: nil)]
+        provider.cursor = "c-fresh"
+        let (engine, store) = try setUp(provider, cursor: "stale")
+
+        try await engine.syncDelta()
+        #expect(store.thread("t9") != nil)
+        #expect(store.accounts().first?.syncCursor == "c-fresh")
+    }
+
     @Test("a rateLimited fetchDelta failure does not trigger a full backfill")
     func rateLimitedDoesNotBackfill() async throws {
         let provider = FakeMailProvider()

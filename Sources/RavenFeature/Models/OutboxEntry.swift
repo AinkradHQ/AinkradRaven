@@ -22,14 +22,22 @@ public struct OutboxEntry: Codable, Equatable, Sendable, Identifiable {
     /// been pulled out of `pending()` for a human to resolve, rather than being
     /// guessed at automatically.
     public var needsReview: Bool
+    /// The account this operation belongs to, stamped by `Outbox.enqueue` from
+    /// the outbox's current account. `OutgoingMessage` itself carries no
+    /// account, so without this a send queued while account A was connected
+    /// would transmit from account B the moment a different account signed in
+    /// — the wrong mailbox, and irreversible for a `.send`. `nil` means
+    /// "queued before any account was known"; those stay eligible, since there
+    /// is no account they could be crossing over from.
+    public var accountID: String?
 
     public init(id: UUID = UUID(), operation: Operation, attempts: Int = 0,
                 lastError: String? = nil, isDeadLettered: Bool = false,
                 queuedAt: Date = Date(), inFlightAt: Date? = nil,
-                needsReview: Bool = false) {
+                needsReview: Bool = false, accountID: String? = nil) {
         self.id = id; self.operation = operation; self.attempts = attempts
         self.lastError = lastError; self.isDeadLettered = isDeadLettered
         self.queuedAt = queuedAt; self.inFlightAt = inFlightAt
-        self.needsReview = needsReview
+        self.needsReview = needsReview; self.accountID = accountID
     }
 }

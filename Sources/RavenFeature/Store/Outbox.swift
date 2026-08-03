@@ -26,16 +26,28 @@ import AinkradAppKit
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var entries: [OutboxEntry] = []
+    /// True for exactly as long as a `drain()` pass is running, including
+    /// while it is suspended on the network. See `drain()` for why this is
+    /// load-bearing rather than tidiness.
+    private var isDraining = false
+
+    /// The account whose provider this outbox currently transmits through.
+    /// Set by `RavenRuntime` whenever a provider is attached. Entries are
+    /// stamped with it at `enqueue`, and an entry stamped with a *different*
+    /// account is never drained — see `OutboxEntry.accountID`.
+    public var accountID: String?
 
     /// Set whenever the most recent attempt to persist the queue failed. Never
     /// swallowed silently — callers (and tests) can inspect this to know the
     /// on-disk queue may be stale relative to memory.
     public private(set) var lastPersistenceError: String?
 
-    public init(documents: PluginDocumentStore, provider: MailProvider, maxAttempts: Int = 5) {
+    public init(documents: PluginDocumentStore, provider: MailProvider,
+                maxAttempts: Int = 5, accountID: String? = nil) {
         self.documents = documents
         self.provider = provider
         self.maxAttempts = maxAttempts
+        self.accountID = accountID
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
         if let data = documents.data(forKey: DocumentKeys.outbox),
@@ -55,8 +67,28 @@ import AinkradAppKit
         }
     }
 
+    /// Entries eligible for the next `drain()` pass.
+    ///
+    /// `inFlightAt != nil` is excluded here for a different reason than
+    /// `needsReview`: `needsReview` covers the *crash* case (a previous
+    /// process died mid-operation — `init` converts those on load), whereas
+    /// this filter covers the *concurrent* case (a drain in this same process
+    /// is suspended on the network with this entry already handed to the
+    /// provider). Without it, a second drain overlapping the first would see
+    /// the entry still eligible, mark it in-flight again, and send the same
+    /// email twice. Both filters are needed; neither subsumes the other.
     public func pending() -> [OutboxEntry] {
-        entries.filter { !$0.isDeadLettered && !$0.needsReview }
+        entries.filter {
+            !$0.isDeadLettered && !$0.needsReview && $0.inFlightAt == nil
+                && ($0.accountID == nil || $0.accountID == accountID)
+        }
+    }
+
+    /// Entries handed to the provider by a drain that has not yet come back.
+    /// Not pending (they must not be resent) and not an outcome — a caller
+    /// asking "did my send go out?" must treat this as "not yet".
+    public func inFlight() -> [OutboxEntry] {
+        entries.filter { $0.inFlightAt != nil && !$0.isDeadLettered && !$0.needsReview }
     }
     public func deadLettered() -> [OutboxEntry] { entries.filter(\.isDeadLettered) }
     /// Entries whose outcome is unknown because a previous process died while
@@ -65,8 +97,34 @@ import AinkradAppKit
     /// didn't happen, then `discard` or re-`enqueue` as appropriate).
     public func needsReview() -> [OutboxEntry] { entries.filter(\.needsReview) }
 
-    public func enqueue(_ operation: OutboxEntry.Operation) throws {
-        entries.append(OutboxEntry(operation: operation))
+    /// Returns the id of the entry just queued, so a caller that must know
+    /// this exact operation's fate (`SendAttempt`) can ask for it by id rather
+    /// than diffing `pending()` — a diff cannot see an entry that a concurrent
+    /// drain has already taken in-flight.
+    @discardableResult
+    public func enqueue(_ operation: OutboxEntry.Operation) throws -> UUID {
+        let entry = OutboxEntry(operation: operation, accountID: accountID)
+        entries.append(entry)
+        persistRecordingFailure()
+        return entry.id
+    }
+
+    /// What actually became of one queued operation. The only path to `.sent`
+    /// is the entry having left the queue entirely, which happens in exactly
+    /// one place: immediately after `provider.send`/`applyLabels` returned
+    /// without throwing.
+    public func outcome(for id: UUID) -> OutboxSendOutcome {
+        guard let entry = entries.first(where: { $0.id == id }) else { return .sent }
+        if entry.isDeadLettered { return .deadLettered(lastError: entry.lastError) }
+        if entry.needsReview { return .needsReview }
+        return .queued(inFlight: entry.inFlightAt != nil)
+    }
+
+    /// Drops every entry belonging to `accountID`. Called on sign-out: a
+    /// queued operation for an account that is no longer connected must never
+    /// be transmitted through whatever account connects next.
+    public func purge(accountID: String) {
+        entries.removeAll { $0.accountID == accountID }
         persistRecordingFailure()
     }
 
@@ -76,7 +134,21 @@ import AinkradAppKit
     /// failure) rather than once at the end of the pass — that narrows the
     /// window in which an unpersisted crash could cause a resend from "the
     /// whole drain" down to "one operation".
+    ///
+    /// NON-REENTRANT, and that is a correctness requirement, not an
+    /// optimization. This method is `@MainActor`, but it *suspends* at
+    /// `await provider.send` — which frees the main actor. The sync timer's
+    /// `syncOnce()`, an MCP `send_draft` call, and the Settings retry button
+    /// can all call `drain()` during that window. A second pass entering here
+    /// would re-send an operation the first pass has already handed to the
+    /// provider (the recipient gets the email twice) and could remove an entry
+    /// out from under the first pass, making a failed send read as "Sent".
+    /// The guard makes the second call a no-op; its work is not lost, because
+    /// the entries it would have processed are still queued for the next pass.
     public func drain() async {
+        guard !isDraining else { return }
+        isDraining = true
+        defer { isDraining = false }
         for entry in pending() {
             markInFlight(entry.id)
             do {
