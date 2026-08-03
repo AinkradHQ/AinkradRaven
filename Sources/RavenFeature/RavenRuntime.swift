@@ -123,7 +123,13 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     /// a `SyncState` case, so a view that renders only `syncState` would
     /// silently miss it.
     public private(set) var lastBackfillTruncated = false
-    public private(set) var lastSyncError: String?
+    public private(set) var lastSyncError: String? {
+        // Mirrored into `model` (rather than the view reading `runtime`
+        // directly) so `InboxSurface` can tell "sync failed" apart from
+        // "nothing synced yet" from `model` alone, matching how it already
+        // gets everything else (summaries, selection) through the view model.
+        didSet { model.lastSyncError = lastSyncError }
+    }
     public private(set) var outboxDeadLettered: [OutboxEntry] = []
     /// Entries whose outcome is unknown because a previous process died
     /// mid-send — see `Outbox.needsReview()`. Never auto-resolved.

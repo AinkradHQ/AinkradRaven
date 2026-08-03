@@ -1,0 +1,60 @@
+import Foundation
+import AinkradAppKit
+
+/// One local-first thread mutation, shared by every surface that can archive,
+/// star, mark-read, or trash a thread — the human `RavenViewModel` and the
+/// agent `RavenMCPOperations`. `RavenMCPOperations.mutate` already had this
+/// exact archive/trash/star/set_read/label logic built by hand per operation
+/// string; the Inbox UI needed the SAME behaviour, not a second copy that
+/// could quietly drift from it (the send path already drifted once — see
+/// `SendAttempt`'s documentation for why that class exists at all).
+public enum ThreadAction: Equatable {
+    case archive
+    case trash
+    case star(Bool)
+    case setRead(Bool)
+    case label(add: [String], remove: [String])
+
+    /// The `LabelMutation` this action becomes for the given thread ids —
+    /// byte-for-byte what `RavenMCPOperations.mutate` used to build inline
+    /// for each MCP operation string.
+    public func mutation(threadIDs: [String]) -> LabelMutation {
+        switch self {
+        case .archive:
+            return LabelMutation(threadIDs: threadIDs, remove: ["INBOX"])
+        case .trash:
+            return LabelMutation(threadIDs: threadIDs, add: ["TRASH"], remove: ["INBOX"])
+        case .star(let starred):
+            return starred ? LabelMutation(threadIDs: threadIDs, add: ["STARRED"])
+                           : LabelMutation(threadIDs: threadIDs, remove: ["STARRED"])
+        case .setRead(let read):
+            return read ? LabelMutation(threadIDs: threadIDs, remove: ["UNREAD"])
+                        : LabelMutation(threadIDs: threadIDs, add: ["UNREAD"])
+        case .label(let add, let remove):
+            return LabelMutation(threadIDs: threadIDs, add: add, remove: remove)
+        }
+    }
+}
+
+/// Applies a `LabelMutation` to the store's local copy of every thread it
+/// names. This is the exact per-thread loop `RavenMCPOperations.mutate` used
+/// to own inline — moved here so both it and `RavenViewModel` call one copy.
+/// Local-first: call this BEFORE `outbox.enqueue`, never after, so the row
+/// updates on the same frame regardless of network state.
+public enum ThreadMutationApplier {
+    @MainActor
+    public static func applyLocally(_ mutation: LabelMutation, store: MailStore) {
+        for id in mutation.threadIDs {
+            guard var thread = store.thread(id) else { continue }
+            for index in thread.messages.indices {
+                var labels = Set(thread.messages[index].labelIDs)
+                labels.formUnion(mutation.add)
+                labels.subtract(mutation.remove)
+                thread.messages[index].labelIDs = Array(labels).sorted()
+                thread.messages[index].isRead = !labels.contains("UNREAD")
+                thread.messages[index].isStarred = labels.contains("STARRED")
+            }
+            try? store.upsertThread(thread)
+        }
+    }
+}

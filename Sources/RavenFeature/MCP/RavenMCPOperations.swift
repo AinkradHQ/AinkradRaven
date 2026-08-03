@@ -156,36 +156,26 @@ public enum RavenMCPOperations {
         guard let ids = args["thread_ids"] as? [String], !ids.isEmpty else {
             return fail("thread_ids required.")
         }
-        let mutation: LabelMutation
+        let action: ThreadAction
         switch operation {
-        case "archive": mutation = LabelMutation(threadIDs: ids, remove: ["INBOX"])
-        case "trash":   mutation = LabelMutation(threadIDs: ids, add: ["TRASH"], remove: ["INBOX"])
-        case "star":    mutation = LabelMutation(threadIDs: ids, add: ["STARRED"])
+        case "archive": action = .archive
+        case "trash":   action = .trash
+        case "star":    action = .star(true)
         case "set_read":
-            let read = args["read"] as? Bool ?? true
-            mutation = read ? LabelMutation(threadIDs: ids, remove: ["UNREAD"])
-                            : LabelMutation(threadIDs: ids, add: ["UNREAD"])
+            action = .setRead(args["read"] as? Bool ?? true)
         case "label":
-            mutation = LabelMutation(threadIDs: ids,
-                                     add: args["add"] as? [String] ?? [],
-                                     remove: args["remove"] as? [String] ?? [])
+            action = .label(add: args["add"] as? [String] ?? [],
+                            remove: args["remove"] as? [String] ?? [])
         default:
             return fail("Unknown mutation \(operation).")
         }
+        let mutation = action.mutation(threadIDs: ids)
 
-        // Local-first: the store changes now, the provider catches up.
-        for id in ids {
-            guard var thread = store.thread(id) else { continue }
-            for index in thread.messages.indices {
-                var labels = Set(thread.messages[index].labelIDs)
-                labels.formUnion(mutation.add)
-                labels.subtract(mutation.remove)
-                thread.messages[index].labelIDs = Array(labels).sorted()
-                thread.messages[index].isRead = !labels.contains("UNREAD")
-                thread.messages[index].isStarred = labels.contains("STARRED")
-            }
-            try? store.upsertThread(thread)
-        }
+        // Local-first: the store changes now, the provider catches up. Shared
+        // with `RavenViewModel` via `ThreadMutationApplier` so the two
+        // surfaces can never disagree about what "archive"/"star"/etc. means
+        // to the store.
+        ThreadMutationApplier.applyLocally(mutation, store: store)
         do {
             try outbox.enqueue(.labels(mutation))
         } catch {

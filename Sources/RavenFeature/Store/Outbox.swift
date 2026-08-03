@@ -19,7 +19,17 @@ import AinkradAppKit
 /// one. For email, a missed send is recoverable (the user notices and resends);
 /// a duplicate send is not (it already reached the recipient) — so the trade
 /// is made in favor of "may need manual confirmation" over "sent twice".
-@MainActor public final class Outbox {
+/// The one method `RavenViewModel` actually needs from `Outbox` — pulled out
+/// into a protocol so a test can inject a fake that fails `enqueue`, without
+/// a real `Outbox` (which only ever fails to persist on an encoding error,
+/// not something a test can trigger through its public API) standing in the
+/// way of exercising that path.
+@MainActor public protocol MutationOutbox: AnyObject {
+    @discardableResult
+    func enqueue(_ operation: OutboxEntry.Operation) throws -> UUID
+}
+
+@MainActor public final class Outbox: MutationOutbox {
     private let documents: PluginDocumentStore
     private let provider: MailProvider
     private let maxAttempts: Int
