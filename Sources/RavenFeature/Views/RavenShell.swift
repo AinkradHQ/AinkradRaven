@@ -20,6 +20,9 @@ import AinkradAppKitUI
 public struct RavenShell: View {
     let runtime: RavenRuntime
 
+    /// For the root fill only — see the `.background` in `split(availableWidth:)`.
+    @Environment(\.ainkradTheme) private var theme
+
     /// What the overlay is composing, or `nil` when it is closed. A single
     /// optional rather than a Bool plus a payload, so "open" and "what it is
     /// composing" cannot disagree.
@@ -64,6 +67,18 @@ public struct RavenShell: View {
         }
         .padding(AinkradSpacing.md)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The root fill, and the reason it has to be here rather than only on
+        // the two panes: this padding and the gap between the panes are part of
+        // Raven's pane too, and nothing was painting them. So with transparency
+        // turned fully OFF the panes went solid while the margin around them
+        // stayed glass — the host's backdrop showing through a region the
+        // opacity setting never reached. Rune does not hit this because its root
+        // view fills the whole pane with one fill and has no unpainted margin.
+        //
+        // `theme.background`, not a panel: `ravenSurface` would add a chamfer,
+        // border and glow to the pane's outer edge, which the host already
+        // draws. This is only the fill.
+        .background(theme.background.opacity(runtime.appearanceStore.appearance.surfaceOpacity))
         .overlay(alignment: .bottomTrailing) { composeButton }
         // `.ainkradModal(isPresented:contentWidth:)`, not `.ainkradSheet`: a
         // composer is a focused, self-contained task with To/Cc/Subject/body
