@@ -62,8 +62,15 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
 /// left in `legacyIDs`: it is a tiny, bounded value (one `PluginInstanceID`
 /// per legacy host ever seen), unlike the runtime itself, and generation-7
 /// hosts never call `teardown` anyway.
+///
+/// `runtime.teardown()` runs BEFORE the entry is dropped from `runtimes` —
+/// it cancels the sync poll loop and unregisters the agent context/actions
+/// this instance published (`RavenAgentBridge.register`). Skipping that and
+/// only evicting the dictionary entry would leave a closed instance's timer
+/// polling Gmail forever and its stale closures still reachable from the
+/// host's registries — the same leak class this teardown exists to close.
 extension RavenApp: AinkradAppTeardown {
     public static func teardown(instance: PluginInstanceID) {
-        runtimes.remove(instance)
+        runtimes.remove(instance)?.teardown()
     }
 }

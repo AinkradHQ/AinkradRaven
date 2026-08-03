@@ -77,7 +77,17 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     private let host: HostServices
     private let providerProxy: RavenProviderProxy
     private var auth: GmailAuth?
-    private var syncEngine: SyncEngine?
+    /// Not `private` — `RavenAgentBridgeTests` swaps this for one built
+    /// around a scriptable `FakeMailProvider` to exercise `syncOnce()`'s
+    /// failure path without a live network. Still only ever mutated from
+    /// `@MainActor` call sites in this file, exactly as before.
+    var syncEngine: SyncEngine?
+    /// The running poll loop started in `init` and cancelled in `teardown()`.
+    /// Not resumed once cancelled — a closed instance must stop calling
+    /// Gmail, not just stop being observed.
+    private var syncTask: Task<Void, Never>?
+    private var contextToken: PluginContextToken?
+    private var actionTokens: [AgentActionToken] = []
 
     /// Not a credential — the OAuth client id is only ever a lookup key
     /// against Google, and the user needs to see what they typed to fix a
@@ -124,6 +134,29 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         }
         model.reload()
         refreshOutboxSnapshots()
+
+        let registration = RavenAgentBridge.register(host: host, model: model)
+        contextToken = registration.context
+        actionTokens = registration.actions
+        startSyncTimer()
+    }
+
+    /// Releases everything this instance registered with `host` and stops the
+    /// poll loop. Called from `RavenApp.teardown` — see that file's own
+    /// documentation of why a per-instance runtime that never tears down is a
+    /// leak, not a cache. Safe to call more than once (each step is a no-op
+    /// the second time).
+    public func teardown() {
+        syncTask?.cancel()
+        syncTask = nil
+        if let contextToken {
+            host.context.remove(contextToken)
+            self.contextToken = nil
+        }
+        for token in actionTokens {
+            host.actions.remove(token)
+        }
+        actionTokens = []
     }
 
     // MARK: Credentials
@@ -195,6 +228,47 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
             lastSyncError = String(describing: error)
         }
         syncState = syncEngine.state
+        model.reload()
+    }
+
+    /// Polls on a timer and on window focus (`syncNow`, called by the UI). No
+    /// Pub/Sub push in M0 — that needs a public HTTPS endpoint, which is
+    /// disproportionate for a personal client.
+    private func startSyncTimer() {
+        syncTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.syncOnce()
+                try? await Task.sleep(for: .seconds(120))
+            }
+        }
+    }
+
+    /// The timer's tick. `syncDelta()` deliberately does NOT throw on a
+    /// transient per-thread failure — it holds the cursor and records the
+    /// failure on the account/`state` instead, precisely so a flaky network
+    /// blip can't advance the cursor past mail that was never durably synced
+    /// (see `SyncEngine.syncDelta`'s own documentation). A bare `do/catch`
+    /// around the call would miss that failure entirely and log nothing, so
+    /// this reads `syncEngine.state` after the call whether or not it threw,
+    /// exactly like `syncNow()`. `outbox.drain()` never throws either — it
+    /// records failures on the entries themselves — so `refreshOutboxSnapshots()`
+    /// is what actually surfaces those, into `outboxDeadLettered`/`outboxNeedsReview`.
+    /// Nothing here logs message content, addresses, or tokens: only the
+    /// `String(describing:)` of a `MailError`/status, matching `syncNow`.
+    func syncOnce() async {
+        guard let syncEngine else { return }
+        do {
+            try await syncEngine.syncDelta()
+            lastSyncError = nil
+        } catch {
+            lastSyncError = String(describing: error)
+        }
+        syncState = syncEngine.state
+        if case .failed(let message) = syncState {
+            lastSyncError = message
+        }
+        await outbox.drain()
+        refreshOutboxSnapshots()
         model.reload()
     }
 
