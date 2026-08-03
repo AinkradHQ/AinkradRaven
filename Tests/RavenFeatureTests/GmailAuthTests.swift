@@ -301,3 +301,32 @@ struct GmailAuthFormEncodingTests {
         #expect(String(decoding: data, as: UTF8.self) == "grant_type=refresh_token")
     }
 }
+
+@Suite("OAuth callback page")
+struct GmailAuthCallbackPageTests {
+    @Test("the success page names Raven, not the pre-rename Mail")
+    func successCopy() {
+        let page = LoopbackCallbackListener.callbackPage(success: true)
+        #expect(page.contains("Raven"))
+        #expect(page.contains("return to Mail") == false)
+        #expect(page.contains("Signed in"))
+    }
+
+    @Test("the failure page tells the user it failed and how to retry")
+    func failureCopy() {
+        let page = LoopbackCallbackListener.callbackPage(success: false)
+        #expect(page.contains("Sign-in failed"))
+        #expect(page.lowercased().contains("try connecting again"))
+    }
+
+    @Test("the page is self-contained — a loopback socket cannot serve linked assets")
+    func selfContained() {
+        for page in [LoopbackCallbackListener.callbackPage(success: true),
+                     LoopbackCallbackListener.callbackPage(success: false)] {
+            #expect(page.contains("<link") == false)
+            #expect(page.contains("src=") == false)
+            #expect(page.contains("http://") == false)
+            #expect(page.contains("https://") == false)
+        }
+    }
+}
