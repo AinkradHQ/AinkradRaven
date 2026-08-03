@@ -4,9 +4,23 @@ public struct MessageBody: Codable, Equatable, Sendable {
     public let messageID: String
     public let plainText: String
     public let html: String?
+    /// The raw `text/calendar` part's text, when the message carries a
+    /// calendar invite/reply/cancellation — parsed by `ICalendar` for the
+    /// invite card in `ThreadSurface`. `nil` for any message without one;
+    /// decoded as `nil` for documents saved before M4.
+    public let icsText: String?
 
-    public init(messageID: String, plainText: String, html: String?) {
+    public init(messageID: String, plainText: String, html: String?, icsText: String? = nil) {
         self.messageID = messageID; self.plainText = plainText; self.html = html
+        self.icsText = icsText
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        messageID = try c.decode(String.self, forKey: .messageID)
+        plainText = try c.decode(String.self, forKey: .plainText)
+        html = try c.decodeIfPresent(String.self, forKey: .html)
+        icsText = try c.decodeIfPresent(String.self, forKey: .icsText)
     }
 }
 

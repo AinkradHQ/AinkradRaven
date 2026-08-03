@@ -13,4 +13,8 @@ public enum MailError: Error, Equatable {
     /// data with an empty collection.
     case documentCorrupt(key: String)
     case rateLimited(retryAfter: TimeInterval)
+    /// The message's attachments push it over Gmail's send-size limit — see
+    /// `AttachmentSizeGuard`. Thrown before anything is queued, so a caller
+    /// catching this knows nothing was enqueued and nothing needs cleanup.
+    case attachmentsTooLarge(message: String)
 }

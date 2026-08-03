@@ -75,19 +75,21 @@ public enum GmailMapping {
     public static func body(_ dto: GmailMessageDTO) -> MessageBody {
         var plain: String?
         var html: String?
+        var ics: String?
         func walk(_ payload: GmailMessageDTO.Payload?) {
             guard let payload else { return }
             let decoded = payload.body?.data.flatMap(decodeBase64URL)
-            switch payload.mimeType {
-            case "text/plain": plain = plain ?? decoded
-            case "text/html": html = html ?? decoded
-            default: break
+            let mime = payload.mimeType ?? ""
+            if mime.hasPrefix("text/plain") { plain = plain ?? decoded }
+            else if mime.hasPrefix("text/html") { html = html ?? decoded }
+            else if mime.hasPrefix("text/calendar") || mime.hasPrefix("application/ics") {
+                ics = ics ?? decoded
             }
             payload.parts?.forEach(walk)
         }
         walk(dto.payload)
         let text = plain ?? html.map(BodySanitizer.plainText(fromHTML:)) ?? ""
-        return MessageBody(messageID: dto.id, plainText: text, html: html)
+        return MessageBody(messageID: dto.id, plainText: text, html: html, icsText: ics)
     }
 
     public static func labels(_ dto: GmailLabelsDTO) -> [MailLabel] {

@@ -109,6 +109,12 @@ public enum SendAttempt {
                             holdUntil: Date? = nil,
                             sendAt: Date? = nil,
                             drain: () async -> Void) async throws -> Result {
+        // Refuse an oversized attachment set BEFORE it is ever queued — see
+        // `AttachmentSizeGuard`. Nothing is enqueued, so nothing is later
+        // dead-lettered on a send that was doomed from the start.
+        if let refusal = AttachmentSizeGuard.refusalMessage(for: message.attachments) {
+            throw MailError.attachmentsTooLarge(message: refusal)
+        }
         let message = withSignature(message, outbox: outbox, store: store)
         let entryID = try outbox.enqueue(.send(message), accountID: nil,
                                          holdUntil: holdUntil, sendAt: sendAt, draftID: draftID)

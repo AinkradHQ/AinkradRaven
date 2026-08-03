@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import WebKit
+import Quartz
 import AinkradAppKit
 import AinkradAppKitUI
 
@@ -82,6 +83,10 @@ private struct MessageRow: View {
 
             content
 
+            if let icsText = loadedBody?.icsText, let invite = ICalendar.parseFirstEvent(icsText) {
+                CalendarInviteCard(invite: invite, threadID: message.threadID, runtime: runtime)
+            }
+
             if !message.attachments.isEmpty {
                 AttachmentChipRow(attachments: message.attachments, messageID: message.id,
                                   threadID: message.threadID, runtime: runtime)
@@ -151,13 +156,22 @@ private struct AttachmentChipRow: View {
     @State private var downloadingID: String?
     @State private var errorMessage: String?
 
+    /// Kept alive for the duration of an open QuickLook panel so its temp
+    /// file is cleaned up (`AttachmentPreviewFile.cleanUp`) exactly once, when
+    /// the panel closes — not left in the temp directory indefinitely, and
+    /// not deleted out from under the panel while it is still showing it.
+    @State private var activePreview: QuickLookAttachmentPreviewer?
+
     var body: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
             HStack(spacing: AinkradSpacing.xs) {
                 ForEach(attachments, id: \.attachmentID) { attachment in
                     AinkradChip(label: chipLabel(attachment), systemName: "paperclip")
                         .opacity(downloadingID == attachment.attachmentID ? 0.5 : 1)
-                        .onTapGesture { download(attachment) }
+                        .onTapGesture { preview(attachment) }
+                        .contextMenu {
+                            Button("Save…") { download(attachment) }
+                        }
                 }
             }
             if let errorMessage {
@@ -169,6 +183,33 @@ private struct AttachmentChipRow: View {
     private func chipLabel(_ attachment: MailAttachment) -> String {
         let sizeKB = attachment.size / 1024
         return sizeKB > 0 ? "\(attachment.filename) (\(sizeKB) KB)" : attachment.filename
+    }
+
+    /// The default tap action: fetch the bytes on demand (never cached) and
+    /// show them via `QLPreviewPanel` rather than immediately forcing a save
+    /// dialog — "Save…" is still available from the chip's context menu for
+    /// anyone who wants a copy on disk.
+    private func preview(_ attachment: MailAttachment) {
+        guard downloadingID == nil else { return }
+        downloadingID = attachment.attachmentID
+        errorMessage = nil
+        Task {
+            let data = await runtime.fetchAttachment(attachment, messageID: messageID,
+                                                     threadID: threadID)
+            downloadingID = nil
+            guard let data else {
+                errorMessage = "Could not download \(attachment.filename)."
+                return
+            }
+            do {
+                let file = try AttachmentPreviewFile(data: data, filename: attachment.filename)
+                let previewer = QuickLookAttachmentPreviewer(file: file)
+                activePreview = previewer
+                previewer.show { activePreview = nil }
+            } catch {
+                errorMessage = "Could not preview \(attachment.filename)."
+            }
+        }
     }
 
     private func download(_ attachment: MailAttachment) {
@@ -331,6 +372,150 @@ private struct RawHTMLWebView: NSViewRepresentable {
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
         nsView.loadHTMLString(policedHTML, baseURL: nil)
+    }
+}
+
+/// Drives one `QLPreviewPanel` showing one fetched attachment's temp file
+/// (`AttachmentPreviewFile`), and removes that temp file when the panel
+/// closes — the "held only for the open thread, never cached to disk
+/// indefinitely" contract extends to this one on-disk exception.
+private final class QuickLookAttachmentPreviewer: NSObject, QLPreviewPanelDataSource,
+    QLPreviewPanelDelegate {
+    private let file: AttachmentPreviewFile
+    private var onClose: (() -> Void)?
+
+    init(file: AttachmentPreviewFile) {
+        self.file = file
+    }
+
+    func show(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+        guard let panel = QLPreviewPanel.shared() else { onClose(); cleanUpNow(); return }
+        panel.dataSource = self
+        panel.delegate = self
+        panel.reloadData()
+        panel.makeKeyAndOrderFront(nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(panelWillClose),
+                                               name: NSWindow.willCloseNotification, object: panel)
+    }
+
+    @objc private func panelWillClose() {
+        NotificationCenter.default.removeObserver(self)
+        cleanUpNow()
+    }
+
+    private func cleanUpNow() {
+        file.cleanUp()
+        onClose?()
+        onClose = nil
+    }
+
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { 1 }
+
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
+        file.url as NSURL
+    }
+}
+
+/// The invite card an incoming `text/calendar` part renders as, in place of
+/// the raw ICS text a message used to show. Presents what matters
+/// (`ICalendar.parseFirstEvent`'s fields) and, for a `REQUEST`, offers
+/// Accept/Tentative/Decline — each of which sends an RSVP reply to the
+/// organizer (see `CalendarRSVP`) rather than touching any calendar on this
+/// device, which the card says outright so nobody mistakes a tap here for
+/// "add to my Calendar".
+private struct CalendarInviteCard: View {
+    let invite: CalendarInvite
+    let threadID: String
+    let runtime: RavenRuntime
+
+    @State private var isSending = false
+    @State private var statusMessage: String?
+    @State private var respondedWith: CalendarRSVP.PartStat?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
+            HStack(spacing: AinkradSpacing.sm) {
+                AinkradIconGlyph(systemName: "calendar")
+                Text(invite.summary.isEmpty ? "(no title)" : invite.summary)
+                    .font(.body.weight(.semibold))
+            }
+            Text(dateLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let location = invite.location, !location.isEmpty {
+                Text(location).font(.caption).foregroundStyle(.secondary)
+            }
+            if let organizer = invite.organizer {
+                Text("Organizer: \(organizer.displayLabel)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if !invite.attendees.isEmpty {
+                Text("Attendees: \(invite.attendees.map(\.displayLabel).joined(separator: ", "))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            if invite.method == .request {
+                Text("Responding replies to the organizer by email. It does not add this " +
+                     "event to any Calendar on this device.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                HStack(spacing: AinkradSpacing.sm) {
+                    rsvpButton("Accept", .accepted)
+                    rsvpButton("Tentative", .tentative)
+                    rsvpButton("Decline", .declined)
+                }
+            }
+            if let statusMessage {
+                Text(statusMessage).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(AinkradSpacing.sm)
+        .background(ChamferShape(cut: 8).fill(Color.accentColor.opacity(0.08)))
+    }
+
+    private var dateLabel: String {
+        if invite.isAllDay {
+            return invite.start.formatted(date: .abbreviated, time: .omitted) + " (all day)"
+        }
+        let startText = invite.start.formatted(date: .abbreviated, time: .shortened)
+        guard let end = invite.end else { return startText }
+        return "\(startText) – \(end.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private func rsvpButton(_ title: String, _ partstat: CalendarRSVP.PartStat) -> some View {
+        AinkradButton(title: title, style: respondedWith == partstat ? .primary : .secondary,
+                     isLoading: isSending && respondedWith == partstat) {
+            respond(partstat)
+        }
+        .disabled(isSending)
+    }
+
+    private func respond(_ partstat: CalendarRSVP.PartStat) {
+        guard let thread = runtime.store.thread(threadID),
+              let ownAddress = runtime.ownAddress(for: thread.accountID) else {
+            statusMessage = "Could not determine which account to reply from."
+            return
+        }
+        guard let reply = CalendarRSVP.makeReply(to: invite, partstat: partstat,
+                                                 attendeeEmail: ownAddress, attendeeName: nil)
+                .map({ $0.attributed(to: thread.accountID) }) else {
+            statusMessage = "This invite has no organizer to reply to."
+            return
+        }
+        isSending = true
+        respondedWith = partstat
+        statusMessage = nil
+        Task {
+            do {
+                let result = try await runtime.sendThreadReply(reply)
+                statusMessage = result.isSent
+                    ? "Reply sent to the organizer."
+                    : result.message
+            } catch {
+                statusMessage = "Could not send reply: \(error)."
+            }
+            isSending = false
+        }
     }
 }
 

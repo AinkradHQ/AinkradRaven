@@ -21,6 +21,36 @@ public struct MailDelta: Equatable, Sendable {
     }
 }
 
+/// One file attached to an outbound message. Bytes are held in memory only
+/// (matching the inbound `MailAttachment` contract of never caching to disk)
+/// until `GmailProvider.rfc822` base64-encodes them into the outgoing MIME
+/// structure.
+public struct OutgoingAttachment: Codable, Equatable, Sendable, Identifiable {
+    public let id: UUID
+    public let filename: String
+    public let mimeType: String
+    public let data: Data
+
+    public init(id: UUID = UUID(), filename: String, mimeType: String, data: Data) {
+        self.id = id; self.filename = filename; self.mimeType = mimeType; self.data = data
+    }
+}
+
+/// An RSVP reply to a calendar invite: a `text/calendar; method=REPLY` part
+/// carrying the user's `PARTSTAT`, addressed to the invite's organizer. This
+/// is the whole of "RSVP by email" — it travels between mail clients with no
+/// calendar access on either side, which is exactly why it is in scope while
+/// `EventKit` is not.
+public struct ICSReply: Codable, Equatable, Sendable {
+    /// The full `BEGIN:VCALENDAR…END:VCALENDAR` text, already carrying
+    /// `METHOD:REPLY` and the chosen `PARTSTAT`.
+    public let icsText: String
+
+    public init(icsText: String) {
+        self.icsText = icsText
+    }
+}
+
 /// A message to transmit.
 public struct OutgoingMessage: Codable, Equatable, Sendable {
     public let to: [MailAddress]
@@ -30,6 +60,15 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     /// Set when this is a reply, so the provider can thread it correctly.
     public let inReplyToMessageID: String?
     public let threadID: String?
+    /// Files the user attached in Compose. Empty for every message that
+    /// predates M4 and for every reply/forward that carries none — the
+    /// message stays `multipart/alternative` exactly as before in that case.
+    public let attachments: [OutgoingAttachment]
+    /// Present only for an RSVP generated from a calendar invite card. When
+    /// set, `GmailProvider.rfc822` adds one more MIME part carrying this
+    /// text — never in place of the human-readable body, so a mail client
+    /// with no calendar support still shows something legible.
+    public let icsReply: ICSReply?
     /// Which of the user's accounts composed this message, and therefore which
     /// account's provider must transmit it and whose signature gets appended.
     ///
@@ -49,10 +88,28 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
 
     public init(to: [MailAddress], cc: [MailAddress] = [], subject: String,
                 bodyText: String, inReplyToMessageID: String? = nil,
-                threadID: String? = nil, accountID: String? = nil) {
+                threadID: String? = nil, accountID: String? = nil,
+                attachments: [OutgoingAttachment] = [], icsReply: ICSReply? = nil) {
         self.to = to; self.cc = cc; self.subject = subject
         self.bodyText = bodyText; self.inReplyToMessageID = inReplyToMessageID
         self.threadID = threadID; self.accountID = accountID
+        self.attachments = attachments; self.icsReply = icsReply
+    }
+
+    /// Explicit member-wise decode/encode so documents persisted before M4
+    /// (no `attachments`/`icsReply` keys) still decode — an outbox entry
+    /// queued before this shipped must not fail to load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        to = try c.decode([MailAddress].self, forKey: .to)
+        cc = try c.decodeIfPresent([MailAddress].self, forKey: .cc) ?? []
+        subject = try c.decode(String.self, forKey: .subject)
+        bodyText = try c.decode(String.self, forKey: .bodyText)
+        inReplyToMessageID = try c.decodeIfPresent(String.self, forKey: .inReplyToMessageID)
+        threadID = try c.decodeIfPresent(String.self, forKey: .threadID)
+        accountID = try c.decodeIfPresent(String.self, forKey: .accountID)
+        attachments = try c.decodeIfPresent([OutgoingAttachment].self, forKey: .attachments) ?? []
+        icsReply = try c.decodeIfPresent(ICSReply.self, forKey: .icsReply)
     }
 
     /// The same message attributed to `accountID`. Used where the account is
@@ -62,7 +119,7 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     public func attributed(to accountID: String?) -> OutgoingMessage {
         OutgoingMessage(to: to, cc: cc, subject: subject, bodyText: bodyText,
                         inReplyToMessageID: inReplyToMessageID, threadID: threadID,
-                        accountID: accountID)
+                        accountID: accountID, attachments: attachments, icsReply: icsReply)
     }
 }
 

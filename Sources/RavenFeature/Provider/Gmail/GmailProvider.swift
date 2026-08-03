@@ -298,7 +298,27 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
     /// uses CRLF.
     static func rfc822(_ message: OutgoingMessage) -> String {
         let html = MarkdownToHTML.renderComposed(message.bodyText)
-        let boundary = randomBoundary(avoiding: [message.bodyText, html])
+        let icsText = message.icsReply?.icsText ?? ""
+        // Every text part any boundary must be checked against — attachment
+        // bytes are excluded deliberately: they are base64 (an alphabet with
+        // no `-`), so the hyphenated `raven-<uuid>` boundary token cannot
+        // occur inside them, and checking megabytes of base64 text here would
+        // be pure waste.
+        let innerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
+        let alternative = [
+            "--\(innerBoundary)",
+            MIMEHeader.literalLine("Content-Type", "text/plain; charset=UTF-8"),
+            MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"),
+            "",
+            MIMEHeader.base64Body(message.bodyText),
+            "--\(innerBoundary)",
+            MIMEHeader.literalLine("Content-Type", "text/html; charset=UTF-8"),
+            MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"),
+            "",
+            MIMEHeader.base64Body(html),
+            "--\(innerBoundary)--",
+            "",
+        ].joined(separator: "\r\n")
 
         var lines = [
             MIMEHeader.addressLine("To", message.to),
@@ -312,29 +332,81 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
             lines.append(MIMEHeader.literalLine("In-Reply-To", inReplyTo))
             lines.append(MIMEHeader.literalLine("References", inReplyTo))
         }
+
+        // No attachments and no ICS reply: exactly the pre-M4 message —
+        // `multipart/alternative` at the top level, unchanged byte-for-byte.
+        // This is deliberate, not an accident of refactoring: every existing
+        // caller and test that never attaches anything must keep getting the
+        // exact structure it always has.
+        guard !message.attachments.isEmpty || message.icsReply != nil else {
+            lines.append(MIMEHeader.literalLine(
+                "Content-Type", "multipart/alternative; boundary=\"\(innerBoundary)\""))
+            let raw = lines.joined(separator: "\r\n") + "\r\n\r\n" + alternative
+            return toRawBase64URL(raw)
+        }
+
+        // Otherwise: an outer `multipart/mixed` wraps the `multipart/
+        // alternative` text part plus one part per attachment and (if
+        // present) the calendar-reply part. The outer boundary is rolled
+        // separately from, and checked against, the inner one as well as
+        // every text part — two boundaries that could collide would corrupt
+        // whichever nests inside the other.
+        var outerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
+        while outerBoundary == innerBoundary {
+            outerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
+        }
         lines.append(MIMEHeader.literalLine(
-            "Content-Type", "multipart/alternative; boundary=\"\(boundary)\""))
+            "Content-Type", "multipart/mixed; boundary=\"\(outerBoundary)\""))
 
-        let body = [
-            "--\(boundary)",
-            MIMEHeader.literalLine("Content-Type", "text/plain; charset=UTF-8"),
-            MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"),
+        var parts: [String] = [
+            "--\(outerBoundary)",
+            MIMEHeader.literalLine("Content-Type", "multipart/alternative; boundary=\"\(innerBoundary)\""),
             "",
-            MIMEHeader.base64Body(message.bodyText),
-            "--\(boundary)",
-            MIMEHeader.literalLine("Content-Type", "text/html; charset=UTF-8"),
-            MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"),
-            "",
-            MIMEHeader.base64Body(html),
-            "--\(boundary)--",
-            "",
-        ].joined(separator: "\r\n")
+            alternative,
+        ]
+        for attachment in message.attachments {
+            parts.append("--\(outerBoundary)")
+            parts.append(MIMEHeader.literalLine(
+                "Content-Type", "\(attachment.mimeType); name=\"\(sanitizedASCIIName(attachment.filename))\""))
+            parts.append(MIMEHeader.contentDispositionAttachment(filename: attachment.filename))
+            parts.append(MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"))
+            parts.append("")
+            parts.append(MIMEHeader.base64Body(attachment.data))
+        }
+        if let icsReply = message.icsReply {
+            parts.append("--\(outerBoundary)")
+            parts.append(MIMEHeader.literalLine(
+                "Content-Type", "text/calendar; method=REPLY; charset=UTF-8"))
+            parts.append(MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"))
+            parts.append("")
+            parts.append(MIMEHeader.base64Body(icsReply.icsText))
+        }
+        parts.append("--\(outerBoundary)--")
+        parts.append("")
 
-        let raw = lines.joined(separator: "\r\n") + "\r\n\r\n" + body
-        return Data(raw.utf8).base64EncodedString()
+        let raw = lines.joined(separator: "\r\n") + "\r\n\r\n" + parts.joined(separator: "\r\n")
+        return toRawBase64URL(raw)
+    }
+
+    /// Gmail's `raw` field: the whole RFC 822 message, base64url encoded.
+    private static func toRawBase64URL(_ raw: String) -> String {
+        Data(raw.utf8).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
+    }
+
+    /// A `Content-Type`'s `name=` parameter is, like `Content-Disposition`'s
+    /// bare `filename=`, an RFC 5322 ASCII quoted-string — non-ASCII bytes
+    /// are not legal inside it. `Content-Disposition`'s RFC 2231
+    /// `filename*=` parameter (see `MIMEHeader.contentDispositionAttachment`)
+    /// is the field a real client actually reads the display name from, so
+    /// this one only needs a safe placeholder when the real name cannot fit.
+    private static func sanitizedASCIIName(_ filename: String) -> String {
+        guard filename.utf8.allSatisfy({ $0 <= 0x7F }) else { return "attachment" }
+        return filename
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
     /// A boundary token guaranteed absent from every part it separates —

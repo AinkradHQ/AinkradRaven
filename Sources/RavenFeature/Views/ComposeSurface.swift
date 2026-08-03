@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import AinkradAppKit
 import AinkradAppKitUI
 
@@ -13,6 +15,10 @@ public struct ComposeSurface: View {
     @State private var ccChips: [RecipientChip] = []
     @State private var subject = ""
     @State private var bodyText = ""
+    /// Files the user attached via `attachFiles()`, in pick order. Emitted as
+    /// one MIME part per file — see `GmailProvider.rfc822`. Held in memory
+    /// only, like every other attachment byte stream in this app.
+    @State private var attachments: [OutgoingAttachment] = []
     @State private var editingDraftID: String?
     @State private var isSending = false
     @State private var errorMessage: String?
@@ -159,6 +165,7 @@ public struct ComposeSurface: View {
         ccChips = message.cc.map { RecipientChip(raw: rfc5322(for: $0)) }
         subject = message.subject
         bodyText = message.bodyText
+        attachments = message.attachments
     }
 
     private func rfc5322(for address: MailAddress) -> String {
@@ -169,9 +176,53 @@ public struct ComposeSurface: View {
     private func clear() {
         editingDraftID = nil
         toChips = []; ccChips = []; subject = ""; bodyText = ""
+        attachments = []
         selectedFromAccountID = nil
         scheduledSendAt = nil
         isScheduling = false
+    }
+
+    // MARK: Attachments
+
+    /// `NSOpenPanel`, allowing multiple selection of any file type — Compose
+    /// does not restrict which files can be attached, matching every other
+    /// mail client. Reads each picked file's bytes into memory immediately
+    /// (never a cache directory) and derives its MIME type from the file's
+    /// extension via `UTType`, falling back to `application/octet-stream`
+    /// for a type `UTType` cannot classify.
+    private func attachFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                ?? "application/octet-stream"
+            attachments.append(OutgoingAttachment(filename: url.lastPathComponent,
+                                                   mimeType: mimeType, data: data))
+        }
+    }
+
+    private var attachmentsRow: some View {
+        Group {
+            if !attachments.isEmpty {
+                WrappingChips {
+                    ForEach(attachments) { attachment in
+                        AinkradChip(label: chipLabel(attachment), systemName: "paperclip",
+                                    onRemove: {
+                                        attachments.removeAll { $0.id == attachment.id }
+                                    })
+                    }
+                }
+            }
+        }
+    }
+
+    private func chipLabel(_ attachment: OutgoingAttachment) -> String {
+        let sizeKB = attachment.data.count / 1024
+        return sizeKB > 0 ? "\(attachment.filename) (\(sizeKB) KB)" : attachment.filename
     }
 
     // MARK: Composer
@@ -186,6 +237,10 @@ public struct ComposeSurface: View {
             AinkradTextField(text: $subject, placeholder: "Subject")
             AinkradTextArea(text: $bodyText, placeholder: "Write your message…",
                             minHeight: 200)
+
+            attachmentsRow
+            AinkradButton(title: "Attach Files…", style: .ghost, icon: "paperclip",
+                          action: attachFiles)
 
             if let errorMessage {
                 AinkradBanner(message: errorMessage, status: errorStatus,
@@ -325,7 +380,8 @@ public struct ComposeSurface: View {
             cc: ComposeValidation.validAddresses(ccChips),
             subject: subject,
             bodyText: bodyText,
-            accountID: effectiveAccountID)
+            accountID: effectiveAccountID,
+            attachments: attachments)
     }
 
     private func saveDraft() {
@@ -392,6 +448,11 @@ public struct ComposeSurface: View {
                     errorStatus = .danger
                 }
                 draftsVersion += 1
+            } catch MailError.attachmentsTooLarge(let message) {
+                // Refused before anything was queued (see `AttachmentSizeGuard`)
+                // — the message itself already says what to do about it.
+                errorMessage = message
+                errorStatus = .warning
             } catch {
                 errorMessage = "Could not queue send: \(error). Your message was not sent " +
                                "and has been left in the composer."

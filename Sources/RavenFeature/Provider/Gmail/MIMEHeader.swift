@@ -122,4 +122,61 @@ enum MIMEHeader {
         }
         return lines.joined(separator: "\r\n")
     }
+
+    /// Base64 of raw `Data` (an attachment's bytes, not text), hard-wrapped
+    /// at 76 characters per RFC 2045 — the same wrapping `base64Body` applies
+    /// to text parts, but without the CRLF text-normalization step, which
+    /// would corrupt binary bytes that happen to contain `\r` or `\n`.
+    static func base64Body(_ data: Data) -> String {
+        let encoded = data.base64EncodedString()
+        var lines: [String] = []
+        var index = encoded.startIndex
+        while index < encoded.endIndex {
+            let end = encoded.index(index, offsetBy: 76, limitedBy: encoded.endIndex)
+                ?? encoded.endIndex
+            lines.append(String(encoded[index..<end]))
+            index = end
+        }
+        return lines.joined(separator: "\r\n")
+    }
+
+    /// `Content-Disposition: attachment; filename="…"` for an ASCII-safe
+    /// filename, or the RFC 2231 extended form (`filename*=UTF-8''%XX…`) when
+    /// the filename contains any non-ASCII byte — an Arabic (or any other
+    /// non-Latin) filename is not representable inside a plain quoted-string
+    /// header value, which RFC 5322 defines as ASCII-only.
+    ///
+    /// The filename is sanitized first (same CRLF/control stripping as any
+    /// other header value — a crafted attachment name is exactly as capable
+    /// of header injection as a crafted subject) and, for the ASCII path,
+    /// backslash/quote-escaped so it cannot terminate the quoted-string early.
+    static func contentDispositionAttachment(filename: String) -> String {
+        let clean = sanitize(filename)
+        if clean.utf8.allSatisfy({ $0 <= 0x7F }) {
+            let escaped = clean
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            return "Content-Disposition: attachment; filename=\"\(escaped)\""
+        }
+        return "Content-Disposition: attachment; filename*=UTF-8''\(rfc2231Encode(clean))"
+    }
+
+    /// Percent-encodes UTF-8 bytes per RFC 2231 / RFC 5987's `attr-char`:
+    /// alphanumerics and a small set of unreserved punctuation pass through
+    /// unescaped; everything else — including every byte of a multi-byte
+    /// UTF-8 scalar — is escaped, which is what lets a non-ASCII filename
+    /// survive as a sequence of `%XX` triplets a decoder can reassemble.
+    private static func rfc2231Encode(_ value: String) -> String {
+        let unreserved = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+            + "-._~")
+        var out = ""
+        for byte in value.utf8 {
+            if byte < 0x80, unreserved.contains(Character(UnicodeScalar(byte))) {
+                out.append(Character(UnicodeScalar(byte)))
+            } else {
+                out += String(format: "%%%02X", byte)
+            }
+        }
+        return out
+    }
 }
