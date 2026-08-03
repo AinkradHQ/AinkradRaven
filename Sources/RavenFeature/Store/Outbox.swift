@@ -131,7 +131,7 @@ extension MutationOutbox {
         reviewUnattributableLegacyEntries()
         return entries.filter {
             !$0.isDeadLettered && !$0.needsReview && $0.inFlightAt == nil
-                && provider(forEntryAccount: $0.accountID) != nil
+                && $0.isEligible() && provider(forEntryAccount: $0.accountID) != nil
         }
     }
 
@@ -221,14 +221,48 @@ extension MutationOutbox {
     @discardableResult
     public func enqueue(_ operation: OutboxEntry.Operation,
                         accountID explicit: String? = nil) throws -> UUID {
+        try enqueue(operation, accountID: explicit, holdUntil: nil, sendAt: nil, draftID: nil)
+    }
+
+    /// The undo-send/scheduled-send form. Kept as a SEPARATE overload from
+    /// the plain `enqueue(_:accountID:)` above (rather than adding defaulted
+    /// parameters to it) because that plain form is `MutationOutbox`'s
+    /// protocol requirement — widening its own parameter list would stop it
+    /// satisfying the protocol. `holdUntil`/`sendAt` are gated identically by
+    /// `OutboxEntry.isEligible`; `draftID` is threaded onto the entry so
+    /// `drain()` can clean up the right draft whenever this entry eventually
+    /// transmits, however long after this call returns.
+    @discardableResult
+    public func enqueue(_ operation: OutboxEntry.Operation, accountID explicit: String?,
+                        holdUntil: Date?, sendAt: Date?, draftID: String?) throws -> UUID {
         var stamp = explicit ?? accountID
         if case .send(let message) = operation, let composed = message.accountID {
             stamp = composed
         }
-        let entry = OutboxEntry(operation: operation, accountID: stamp)
+        let entry = OutboxEntry(operation: operation, accountID: stamp,
+                                holdUntil: holdUntil, sendAt: sendAt, draftID: draftID)
         entries.append(entry)
         persistRecordingFailure()
         return entry.id
+    }
+
+    /// Cancels a still-held `.send` entry (undo-send) and hands back the
+    /// message it was queuing, so the caller can restore it as an editable
+    /// draft. Returns `nil` — leaving the queue untouched — for anything that
+    /// is NOT provably still held: an unknown id, a `.labels` entry, one
+    /// already handed to a provider (`inFlightAt != nil`), or one whose hold
+    /// has already elapsed. Deliberately narrower than `discard`, which drops
+    /// any entry unconditionally: this may only ever remove something that
+    /// has not yet been (and, by the elapsed-hold check, is not about to be)
+    /// transmitted, so "cancel" can never race a real send.
+    public func cancelHeld(_ id: UUID) -> OutgoingMessage? {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return nil }
+        let entry = entries[index]
+        guard entry.inFlightAt == nil, case .send(let message) = entry.operation else { return nil }
+        guard let holdUntil = entry.holdUntil, Date() < holdUntil else { return nil }
+        entries.remove(at: index)
+        persistRecordingFailure()
+        return message
     }
 
     /// What actually became of one queued operation.
@@ -299,6 +333,16 @@ extension MutationOutbox {
                 recordTransmitted(entry.id)
                 entries.removeAll { $0.id == entry.id }
                 persistRecordingFailure()
+                // A held or scheduled send's draft could not be cleaned up
+                // when it was queued — `SendAttempt.send` had already
+                // returned by the time this drain (the 120s timer, most
+                // likely) actually transmits it. The draft id travels on the
+                // entry itself for exactly this: whichever drain pass finally
+                // sends it removes the draft, same "removed iff sent"
+                // invariant, just applied here instead of only at enqueue time.
+                if let draftID = entry.draftID {
+                    DraftBox.shared.remove(draftID)
+                }
             } catch {
                 guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { continue }
                 entries[index].inFlightAt = nil

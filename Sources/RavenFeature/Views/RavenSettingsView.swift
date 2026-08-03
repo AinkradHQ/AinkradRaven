@@ -28,6 +28,12 @@ public struct RavenSettingsView: View {
     /// account's actual address, never a bare ambiguous "Sign out?", so the
     /// account is captured here rather than the button acting immediately.
     @State private var pendingSignOut: MailAccount?
+    /// Undo-send hold window, seconds — mirrors `runtime.holdWindow`. Edited
+    /// as text rather than a slider to keep this minimal; the task calls for
+    /// "explicit and configurable", not a polished control.
+    @State private var holdWindowText = ""
+    @State private var rulesVersion = 0
+    @State private var editingRule: MailRule?
 
     public init(runtime: RavenRuntime) { self.runtime = runtime }
 
@@ -36,6 +42,8 @@ public struct RavenSettingsView: View {
             VStack(alignment: .leading, spacing: AinkradSpacing.lg) {
                 credentialsPanel
                 accountsPanel
+                sendPanel
+                rulesPanel
                 outboxPanel
             }
             .padding(AinkradSpacing.lg)
@@ -59,6 +67,7 @@ public struct RavenSettingsView: View {
         .onAppear {
             clientID = runtime.savedClientID ?? clientID
             for account in runtime.accounts { signatures[account.id] = account.signature }
+            holdWindowText = String(Int(runtime.holdWindow))
         }
         // `runtime.accounts` is a plain snapshot method, not `@Observable`
         // storage, so nothing re-reads it just because `runtime.syncState`
@@ -251,6 +260,131 @@ public struct RavenSettingsView: View {
         }
     }
 
+    // MARK: Send (undo-send hold window)
+
+    /// The hold window applies identically to the human Send button and to
+    /// Sage's `send_draft` — see `RavenMCPOperations`'s doc comment on that
+    /// tool for the reasoning — so this one setting covers both.
+    private var sendPanel: some View {
+        AinkradSettingsPanel(
+            title: "Sending",
+            hint: "How long a sent message stays cancelable before it actually leaves — " +
+                  "applies to messages you send yourself and to ones Sage sends via " +
+                  "send_draft. Default is 20 seconds."
+        ) {
+            AinkradFormRow(title: "Undo window (seconds)") {
+                AinkradTextField(text: $holdWindowText, placeholder: "20")
+                    .frame(width: 80)
+                    .onChange(of: holdWindowText) { _, newValue in
+                        guard let seconds = Double(newValue), seconds >= 0 else { return }
+                        runtime.holdWindow = seconds
+                    }
+            }
+        }
+    }
+
+    // MARK: Rules
+
+    private var rulesPanel: some View {
+        AinkradSettingsPanel(
+            title: "Rules",
+            hint: "Applied only to new mail as it arrives (delta sync) — never retroactively " +
+                  "to mail already in the store. Ordered top to bottom; a rule can stop later " +
+                  "rules from also running against the same thread."
+        ) {
+            rulesPanelBody
+        }
+    }
+
+    @ViewBuilder
+    private var rulesPanelBody: some View {
+        let currentRuleSet = currentRules
+        VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
+            rulesList(currentRuleSet)
+            if let editingRule {
+                RuleEditor(
+                    rule: editingRule,
+                    previewCount: RuleSet.previewCount(editingRule, against: runtime.model.summaries),
+                    onSave: saveRule,
+                    onCancel: { self.editingRule = nil })
+            } else {
+                AinkradButton(title: "Add Rule", style: .secondary, icon: "plus") {
+                    editingRule = MailRule(name: "New rule", action: .archive)
+                }
+            }
+        }
+    }
+
+    /// Reads `rulesVersion` (bumping which triggers a fresh read here) before
+    /// returning `runtime.rules`, exactly like `accountsPanel`'s
+    /// `accountsVersion` idiom above — `runtime.rules` is a plain computed
+    /// property, not `@Observable` storage, so nothing re-reads it just
+    /// because some other observable property changed.
+    private var currentRules: RuleSet {
+        _ = rulesVersion
+        return runtime.rules
+    }
+
+    @ViewBuilder
+    private func rulesList(_ ruleSet: RuleSet) -> some View {
+        if ruleSet.rules.isEmpty {
+            AinkradEmptyState(icon: "line.3.horizontal.decrease.circle", title: "No rules",
+                              message: "Add a rule to act on new mail automatically.")
+        } else {
+            ForEach(Array(ruleSet.rules.enumerated()), id: \.element.id) { index, rule in
+                ruleRow(rule, index: index, ruleSet: ruleSet)
+            }
+        }
+    }
+
+    private func saveRule(_ saved: MailRule) {
+        var updated = runtime.rules
+        if let index = updated.rules.firstIndex(where: { $0.id == saved.id }) {
+            updated.rules[index] = saved
+        } else {
+            updated.rules.append(saved)
+        }
+        runtime.rules = updated
+        editingRule = nil
+        rulesVersion += 1
+    }
+
+    private func ruleRow(_ rule: MailRule, index: Int, ruleSet: RuleSet) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rule.name).font(.body.weight(.medium))
+                Text(rule.isEnabled ? "Enabled" : "Disabled")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            AinkradIconButton(systemName: "arrow.up", tooltip: "Move up") {
+                moveRule(index: index, by: -1)
+            }
+            .disabled(index == 0)
+            AinkradIconButton(systemName: "arrow.down", tooltip: "Move down") {
+                moveRule(index: index, by: 1)
+            }
+            .disabled(index == ruleSet.rules.count - 1)
+            AinkradButton(title: "Edit", style: .ghost) { editingRule = rule }
+            AinkradButton(title: "Delete", style: .danger) {
+                var updated = runtime.rules
+                updated.rules.removeAll { $0.id == rule.id }
+                runtime.rules = updated
+                rulesVersion += 1
+            }
+        }
+        .padding(.vertical, AinkradSpacing.xs)
+    }
+
+    private func moveRule(index: Int, by offset: Int) {
+        var updated = runtime.rules
+        let target = index + offset
+        guard updated.rules.indices.contains(target) else { return }
+        updated.rules.swapAt(index, target)
+        runtime.rules = updated
+        rulesVersion += 1
+    }
+
     // MARK: Outbox
 
     private var outboxPanel: some View {
@@ -294,5 +428,107 @@ public struct RavenSettingsView: View {
         case .send(let message): return "Send: \(message.subject.isEmpty ? "(no subject)" : message.subject)"
         case .labels(let mutation): return "Labels on \(mutation.threadIDs.count) thread(s)"
         }
+    }
+}
+
+/// Minimal add/edit form for one `MailRule`: a single condition (field +
+/// text), an action, the stop-processing flag, and a live "matches N of your
+/// recent threads" preview computed against the currently loaded store
+/// contents — so a rule that would e.g. archive everything is legible before
+/// saving. Deliberately single-condition-at-a-time in this editor (the model
+/// supports an ordered list; extending the UI to add/remove several is a
+/// follow-up, not required for this milestone's minimal add/edit/reorder/
+/// delete bar).
+private struct RuleEditor: View {
+    let originalRule: MailRule
+    let previewCount: Int
+    let onSave: (MailRule) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String
+    @State private var field: MailRule.ConditionField
+    @State private var conditionText: String
+    @State private var actionKind: RuleActionKind
+    @State private var stopProcessing: Bool
+    @State private var isEnabled: Bool
+
+    /// A plain, `Hashable`-by-declaration stand-in for `ThreadAction`'s cases
+    /// this editor offers — kept separate from `ThreadAction` itself so the
+    /// picker never needs to compare associated-value payloads.
+    private enum RuleActionKind: String, CaseIterable {
+        case archive, trash, star, markRead
+        var label: String {
+            switch self {
+            case .archive: return "Archive"
+            case .trash: return "Trash"
+            case .star: return "Star"
+            case .markRead: return "Mark read"
+            }
+        }
+        var action: ThreadAction {
+            switch self {
+            case .archive: return .archive
+            case .trash: return .trash
+            case .star: return .star(true)
+            case .markRead: return .setRead(true)
+            }
+        }
+        static func closest(to action: ThreadAction) -> RuleActionKind {
+            switch action {
+            case .archive: return .archive
+            case .trash: return .trash
+            case .star: return .star
+            case .setRead: return .markRead
+            case .label: return .archive
+            }
+        }
+    }
+
+    init(rule: MailRule, previewCount: Int, onSave: @escaping (MailRule) -> Void,
+        onCancel: @escaping () -> Void) {
+        self.originalRule = rule
+        self.previewCount = previewCount
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _name = State(initialValue: rule.name)
+        _field = State(initialValue: rule.conditions.first?.field ?? .sender)
+        _conditionText = State(initialValue: rule.conditions.first?.contains ?? "")
+        _actionKind = State(initialValue: RuleActionKind.closest(to: rule.action))
+        _stopProcessing = State(initialValue: rule.stopProcessing)
+        _isEnabled = State(initialValue: rule.isEnabled)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
+            AinkradTextField(text: $name, placeholder: "Rule name")
+            AinkradSegmentedPicker(items: MailRule.ConditionField.allCases,
+                                   selection: $field,
+                                   label: { $0.rawValue.capitalized })
+            AinkradTextField(text: $conditionText, placeholder: "contains…")
+            AinkradSegmentedPicker(items: RuleActionKind.allCases,
+                                   selection: $actionKind,
+                                   label: { $0.label })
+            Toggle("Stop processing further rules", isOn: $stopProcessing)
+            Toggle("Enabled", isOn: $isEnabled)
+            Text("Matches \(previewCount) of your currently loaded thread(s).")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                AinkradButton(title: "Cancel", style: .ghost, action: onCancel)
+                Spacer()
+                AinkradButton(title: "Save", style: .primary, action: save)
+            }
+        }
+        .padding(AinkradSpacing.sm)
+        .ainkradPanel()
+    }
+
+    private func save() {
+        var updated = originalRule
+        updated.name = name
+        updated.conditions = [MailRule.Condition(field: field, contains: conditionText)]
+        updated.action = actionKind.action
+        updated.stopProcessing = stopProcessing
+        updated.isEnabled = isEnabled
+        onSave(updated)
     }
 }

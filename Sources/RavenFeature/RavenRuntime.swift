@@ -582,7 +582,31 @@ public enum ArchiveSearchState: Equatable {
         providers.attach(provider, accountID: accountID)
         let engine = SyncEngine(store: store, provider: provider, accountID: accountID)
         engine.onChange = { [weak self] in self?.mirrorSyncEngineState(accountID: accountID) }
+        engine.onNewThreads = { [weak self] threadIDs in self?.applyRules(threadIDs: threadIDs) }
         syncEngines[accountID] = engine
+    }
+
+    // MARK: Rules
+
+    /// The user's saved filter rules — read fresh from `host.documents` on
+    /// every access rather than cached, since `RavenSettingsView`'s rule
+    /// editor writes the same document and must be reflected on the very
+    /// next delta sync without this runtime needing to be told to reload.
+    public var rules: RuleSet {
+        get { RuleSet.load(documents: host.documents) }
+        set { newValue.save(documents: host.documents) }
+    }
+
+    /// Runs the saved rules against exactly the thread ids a delta sync just
+    /// discovered — see `SyncEngine.onNewThreads`'s documentation for why
+    /// this must never be called with a wider set (e.g. everything in the
+    /// store). Goes through `RuleEngine.apply`, which itself only ever calls
+    /// `ThreadMutationApplier`/`outbox.enqueue` — never a provider directly.
+    private func applyRules(threadIDs: [String]) {
+        let ruleSet = rules
+        guard !ruleSet.rules.isEmpty else { return }
+        RuleEngine.apply(ruleSet: ruleSet, threadIDs: threadIDs, store: store, outbox: outbox)
+        model.reload()
     }
 
     /// Read-modify-write of the CURRENT account row.
@@ -813,6 +837,27 @@ public enum ArchiveSearchState: Equatable {
     /// by a `DraftBox` entry.
     public func sendThreadReply(_ message: OutgoingMessage) async throws -> SendAttempt.Result {
         try await SendAttempt.send(message, draftID: nil, outbox: outbox, store: store,
+                                   holdUntil: Date().addingTimeInterval(holdWindow),
                                    drain: drainOutbox)
     }
+
+    /// The undo-send hold window applied to every real send this runtime
+    /// issues (compose, reply, and — see `RavenMCPOperations`'s `send_draft`
+    /// documentation — Sage's `send_draft` too). Configurable from Accounts;
+    /// `SendAttempt.defaultHoldWindow` (20s) until the user changes it.
+    /// Persisted as a document since it is a preference, not a secret.
+    public var holdWindow: TimeInterval {
+        get {
+            guard let data = host.documents.data(forKey: Self.holdWindowKey),
+                  let seconds = try? JSONDecoder().decode(Double.self, from: data)
+            else { return SendAttempt.defaultHoldWindow }
+            return seconds
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                host.documents.setData(data, forKey: Self.holdWindowKey)
+            }
+        }
+    }
+    private static let holdWindowKey = "send-hold-window-seconds"
 }

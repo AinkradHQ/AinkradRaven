@@ -31,6 +31,16 @@ public struct ComposeSurface: View {
     /// account there is nothing to pick, and `effectiveAccountID` resolves it
     /// silently via `runtime.composingAccountID` instead.
     @State private var selectedFromAccountID: String?
+    /// A future time picked in `schedulePicker`, or `nil` for "send normally
+    /// (subject only to the undo-send hold window)". Reset on `clear()`.
+    @State private var scheduledSendAt: Date?
+    @State private var isScheduling = false
+    /// The most recently queued send's outbox entry, while it is still inside
+    /// its undo-send hold window — set right after `send()` queues it, and
+    /// the target of the "Undo" button in `undoBanner`. `nil` once the hold
+    /// elapses (the periodic timer transmits it) or the user cancels it.
+    @State private var undoableEntryID: UUID?
+    @State private var undoDeadline: Date?
 
     public init(runtime: RavenRuntime) { self.runtime = runtime }
 
@@ -160,6 +170,8 @@ public struct ComposeSurface: View {
         editingDraftID = nil
         toChips = []; ccChips = []; subject = ""; bodyText = ""
         selectedFromAccountID = nil
+        scheduledSendAt = nil
+        isScheduling = false
     }
 
     // MARK: Composer
@@ -180,13 +192,79 @@ public struct ComposeSurface: View {
                               onDismiss: { self.errorMessage = nil })
             }
 
+            if let undoDeadline {
+                undoBanner(deadline: undoDeadline)
+            }
+
+            schedulePicker
+
             HStack {
                 AinkradButton(title: "Save Draft", style: .secondary, action: saveDraft)
                 Spacer()
-                AinkradButton(title: "Send", style: .primary, icon: "paperplane",
+                AinkradButton(title: scheduledSendAt == nil ? "Send" : "Schedule Send",
+                              style: .primary, icon: "paperplane",
                               isLoading: isSending, action: send)
                     .disabled(!ComposeValidation.canSend(toChips) || isSending)
             }
+        }
+    }
+
+    /// Shown for the length of the undo-send hold window right after `send()`
+    /// queues a message — see `undoableEntryID`. Pressing Undo pulls the
+    /// entry back out of the outbox via `Outbox.cancelHeld` and restores it
+    /// as an editable draft; letting the deadline pass just lets the normal
+    /// 120s timer drain (and transmit) it, no special-casing needed.
+    private func undoBanner(deadline: Date) -> some View {
+        HStack {
+            Text("Sending in \(max(0, Int(deadline.timeIntervalSinceNow)))s…")
+                .font(.caption).foregroundStyle(.secondary)
+            AinkradButton(title: "Undo", style: .secondary, action: undoSend)
+        }
+    }
+
+    /// Scheduled send: a simple future-time affordance, deliberately not
+    /// over-built. Made plain in the UI (not just a code comment) that this
+    /// only fires while the app is running — a message scheduled for 3am
+    /// while the Mac is asleep sends when the app next wakes, not at 3am.
+    private var schedulePicker: some View {
+        VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
+            HStack {
+                AinkradButton(title: isScheduling ? "Cancel Scheduling" : "Schedule for later",
+                              style: .ghost, icon: "clock") {
+                    isScheduling.toggle()
+                    if !isScheduling { scheduledSendAt = nil }
+                }
+                if isScheduling {
+                    DatePicker("", selection: Binding(
+                        get: { scheduledSendAt ?? Date().addingTimeInterval(3600) },
+                        set: { scheduledSendAt = $0 }),
+                        in: Date()...,
+                        displayedComponents: [.date, .hourAndMinute])
+                        .labelsHidden()
+                }
+            }
+            if isScheduling {
+                Text("Raven must be running at the scheduled time for this to send — a " +
+                     "message scheduled while your Mac is asleep sends when the app next " +
+                     "wakes, not exactly at the time you picked.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func undoSend() {
+        guard let undoableEntryID else { return }
+        if let message = runtime.outbox.cancelHeld(undoableEntryID) {
+            // Restored exactly as `load` would show an existing draft: the
+            // recipient chips, subject, and body come straight back into the
+            // composer rather than being silently discarded.
+            let restoredID = try? DraftBox.shared.save(message, id: editingDraftID)
+            self.undoableEntryID = nil
+            self.undoDeadline = nil
+            if let restoredID {
+                load(restoredID, message)
+            }
+            draftsVersion += 1
         }
     }
 
@@ -263,17 +341,35 @@ public struct ComposeSurface: View {
         errorMessage = nil
         let outgoing = message()
         let draftID = editingDraftID
+        let holdUntil = Date().addingTimeInterval(runtime.holdWindow)
+        let scheduledFor = scheduledSendAt
         Task {
             do {
                 let result = try await SendAttempt.send(outgoing, draftID: draftID,
                                                         outbox: runtime.outbox,
                                                         store: runtime.store,
+                                                        holdUntil: holdUntil,
+                                                        sendAt: scheduledFor,
                                                         drain: runtime.drainOutbox)
                 if result.isSent {
+                    // Transmitted immediately in this same call — only
+                    // possible if a test or future caller passes a `nil`
+                    // hold; the two real send paths always pass one.
+                    clear()
+                } else if result.outcome.isBenign {
+                    // Held (undo window) and/or scheduled: the message left
+                    // the composer, exactly like a genuine send, but stays
+                    // cancelable via `undoBanner` until `holdUntil` elapses.
+                    // Its content is not lost — it lives on the outbox entry
+                    // (`OutboxEntry.draftID`/the entry itself) and `undoSend`
+                    // can pull it back via `Outbox.cancelHeld`.
+                    if let draftID { DraftBox.shared.remove(draftID) }
+                    undoableEntryID = result.entryID
+                    undoDeadline = holdUntil
                     clear()
                 } else {
                     errorMessage = result.message
-                    errorStatus = result.outcome.isBenign ? .warning : .danger
+                    errorStatus = .danger
                 }
                 draftsVersion += 1
             } catch {

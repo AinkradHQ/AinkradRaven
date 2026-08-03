@@ -211,6 +211,61 @@ import Foundation
         #expect(sentBody.components(separatedBy: "-- ").count == 2)
     }
 
+    // MARK: Undo-send hold window (M3)
+
+    @Test("a held send reports queued (benign), keeps the draft, and Outbox.cancelHeld returns it")
+    func heldSendKeepsDraftAndIsCancelable() async throws {
+        let provider = FakeMailProvider()
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        let draftID = try DraftBox.shared.save(message())
+
+        let result = try await SendAttempt.send(message(), draftID: draftID, outbox: outbox,
+                                                store: store,
+                                                holdUntil: Date().addingTimeInterval(60),
+                                                drain: outbox.drain)
+
+        #expect(result.outcome == .queued(inFlight: false))
+        #expect(result.outcome.isBenign)
+        #expect(provider.sentMessages.isEmpty)
+        // `SendAttempt` itself never removes the draft for anything short of
+        // `.sent` — the caller (Compose) decides whether to remove it early
+        // once it knows the send is only held, per the undo-send UX.
+        #expect(DraftBox.shared.draft(draftID) != nil)
+
+        let cancelled = outbox.cancelHeld(result.entryID)
+        #expect(cancelled != nil, "a still-held entry must be cancelable")
+        #expect(outbox.outcome(for: result.entryID) == .removedWithoutSending)
+        await outbox.drain()
+        #expect(provider.sentMessages.isEmpty, "cancelling within the window must transmit nothing")
+        DraftBox.shared.remove(draftID)
+    }
+
+    @Test("a held send that is never cancelled transmits once a later drain finds it eligible, and removes its draft")
+    func heldSendEventuallyTransmitsAndRemovesDraft() async throws {
+        let provider = FakeMailProvider()
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        let draftID = try DraftBox.shared.save(message())
+
+        let result = try await SendAttempt.send(message(), draftID: draftID, outbox: outbox,
+                                                store: store,
+                                                holdUntil: Date().addingTimeInterval(60),
+                                                drain: outbox.drain)
+        #expect(result.outcome == .queued(inFlight: false))
+
+        // The draft carries through onto the entry itself (`OutboxEntry.
+        // draftID`) precisely so a LATER drain — not this same call — can
+        // still clean it up once the hold elapses.
+        let dueID = try outbox.enqueue(.send(message()), accountID: nil,
+                                       holdUntil: Date().addingTimeInterval(-1),
+                                       sendAt: nil, draftID: draftID)
+        await outbox.drain()
+        #expect(outbox.outcome(for: dueID) == .sent)
+        #expect(DraftBox.shared.draft(draftID) == nil,
+                "a held send's draft must be removed once it actually transmits, even via a later drain")
+    }
+
     @Test("send_draft and the compose Send button share one outcome decision")
     func bothPathsShareTheSameLogic() async throws {
         // Same provider behaviour, same expectation, two entry points. The
@@ -237,7 +292,13 @@ import Foundation
                                                   drain: uiOutbox.drain)
 
         // Both must refuse to claim success and both must keep the draft.
-        #expect(agentResult.isError)
+        // The agent path is held (M3's undo-send window) rather than an
+        // immediate error — `isError` on a benign hold would be wrong — but
+        // it still must not claim success, exactly like the UI path (which
+        // calls `SendAttempt.send` with no hold here, so its scripted
+        // failure surfaces immediately).
+        #expect(agentResult.isError == false)
+        #expect(agentResult.text.contains("Sent") == false)
         #expect(uiResult.isSent == false)
         #expect(DraftBox.shared.draft(agentDraft) != nil)
         #expect(DraftBox.shared.draft(uiDraft) != nil)

@@ -238,15 +238,34 @@ public enum RavenMCPOperations {
             // told mail went out that didn't. The human Send button in
             // `ComposeSurface` calls exactly this function, so the two paths
             // cannot disagree about what "sent" means.
+            //
+            // Undo-send hold: applied here too, for the SAME duration
+            // (`SendAttempt.defaultHoldWindow`) as the human Send button.
+            // Checked in `RavenMCPOperations` before deciding this — Sage's
+            // send_draft passes through a human approval gate before this
+            // tool ever runs, but that approval gate is not the same thing as
+            // this window: it happens BEFORE the send is queued, not after,
+            // and it is the user approving Sage's intent, not reviewing the
+            // final rendered message about to leave the outbox. Giving Sage's
+            // sends a shorter-or-absent hold would mean approving a Sage send
+            // transmits FASTER than the user's own Compose Send button — the
+            // opposite of the surprise a hold window exists to prevent — so
+            // this deliberately uses the identical default rather than a
+            // distinct "agent immediacy" contract. No evidence was found in
+            // this file (prior to this change) of a deliberate immediacy
+            // contract for send_draft to preserve instead.
             let result: SendAttempt.Result
             do {
-                result = try await SendAttempt.send(draft, draftID: id, outbox: outbox,
-                                                    store: store, drain: outbox.drain)
+                result = try await SendAttempt.send(
+                    draft, draftID: id, outbox: outbox, store: store,
+                    holdUntil: Date().addingTimeInterval(SendAttempt.defaultHoldWindow),
+                    drain: outbox.drain)
             } catch {
                 return fail("Could not queue send: \(error)")
             }
             // A still-queued send is reported without `isError`: nothing went
-            // wrong, it simply hasn't gone out yet.
+            // wrong, it simply hasn't gone out yet — including a send that is
+            // merely held inside its undo-send window.
             if case .queued = result.outcome { return ok(result.message) }
             return result.isSent ? ok(result.message) : fail(result.message)
 

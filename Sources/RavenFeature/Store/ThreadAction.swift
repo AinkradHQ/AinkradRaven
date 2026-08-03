@@ -8,7 +8,7 @@ import AinkradAppKit
 /// string; the Inbox UI needed the SAME behaviour, not a second copy that
 /// could quietly drift from it (the send path already drifted once — see
 /// `SendAttempt`'s documentation for why that class exists at all).
-public enum ThreadAction: Equatable {
+public enum ThreadAction: Equatable, Hashable, Codable, Sendable {
     case archive
     case trash
     case star(Bool)

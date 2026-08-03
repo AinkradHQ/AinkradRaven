@@ -50,8 +50,28 @@ public enum SendAttempt {
         /// User-facing explanation, safe to show in the composer banner or
         /// return as an MCP tool result. Never contains message body text.
         public let message: String
+        /// The outbox entry this attempt queued. Exposed so a caller that
+        /// enqueued a HELD send (undo-send window) can offer a cancel
+        /// affordance keyed to this exact entry, via `Outbox.cancelHeld`.
+        public let entryID: UUID
         public var isSent: Bool { outcome.isSent }
     }
+
+    /// Default undo-send hold window: how long a just-queued send stays
+    /// cancelable — via `Outbox.cancelHeld` — before `Outbox.drain()` is
+    /// allowed to actually transmit it. Twenty seconds: the middle of the
+    /// commonly-recommended 10-30s undo-send range, erring toward giving a
+    /// real chance to catch a mistake without "Send" feeling sluggish.
+    ///
+    /// Applied identically to BOTH the human Send button (`ComposeSurface`)
+    /// and the agent's `send_draft` (`RavenMCPOperations`) — see the doc
+    /// comment on the `send_draft` case in `RavenMCPOperations.run` for why:
+    /// in short, Sage's own human-approval gate happens before `send_draft`
+    /// is even called, so it is not a substitute for this window, and giving
+    /// Sage's sends a SHORTER or absent hold would mean approving one of
+    /// Sage's sends transmits FASTER than the user's own Send button — the
+    /// opposite of the surprise this window exists to prevent.
+    public static let defaultHoldWindow: TimeInterval = 20
 
     /// Queues `message`, drains once, and reports what actually happened.
     /// Removes `draftID` from `DraftBox` only on `.sent`.
@@ -72,18 +92,32 @@ public enum SendAttempt {
     ///   `outbox.drain`. Neither may throw — failures land on the entries.
     /// - Throws: only if `enqueue` itself could not persist the queue. In that
     ///   case nothing was sent and the draft is untouched.
+    /// - Parameter holdUntil: when set, `Outbox.pending()` will not transmit
+    ///   this entry until this timestamp — the undo-send window. Defaults to
+    ///   `nil` (immediate, non-cancelable send) so every EXISTING caller and
+    ///   test that does not pass this keeps its current, pre-M3 behavior
+    ///   unchanged. The two real send surfaces (`ComposeSurface.send`,
+    ///   `RavenMCPOperations`'s `send_draft`) explicitly pass
+    ///   `Date().addingTimeInterval(SendAttempt.defaultHoldWindow)` (or the
+    ///   user's configured window) — see each call site.
+    /// - Parameter sendAt: an additional, independent future time (scheduled
+    ///   send) the entry must also wait for. `nil` (the default) means "no
+    ///   scheduling — only the hold window, if any, applies".
     @discardableResult
     public static func send(_ message: OutgoingMessage, draftID: String?,
                             outbox: Outbox, store: MailStore,
+                            holdUntil: Date? = nil,
+                            sendAt: Date? = nil,
                             drain: () async -> Void) async throws -> Result {
         let message = withSignature(message, outbox: outbox, store: store)
-        let entryID = try outbox.enqueue(.send(message))
+        let entryID = try outbox.enqueue(.send(message), accountID: nil,
+                                         holdUntil: holdUntil, sendAt: sendAt, draftID: draftID)
         await drain()
         let outcome = outbox.outcome(for: entryID)
         if outcome.isSent, let draftID {
             DraftBox.shared.remove(draftID)
         }
-        return Result(outcome: outcome, message: describe(outcome, draftID: draftID))
+        return Result(outcome: outcome, message: describe(outcome, draftID: draftID), entryID: entryID)
     }
 
     /// Conventional signature separator (sigdash) — a line consisting of

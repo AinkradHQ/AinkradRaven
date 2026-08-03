@@ -38,6 +38,14 @@ import Foundation
     /// `nil` until wired; a caller that never sets it just gets no callbacks,
     /// same as before this existed.
     public var onChange: (() -> Void)?
+    /// Invoked once per `syncDelta()` call with exactly the thread ids that
+    /// were newly fetched and durably upserted THIS pass (never on
+    /// `backfill()`, and never with an id whose fetch failed or was
+    /// transient) — the hook `RavenRuntime` uses to run `RuleEngine.apply`
+    /// only against genuinely new arrivals, never retroactively against the
+    /// whole store. `nil` until wired; a caller that never sets it simply
+    /// gets no callback, matching `onChange`'s own convention.
+    public var onNewThreads: (([String]) -> Void)?
 
     public init(store: MailStore, provider: MailProvider,
                 accountID: String, windowDays: Int = 90,
@@ -165,10 +173,12 @@ import Foundation
         }
 
         var transientFailures: [String] = []
+        var newlyArrived: [String] = []
         for id in delta.changedThreadIDs {
             do {
                 let thread = try await provider.fetchThread(id: id)
                 try store.upsertThread(thread)
+                newlyArrived.append(id)
             } catch MailError.unknownThread {
                 // A thread can vanish between the delta listing it and us
                 // fetching it. That is not a sync failure; skip it and keep
@@ -187,6 +197,8 @@ import Foundation
             guard let existing = store.thread(id) else { continue }
             try store.removeThread(id, accountID: accountID, date: existing.lastMessageDate)
         }
+
+        if !newlyArrived.isEmpty { onNewThreads?(newlyArrived) }
 
         if transientFailures.isEmpty {
             try updateAccount { account in

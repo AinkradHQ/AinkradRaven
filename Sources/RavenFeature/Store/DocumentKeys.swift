@@ -5,6 +5,10 @@ import Foundation
 public enum DocumentKeys {
     public static let accounts = "accounts"
     public static let outbox = "outbox"
+    /// The user's filter/rules list (see `MailRule`/`RuleSet`). Preferences,
+    /// not secrets, hence a plain document like `outbox` rather than
+    /// `host.secrets`.
+    public static let rules = "rules"
     /// Per-sender "Load images" opt-in — see `RemoteImageAllowList`. Not
     /// scoped per-account: the same sender address means the same person
     /// regardless of which of the user's own accounts received the mail.

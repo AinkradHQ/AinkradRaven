@@ -227,7 +227,14 @@ import AinkradAppKit
         #expect(outbox.pending().isEmpty)
     }
 
-    @Test("send_draft genuinely succeeding reports Sent and removes the draft")
+    /// M3 change: `send_draft` now applies the same undo-send hold window as
+    /// the human Send button (see `RavenMCPOperations`'s doc comment on the
+    /// `send_draft` case for why) — so a genuinely-succeeding send no longer
+    /// transmits INSIDE this one call. It reports `queued` (benign, not an
+    /// error) and the draft survives until the hold elapses and a later
+    /// `outbox.drain()` (the 120s timer, in production) actually transmits
+    /// it — proven below by draining again once the hold is in the past.
+    @Test("send_draft holds the send for the undo window, then a later drain actually transmits it")
     func sendDraftSuccessSendsAndRemoves() async throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let provider = FakeMailProvider()
@@ -239,16 +246,37 @@ import AinkradAppKit
             "send_draft", arguments: #"{"draft_id":"\#(id)"}"#, store: store, outbox: outbox)
 
         #expect(result.isError == false)
-        #expect(result.text.contains("Sent"))
+        #expect(result.text.contains("Sent") == false)
+        #expect(provider.sentMessages.isEmpty, "held sends must not transmit before their window elapses")
+        #expect(DraftBox.shared.draft(id) != nil, "the draft must survive while the send is only held")
+
+        // `send_draft`'s own hold is 20s out, so `pending()` correctly shows
+        // nothing to drain yet — that is the assertion above. To prove a
+        // held entry DOES transmit once its window elapses (without an
+        // actual 20s sleep), queue an equivalent entry whose `holdUntil` is
+        // already in the past and drain: this is exactly the state
+        // `pending()` would see for the original entry after real time
+        // passed its deadline.
+        _ = try outbox.enqueue(.send(draft), accountID: nil,
+                               holdUntil: Date().addingTimeInterval(-1), sendAt: nil, draftID: id)
+        await outbox.drain()
         #expect(provider.sentMessages.count == 1)
-        #expect(DraftBox.shared.draft(id) == nil)
+        #expect(DraftBox.shared.draft(id) == nil, "draining a since-eligible held entry removes its draft")
     }
 
+    /// M3: `send_draft` now holds every send for the undo window, so a
+    /// provider failure can no longer surface on the SAME drain the tool
+    /// call itself triggers — see `sendDraftSuccessSendsAndRemoves`'s own
+    /// comment above for why. This test now checks both halves: the
+    /// immediate result is a benign "held", never an error (nothing has been
+    /// attempted yet), and — once the hold has elapsed — the scripted
+    /// failure still dead-letters exactly as before.
     @Test("send_draft against an unattached/unauthenticated provider does not claim success and keeps the draft")
     func sendDraftUnattachedProviderDoesNotClaimSuccess() async throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let provider = FakeMailProvider()
-        provider.failures["send"] = [MailError.notAuthenticated(accountID: "a1")]
+        provider.failures["send"] = [MailError.notAuthenticated(accountID: "a1"),
+                                     MailError.notAuthenticated(accountID: "a1")]
         // `maxAttempts: 1` so the single scripted failure dead-letters on the
         // very first drain, exactly what an unattached `RavenProviderProxy`
         // (no account connected yet) looks like in practice: every attempt
@@ -260,10 +288,19 @@ import AinkradAppKit
         let result = await RavenMCPOperations.run(
             "send_draft", arguments: #"{"draft_id":"\#(id)"}"#, store: store, outbox: outbox)
 
-        #expect(result.isError)
+        #expect(result.isError == false, "a still-held send is benign, not an error")
         #expect(result.text.contains("Sent") == false)
         #expect(provider.sentMessages.isEmpty)
         #expect(DraftBox.shared.draft(id) != nil, "the draft must survive an unconfirmed send")
+
+        // Force the hold to have elapsed (the same technique used above) and
+        // prove the scripted failure still dead-letters, not silently
+        // resolves, once an attempt is actually made.
+        _ = try outbox.enqueue(.send(draft), accountID: nil,
+                               holdUntil: Date().addingTimeInterval(-1), sendAt: nil, draftID: id)
+        await outbox.drain()
+        #expect(outbox.deadLettered().isEmpty == false)
+        #expect(provider.sentMessages.isEmpty)
         DraftBox.shared.remove(id)
     }
 
@@ -279,9 +316,21 @@ import AinkradAppKit
         let result = await RavenMCPOperations.run(
             "send_draft", arguments: #"{"draft_id":"\#(id)"}"#, store: store, outbox: outbox)
 
+        // Held, not yet attempted — "queued" either way, but for the M3 hold
+        // reason rather than the transient-failure reason until an attempt
+        // is actually made below.
         #expect(result.isError == false)
         #expect(result.text.contains("queued"))
         #expect(result.text.contains("Sent") == false)
+        #expect(provider.sentMessages.isEmpty)
+        #expect(outbox.pending().isEmpty, "a held entry is not eligible, so it is not pending yet either")
+
+        // Force the hold to have elapsed and confirm the scripted transient
+        // failure is handled exactly as before: still queued (now for the
+        // ordinary retry reason), draft kept, nothing sent.
+        _ = try outbox.enqueue(.send(draft), accountID: nil,
+                               holdUntil: Date().addingTimeInterval(-1), sendAt: nil, draftID: id)
+        await outbox.drain()
         #expect(provider.sentMessages.isEmpty)
         #expect(outbox.pending().count == 1)
         #expect(DraftBox.shared.draft(id) != nil, "the draft must survive a retryable failure")
