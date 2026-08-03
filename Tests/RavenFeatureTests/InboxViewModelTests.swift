@@ -52,6 +52,44 @@ import Foundation
         #expect(store.thread("t1")?.unreadCount == 0)
     }
 
+    @Test("selecting an unread thread also queues the read on the outbox, not just the local store")
+    func selectionEnqueuesOutboxMutation() throws {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
+                                          displayName: "Me", state: .ready))
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
+        let model = RavenViewModel(store: store, outbox: outbox)
+        let now = Date()
+        try store.upsertThread(thread("t1", subject: "Hi", unread: true, date: now))
+        model.reload()
+
+        model.select("t1")
+
+        #expect(outbox.pending().count == 1)
+        guard case .labels(let mutation)? = outbox.pending().first?.operation else {
+            Issue.record("expected a queued label mutation")
+            return
+        }
+        #expect(mutation.threadIDs == ["t1"])
+        #expect(mutation.remove == ["UNREAD"])
+    }
+
+    @Test("re-selecting an already-read thread does not queue a redundant mutation")
+    func reselectingReadThreadDoesNotEnqueue() throws {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
+                                          displayName: "Me", state: .ready))
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
+        let model = RavenViewModel(store: store, outbox: outbox)
+        let now = Date()
+        try store.upsertThread(thread("t1", subject: "Hi", unread: false, date: now))
+        model.reload()
+
+        model.select("t1")
+
+        #expect(outbox.pending().isEmpty)
+    }
+
     @Test("selecting an unknown id clears rather than crashes")
     func selectionMissing() throws {
         let (model, _) = try makeModel()

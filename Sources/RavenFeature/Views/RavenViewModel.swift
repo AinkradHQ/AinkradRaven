@@ -7,13 +7,20 @@ import Observation
 /// provider separately.
 @MainActor @Observable public final class RavenViewModel {
     private let store: MailStore
+    /// Where the mark-read mutation `select(_:)` applies locally also gets
+    /// queued for the provider. Optional so call sites (and this file's own
+    /// tests) that only care about the local list/selection behaviour don't
+    /// need a live `Outbox` — `nil` simply means the local mutation is never
+    /// synced, matching the pre-fix behaviour.
+    private let outbox: Outbox?
     public var searchText = ""
     public private(set) var summaries: [ThreadSummary] = []
     public private(set) var selectedThread: MailThread?
     public var accountID: String?
 
-    public init(store: MailStore) {
+    public init(store: MailStore, outbox: Outbox? = nil) {
         self.store = store
+        self.outbox = outbox
         self.accountID = store.accounts().first?.id
     }
 
@@ -45,13 +52,22 @@ import Observation
 
     public func select(_ threadID: String) {
         guard var thread = store.thread(threadID) else { selectedThread = nil; return }
-        // Opening a thread reads it. Do it locally first so the row updates on
-        // the same frame; the outbox carries the change to the server.
+        let wasUnread = thread.messages.contains { !$0.isRead }
+        // Opening a thread reads it. Apply it locally first so the row
+        // updates on the same frame, then queue the SAME mutation on the
+        // outbox so it actually reaches the provider — local-first still
+        // means eventually-synced, exactly like `RavenMCPOperations.mutate`'s
+        // archive/star/label operations. Only enqueued when something was
+        // actually unread, so re-selecting an already-read thread doesn't
+        // queue a no-op mutation.
         for index in thread.messages.indices where !thread.messages[index].isRead {
             thread.messages[index].isRead = true
             thread.messages[index].labelIDs.removeAll { $0 == "UNREAD" }
         }
         try? store.upsertThread(thread)
+        if wasUnread {
+            try? outbox?.enqueue(.labels(LabelMutation(threadIDs: [threadID], remove: ["UNREAD"])))
+        }
         selectedThread = thread
         reload()
     }

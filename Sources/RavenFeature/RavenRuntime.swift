@@ -109,8 +109,9 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         let accountID = store.accounts().first?.id ?? ""
         let proxy = RavenProviderProxy(accountID: accountID)
         self.providerProxy = proxy
-        self.outbox = Outbox(documents: host.documents, provider: proxy)
-        self.model = RavenViewModel(store: store)
+        let outbox = Outbox(documents: host.documents, provider: proxy)
+        self.outbox = outbox
+        self.model = RavenViewModel(store: store, outbox: outbox)
 
         if let idData = host.documents.data(forKey: Self.clientIDKey),
            let clientID = String(data: idData, encoding: .utf8),

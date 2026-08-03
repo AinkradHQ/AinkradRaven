@@ -126,14 +126,52 @@ public enum RavenMCPOperations {
                             "survive a restart, so this id may be stale — call create_draft " +
                             "again rather than retrying send_draft with the same id.")
             }
+            // Track the entry `enqueue` creates by diffing `pending()` before
+            // and after — `Outbox.enqueue` doesn't hand back an id, but a
+            // freshly-queued send always lands in `pending()` first, so the
+            // one id that's new IS this send. This is load-bearing: without
+            // it, `drain()` not throwing means we'd have no way to tell a
+            // real send from one still stuck in the queue.
+            let idsBefore = Set(outbox.pending().map(\.id))
             do {
                 try outbox.enqueue(.send(draft))
-                await outbox.drain()
-                DraftBox.shared.remove(id)
-                return ok("Sent draft \(id).")
             } catch {
                 return fail("Could not queue send: \(error)")
             }
+            guard let entryID = outbox.pending().first(where: { !idsBefore.contains($0.id) })?.id
+            else {
+                // Unreachable in practice — `enqueue` just appended one — but
+                // fail loudly rather than silently claim a send we can't verify.
+                return fail("Could not track the queued send for draft \(id).")
+            }
+
+            await outbox.drain()
+
+            // Only NOW — after checking what actually happened to this exact
+            // entry — do we touch the draft or claim any outcome. Overclaiming
+            // here is the one mistake in this whole tool set that is
+            // unrecoverable: the draft text is gone and the user is told mail
+            // went out that didn't.
+            if outbox.pending().contains(where: { $0.id == entryID }) {
+                return ok("Send for draft \(id) is queued and will retry automatically; it has " +
+                          "not gone out yet. The draft is kept — call send_draft again later if " +
+                          "you want to check on it, or leave it for the automatic retry.")
+            }
+            if let deadLettered = outbox.deadLettered().first(where: { $0.id == entryID }) {
+                return fail("Send for draft \(id) failed after repeated attempts" +
+                            (deadLettered.lastError.map { ": \($0)" } ?? "") +
+                            ". The draft was kept — resolve or discard the failed send in " +
+                            "Accounts before trying again.")
+            }
+            if outbox.needsReview().contains(where: { $0.id == entryID }) {
+                return fail("The outcome of sending draft \(id) is unknown — the app may have " +
+                            "quit mid-send. The draft was kept; confirm in Accounts whether it " +
+                            "actually went out before resending.")
+            }
+            // The entry left pending, dead-letter, and needs-review — the
+            // only way out of all three is a successful drain.
+            DraftBox.shared.remove(id)
+            return ok("Sent draft \(id).")
 
         default:
             return fail("Unknown operation \(operation).")

@@ -141,4 +141,65 @@ import AinkradAppKit
         #expect(provider.sentMessages.isEmpty)
         #expect(outbox.pending().isEmpty)
     }
+
+    @Test("send_draft genuinely succeeding reports Sent and removes the draft")
+    func sendDraftSuccessSendsAndRemoves() async throws {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        let provider = FakeMailProvider()
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
+        let draft = OutgoingMessage(to: [MailAddress(email: "a@x.com")], subject: "s", bodyText: "b")
+        let id = try DraftBox.shared.save(draft)
+
+        let result = await RavenMCPOperations.run(
+            "send_draft", arguments: #"{"draft_id":"\#(id)"}"#, store: store, outbox: outbox)
+
+        #expect(result.isError == false)
+        #expect(result.text.contains("Sent"))
+        #expect(provider.sentMessages.count == 1)
+        #expect(DraftBox.shared.draft(id) == nil)
+    }
+
+    @Test("send_draft against an unattached/unauthenticated provider does not claim success and keeps the draft")
+    func sendDraftUnattachedProviderDoesNotClaimSuccess() async throws {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        let provider = FakeMailProvider()
+        provider.failures["send"] = [MailError.notAuthenticated(accountID: "a1")]
+        // `maxAttempts: 1` so the single scripted failure dead-letters on the
+        // very first drain, exactly what an unattached `RavenProviderProxy`
+        // (no account connected yet) looks like in practice: every attempt
+        // fails the same way, so it is never going to succeed on retry.
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider, maxAttempts: 1)
+        let draft = OutgoingMessage(to: [MailAddress(email: "a@x.com")], subject: "s", bodyText: "b")
+        let id = try DraftBox.shared.save(draft)
+
+        let result = await RavenMCPOperations.run(
+            "send_draft", arguments: #"{"draft_id":"\#(id)"}"#, store: store, outbox: outbox)
+
+        #expect(result.isError)
+        #expect(result.text.contains("Sent") == false)
+        #expect(provider.sentMessages.isEmpty)
+        #expect(DraftBox.shared.draft(id) != nil, "the draft must survive an unconfirmed send")
+        DraftBox.shared.remove(id)
+    }
+
+    @Test("send_draft after a transient failure reports queued, not sent, and keeps the draft")
+    func sendDraftTransientFailureReportsQueued() async throws {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        let provider = FakeMailProvider()
+        provider.failures["send"] = [MailError.providerFailed(status: 500, message: "boom")]
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
+        let draft = OutgoingMessage(to: [MailAddress(email: "a@x.com")], subject: "s", bodyText: "b")
+        let id = try DraftBox.shared.save(draft)
+
+        let result = await RavenMCPOperations.run(
+            "send_draft", arguments: #"{"draft_id":"\#(id)"}"#, store: store, outbox: outbox)
+
+        #expect(result.isError == false)
+        #expect(result.text.contains("queued"))
+        #expect(result.text.contains("Sent") == false)
+        #expect(provider.sentMessages.isEmpty)
+        #expect(outbox.pending().count == 1)
+        #expect(DraftBox.shared.draft(id) != nil, "the draft must survive a retryable failure")
+        DraftBox.shared.remove(id)
+    }
 }
