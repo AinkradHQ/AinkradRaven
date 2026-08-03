@@ -74,8 +74,12 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
         // `theme.tokens` (not the `HostTheme` wrapper) is the colour snapshot,
         // and reading it here also means a theme change repaints the header —
         // `HostTheme` is `@Observable` and the host calls this from its `body`.
+        // `headerFillOpacity`, not `surfaceOpacity`: the host paints this as a
+        // flat colour while a pane paints the same tint over a light-scattering
+        // blur, so the identical alpha reads heavier here. See
+        // `RavenAppearance.headerFillOpacity`.
         host.theme.tokens.background
-            .opacity(runtime(host: host).appearanceStore.appearance.surfaceOpacity)
+            .opacity(runtime(host: host).appearanceStore.appearance.headerFillOpacity)
     }
 
     /// The fallback the protocol describes, for a host that does not consume

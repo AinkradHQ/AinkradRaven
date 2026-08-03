@@ -166,6 +166,37 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
         isRead ? Self.readCardLift : Self.unreadCardLift
     }
 
+    /// How much of the pane's tint the pane title bar should paint.
+    ///
+    /// The header cannot simply reuse `surfaceOpacity`, and the reason is in
+    /// the host: `BlockView.headerBackground` renders `chromeFill` as a plain
+    /// `Color`, whereas `AinkradPanel` renders `VisualEffectBlur` *and then*
+    /// the same tint over it. The blur is `.hudWindow`, a light-scattering
+    /// material, so the pane's composite comes out visibly lighter than the
+    /// identical tint painted flat. Handing the header `surfaceOpacity`
+    /// therefore produces a header that is the same *colour* as the pane and
+    /// reads distinctly heavier — which is exactly what it did.
+    ///
+    /// This scales the header's tint down to approximate the material's lift,
+    /// so the two read as one surface. It is a calibration, not a derivation:
+    /// the real fix is a `VisualEffectBlur` behind `headerBackground` in the
+    /// host, which would let this return `surfaceOpacity` unchanged and would
+    /// fix every translucent pane at once, not just Raven's. Until then this
+    /// keeps Raven's own chrome coherent.
+    ///
+    /// Fully opaque stays fully opaque: with no translucency there is no
+    /// material lift to compensate for, and the host skips the backdrop
+    /// entirely.
+    public var headerFillOpacity: Double {
+        surfaceOpacity >= 1 ? 1 : surfaceOpacity * Self.headerMaterialCompensation
+    }
+
+    /// The share of the pane tint the flat header keeps. Chosen so a
+    /// mid-range surface reads level with its pane rather than as a bar on
+    /// top of it; it is a perceptual match, so it is a constant with a name
+    /// rather than a number buried in an expression.
+    public static let headerMaterialCompensation: Double = 0.55
+
     /// What a card's region composites to overall: the pane's opacity plus the
     /// card's lift, capped at fully opaque. This is the number the user's
     /// setting is a promise about — surfaces do not silently exceed it.

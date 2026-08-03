@@ -221,3 +221,25 @@ import Foundation
         }
     }
 }
+
+@Suite("Header fill compensates for the missing material lift")
+struct RavenHeaderFillTests {
+    @Test("a translucent header paints less tint than its pane, because the host draws it flat")
+    func headerIsLighterThanPane() {
+        let appearance = RavenAppearance(rawSurfaceOpacity: 0.42)
+        #expect(appearance.headerFillOpacity < appearance.surfaceOpacity)
+        #expect(appearance.headerFillOpacity > 0)
+    }
+
+    @Test("a fully opaque surface keeps an opaque header — no lift to compensate for")
+    func opaqueStaysOpaque() {
+        #expect(RavenAppearance(rawSurfaceOpacity: 1.0).headerFillOpacity == 1)
+    }
+
+    @Test("the header tracks the slider rather than being a fixed value")
+    func headerTracksTheSetting() {
+        let thin = RavenAppearance(rawSurfaceOpacity: 0.30)
+        let thick = RavenAppearance(rawSurfaceOpacity: 0.90)
+        #expect(thin.headerFillOpacity < thick.headerFillOpacity)
+    }
+}
