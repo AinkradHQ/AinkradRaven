@@ -17,4 +17,11 @@ public enum MailError: Error, Equatable {
     /// `AttachmentSizeGuard`. Thrown before anything is queued, so a caller
     /// catching this knows nothing was enqueued and nothing needs cleanup.
     case attachmentsTooLarge(message: String)
+    /// A mutation (`send`/`applyLabels`) was routed to an account whose
+    /// provider declares `.readOnly` — e.g. an imported Apple Mail mailbox,
+    /// which has no transport of its own to send or mutate through. Thrown
+    /// at the routing layer (`MailProviderRouter.writableProvider`) rather
+    /// than left to the provider itself, so every caller gets the same
+    /// refusal regardless of which read-only backend is attached.
+    case readOnlyAccount(String)
 }

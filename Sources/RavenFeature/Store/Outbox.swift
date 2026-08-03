@@ -351,6 +351,16 @@ extension MutationOutbox {
             guard let provider = provider(forEntryAccount: entry.accountID) else { continue }
             markInFlight(entry.id)
             do {
+                // Enforced again here, at the point of actual transmission,
+                // even though `MailProviderRouter.writableProvider` is the
+                // canonical chokepoint: `provider(forEntryAccount:)` resolves
+                // through `router.sole`/`acceptsAnyAccount` fallbacks that
+                // `writableProvider(for:)` (keyed on one exact account id)
+                // cannot express, so the capability check has to happen on
+                // whichever provider this lookup actually returned.
+                guard provider.capabilities == .readWrite else {
+                    throw MailError.readOnlyAccount(provider.accountID)
+                }
                 switch entry.operation {
                 case .labels(let mutation):
                     try await provider.applyLabels(mutation)

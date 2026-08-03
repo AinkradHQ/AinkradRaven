@@ -9,10 +9,18 @@ public struct MessageBody: Codable, Equatable, Sendable {
     /// invite card in `ThreadSurface`. `nil` for any message without one;
     /// decoded as `nil` for documents saved before M4.
     public let icsText: String?
+    /// Whether this message carried a verifiable S/MIME signature. A DISTINCT
+    /// enum case split, not a bool: `.signedInvalid` (tampered/broken
+    /// signature) must never collapse into `.unsigned` (never signed at
+    /// all) — they are different security postures. Defaults to `.unsigned`
+    /// for every existing caller and every document persisted before S/MIME
+    /// support shipped, so no other behavior changes.
+    public let signatureStatus: SignatureStatus
 
-    public init(messageID: String, plainText: String, html: String?, icsText: String? = nil) {
+    public init(messageID: String, plainText: String, html: String?, icsText: String? = nil,
+                signatureStatus: SignatureStatus = .unsigned) {
         self.messageID = messageID; self.plainText = plainText; self.html = html
-        self.icsText = icsText
+        self.icsText = icsText; self.signatureStatus = signatureStatus
     }
 
     public init(from decoder: Decoder) throws {
@@ -21,6 +29,7 @@ public struct MessageBody: Codable, Equatable, Sendable {
         plainText = try c.decode(String.self, forKey: .plainText)
         html = try c.decodeIfPresent(String.self, forKey: .html)
         icsText = try c.decodeIfPresent(String.self, forKey: .icsText)
+        signatureStatus = try c.decodeIfPresent(SignatureStatus.self, forKey: .signatureStatus) ?? .unsigned
     }
 }
 

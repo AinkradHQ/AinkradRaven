@@ -300,6 +300,16 @@ public enum ArchiveSearchState: Equatable {
         return providers.sole?.accountID
     }
 
+    /// True when `accountID`'s attached provider declares `.readOnly` (an
+    /// imported Apple Mail mailbox, which has no transport to send or mutate
+    /// through). `false` for an account with no provider attached at all —
+    /// callers that need "attached AND read-write" already check attachment
+    /// separately (`composingAccountID`, `accounts`), so this only answers
+    /// the capability question.
+    public func isReadOnly(accountID: String) -> Bool {
+        providers.provider(for: accountID)?.capabilities == .readOnly
+    }
+
     /// Runs the loopback OAuth flow, saves the resulting account, attaches
     /// its provider, and returns — WITHOUT waiting for the 90-day backfill
     /// that follows. The account is already saved as `.syncing` by the time

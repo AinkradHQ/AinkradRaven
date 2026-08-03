@@ -181,7 +181,7 @@ public enum RavenMCPOperations {
                       + rendered.joined(separator: "\n---\n"))
 
         case "archive", "trash", "set_read", "star", "label":
-            return await mutate(operation, args: args, store: store, outbox: outbox)
+            return await mutate(operation, args: args, store: store, outbox: outbox, providers: providers)
 
         case "create_draft":
             guard let to = (args["to"] as? [String])?.compactMap({ MailAddress(rfc5322: $0) }),
@@ -209,6 +209,15 @@ public enum RavenMCPOperations {
                 }
                 draftAccount = accounts.first?.id
             }
+            // Refused up front, before anything is saved: a draft composed
+            // against a read-only account (Apple Mail import) can never be
+            // sent, so telling the caller now — rather than letting
+            // `send_draft` discover it later — avoids a draft that silently
+            // cannot go anywhere.
+            if let draftAccount, let providers,
+               providers.provider(for: draftAccount)?.capabilities == .readOnly {
+                return fail("Account \(draftAccount) is read-only (imported mail) and cannot send.")
+            }
             let draft = OutgoingMessage(
                 to: to,
                 cc: (args["cc"] as? [String] ?? []).compactMap { MailAddress(rfc5322: $0) },
@@ -230,6 +239,10 @@ public enum RavenMCPOperations {
                 return fail("No draft \(id) exists. Drafts are held in memory only and do not " +
                             "survive a restart, so this id may be stale — call create_draft " +
                             "again rather than retrying send_draft with the same id.")
+            }
+            if let accountID = draft.accountID, let providers,
+               providers.provider(for: accountID)?.capabilities == .readOnly {
+                return fail("Account \(accountID) is read-only (imported mail) and cannot send.")
             }
             // `SendAttempt` owns the whole decision: queue, drain, classify
             // the entry's real fate, and destroy the draft ONLY on a genuine
@@ -276,7 +289,8 @@ public enum RavenMCPOperations {
 
     @MainActor
     private static func mutate(_ operation: String, args: [String: Any],
-                               store: MailStore, outbox: Outbox) async -> AgentActionResult {
+                               store: MailStore, outbox: Outbox,
+                               providers: MailProviderRouter? = nil) async -> AgentActionResult {
         guard let ids = args["thread_ids"] as? [String], !ids.isEmpty else {
             return fail("thread_ids required.")
         }
@@ -293,8 +307,6 @@ public enum RavenMCPOperations {
         default:
             return fail("Unknown mutation \(operation).")
         }
-        let mutation = action.mutation(threadIDs: ids)
-
         // Local-first: the store changes now, the provider catches up. Shared
         // with `RavenViewModel` via `ThreadMutationApplier` so the two
         // surfaces can never disagree about what "archive"/"star"/etc. means
@@ -307,8 +319,23 @@ public enum RavenMCPOperations {
         // per account (`ThreadAccountGrouping`), shared with `RavenViewModel`
         // so the human and the agent resolve it identically.
         let groups = ThreadAccountGrouping.group(ids, store: store)
-        ThreadMutationApplier.applyLocally(mutation, store: store)
-        for group in groups {
+        // Read-only accounts are excluded BEFORE anything is applied locally:
+        // applying a mutation to the store for a thread that can never sync
+        // (Apple Mail import has no transport to carry it) would leave the
+        // store permanently disagreeing with the account it imported from.
+        let readOnlyAccountIDs = Set(groups.compactMap(\.accountID).filter {
+            providers?.provider(for: $0)?.capabilities == .readOnly
+        })
+        let writableGroups = groups.filter { group in
+            group.accountID.map { !readOnlyAccountIDs.contains($0) } ?? true
+        }
+        guard !writableGroups.isEmpty else {
+            return fail("Account(s) \(readOnlyAccountIDs.sorted().joined(separator: ", ")) " +
+                        "are read-only (imported mail); \(operation) cannot be applied.")
+        }
+        let writableIDs = Set(writableGroups.flatMap(\.ids))
+        ThreadMutationApplier.applyLocally(action.mutation(threadIDs: Array(writableIDs)), store: store)
+        for group in writableGroups {
             do {
                 try outbox.enqueue(.labels(action.mutation(threadIDs: group.ids)),
                                    accountID: group.accountID)
@@ -316,8 +343,10 @@ public enum RavenMCPOperations {
                 return fail("Applied locally but could not queue: \(error)")
             }
         }
-        return ok("\(operation) applied to \(ids.count) thread(s) across " +
-                  "\(groups.count) account(s); queued for sync.")
+        let skipped = readOnlyAccountIDs.isEmpty ? "" :
+            " (skipped read-only account(s) \(readOnlyAccountIDs.sorted().joined(separator: ", ")))"
+        return ok("\(operation) applied to \(writableIDs.count) thread(s) across " +
+                  "\(writableGroups.count) account(s); queued for sync.\(skipped)")
     }
 
     /// Short, user-safe text for an archive-search failure — mirrors

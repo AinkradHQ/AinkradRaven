@@ -1,9 +1,12 @@
 import Foundation
+import Security
 
 /// Gmail REST v1. Threading, labels, and search are server-side, so this maps
 /// rather than computes.
 public final class GmailProvider: MailProvider, @unchecked Sendable {
     public let accountID: String
+    /// Gmail transmits and mutates over its REST API — always read-write.
+    public let capabilities: MailProviderCapabilities = .readWrite
     private let auth: GmailAuth
     private let session: URLSession
     private let base = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/")!
@@ -296,7 +299,14 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
     /// blow RFC 5322's 998-octet line limit. The boundary is a fresh random
     /// token checked against both parts before use, and every structural line
     /// uses CRLF.
-    static func rfc822(_ message: OutgoingMessage) -> String {
+    /// `identityLookup` defaults to a real `SecIdentityCopyPreferred` query
+    /// against the account's email — tests inject a closure that instead
+    /// looks an identity up in a throwaway test keychain, so no test ever
+    /// touches the real login keychain (see `SMIME.preferredIdentity`).
+    static func rfc822(
+        _ message: OutgoingMessage,
+        identityLookup: (String) -> SecIdentity? = { SMIME.preferredIdentity(email: $0) }
+    ) -> String {
         let html = MarkdownToHTML.renderComposed(message.bodyText)
         let icsText = message.icsReply?.icsText ?? ""
         // Every text part any boundary must be checked against — attachment
@@ -334,58 +344,123 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
         }
 
         // No attachments and no ICS reply: exactly the pre-M4 message —
-        // `multipart/alternative` at the top level, unchanged byte-for-byte.
-        // This is deliberate, not an accident of refactoring: every existing
-        // caller and test that never attaches anything must keep getting the
-        // exact structure it always has.
-        guard !message.attachments.isEmpty || message.icsReply != nil else {
-            lines.append(MIMEHeader.literalLine(
-                "Content-Type", "multipart/alternative; boundary=\"\(innerBoundary)\""))
-            let raw = lines.joined(separator: "\r\n") + "\r\n\r\n" + alternative
+        // `multipart/alternative` at the top level, unchanged byte-for-byte
+        // when unsigned. This is deliberate, not an accident of refactoring:
+        // every existing caller and test that never attaches anything must
+        // keep getting the exact structure it always has.
+        let contentTypeLine: String
+        let body: String
+        if message.attachments.isEmpty && message.icsReply == nil {
+            contentTypeLine = MIMEHeader.literalLine(
+                "Content-Type", "multipart/alternative; boundary=\"\(innerBoundary)\"")
+            body = alternative
+        } else {
+            // Otherwise: an outer `multipart/mixed` wraps the `multipart/
+            // alternative` text part plus one part per attachment and (if
+            // present) the calendar-reply part. The outer boundary is rolled
+            // separately from, and checked against, the inner one as well as
+            // every text part — two boundaries that could collide would
+            // corrupt whichever nests inside the other.
+            var outerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
+            while outerBoundary == innerBoundary {
+                outerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
+            }
+            contentTypeLine = MIMEHeader.literalLine(
+                "Content-Type", "multipart/mixed; boundary=\"\(outerBoundary)\"")
+
+            var parts: [String] = [
+                "--\(outerBoundary)",
+                MIMEHeader.literalLine(
+                    "Content-Type", "multipart/alternative; boundary=\"\(innerBoundary)\""),
+                "",
+                alternative,
+            ]
+            for attachment in message.attachments {
+                parts.append("--\(outerBoundary)")
+                parts.append(MIMEHeader.literalLine(
+                    "Content-Type",
+                    "\(attachment.mimeType); name=\"\(sanitizedASCIIName(attachment.filename))\""))
+                parts.append(MIMEHeader.contentDispositionAttachment(filename: attachment.filename))
+                parts.append(MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"))
+                parts.append("")
+                parts.append(MIMEHeader.base64Body(attachment.data))
+            }
+            if let icsReply = message.icsReply {
+                parts.append("--\(outerBoundary)")
+                parts.append(MIMEHeader.literalLine(
+                    "Content-Type", "text/calendar; method=REPLY; charset=UTF-8"))
+                parts.append(MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"))
+                parts.append("")
+                parts.append(MIMEHeader.base64Body(icsReply.icsText))
+            }
+            parts.append("--\(outerBoundary)--")
+            parts.append("")
+            body = parts.joined(separator: "\r\n")
+        }
+
+        // S/MIME signing is opt-in: only when the sending account has a
+        // signing identity available does the message become
+        // `multipart/signed`. No identity found (the overwhelming common
+        // case in this environment — there is no real S/MIME identity
+        // configured) means sending proceeds exactly as before, unsigned,
+        // with no error raised.
+        if let accountID = message.accountID, let identity = identityLookup(accountID),
+           let signed = signedEnvelope(
+               contentTypeLine: contentTypeLine, body: body,
+               avoiding: [message.bodyText, html, icsText], identity: identity) {
+            lines.append(signed.contentTypeLine)
+            let raw = lines.joined(separator: "\r\n") + "\r\n\r\n" + signed.body
             return toRawBase64URL(raw)
         }
 
-        // Otherwise: an outer `multipart/mixed` wraps the `multipart/
-        // alternative` text part plus one part per attachment and (if
-        // present) the calendar-reply part. The outer boundary is rolled
-        // separately from, and checked against, the inner one as well as
-        // every text part — two boundaries that could collide would corrupt
-        // whichever nests inside the other.
-        var outerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
-        while outerBoundary == innerBoundary {
-            outerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
-        }
-        lines.append(MIMEHeader.literalLine(
-            "Content-Type", "multipart/mixed; boundary=\"\(outerBoundary)\""))
-
-        var parts: [String] = [
-            "--\(outerBoundary)",
-            MIMEHeader.literalLine("Content-Type", "multipart/alternative; boundary=\"\(innerBoundary)\""),
-            "",
-            alternative,
-        ]
-        for attachment in message.attachments {
-            parts.append("--\(outerBoundary)")
-            parts.append(MIMEHeader.literalLine(
-                "Content-Type", "\(attachment.mimeType); name=\"\(sanitizedASCIIName(attachment.filename))\""))
-            parts.append(MIMEHeader.contentDispositionAttachment(filename: attachment.filename))
-            parts.append(MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"))
-            parts.append("")
-            parts.append(MIMEHeader.base64Body(attachment.data))
-        }
-        if let icsReply = message.icsReply {
-            parts.append("--\(outerBoundary)")
-            parts.append(MIMEHeader.literalLine(
-                "Content-Type", "text/calendar; method=REPLY; charset=UTF-8"))
-            parts.append(MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"))
-            parts.append("")
-            parts.append(MIMEHeader.base64Body(icsReply.icsText))
-        }
-        parts.append("--\(outerBoundary)--")
-        parts.append("")
-
-        let raw = lines.joined(separator: "\r\n") + "\r\n\r\n" + parts.joined(separator: "\r\n")
+        lines.append(contentTypeLine)
+        let raw = lines.joined(separator: "\r\n") + "\r\n\r\n" + body
         return toRawBase64URL(raw)
+    }
+
+    /// Wraps `contentTypeLine` + `body` — an already-complete MIME entity —
+    /// in `multipart/signed; protocol="application/pkcs7-signature"`: the
+    /// entity is repeated byte-for-byte as the first part (so any client,
+    /// S/MIME-aware or not, still renders the message), followed by a
+    /// detached `application/pkcs7-signature` part carrying `SMIME.sign`'s
+    /// output over the FIRST part's exact CRLF-canonical bytes. Returns `nil`
+    /// (never throws) if `SMIME.sign` fails for any reason, so a caller can
+    /// fall back to sending unsigned.
+    private static func signedEnvelope(
+        contentTypeLine: String, body: String, avoiding texts: [String], identity: SecIdentity
+    ) -> (contentTypeLine: String, body: String)? {
+        let canonical = SMIME.canonicalPart(headerLines: [contentTypeLine], body: body)
+        guard let signature = SMIME.sign(content: canonical, identity: identity) else { return nil }
+
+        var signedBoundary = randomBoundary(avoiding: texts)
+        // The signed part's own bytes must never accidentally contain this
+        // boundary either — its `avoiding` list already covers the plain
+        // text/HTML/ICS bodies nested inside it, but re-checking against the
+        // fully-assembled part is what actually matters here.
+        while body.contains(signedBoundary) {
+            signedBoundary = randomBoundary(avoiding: texts)
+        }
+        let envelopeContentType = MIMEHeader.literalLine(
+            "Content-Type",
+            "multipart/signed; protocol=\"application/pkcs7-signature\"; "
+                + "micalg=sha-256; boundary=\"\(signedBoundary)\"")
+        let envelopeBody = [
+            "--\(signedBoundary)",
+            contentTypeLine,
+            "",
+            body,
+            "--\(signedBoundary)",
+            MIMEHeader.literalLine(
+                "Content-Type", "application/pkcs7-signature; name=\"smime.p7s\""),
+            MIMEHeader.literalLine(
+                "Content-Disposition", "attachment; filename=\"smime.p7s\""),
+            MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"),
+            "",
+            MIMEHeader.base64Body(signature),
+            "--\(signedBoundary)--",
+            "",
+        ].joined(separator: "\r\n")
+        return (envelopeContentType, envelopeBody)
     }
 
     /// Gmail's `raw` field: the whole RFC 822 message, base64url encoded.

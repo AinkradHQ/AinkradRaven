@@ -132,9 +132,26 @@ public struct LabelMutation: Codable, Equatable, Sendable {
     }
 }
 
+/// Whether a backend's provider can transmit/mutate, or only read.
+///
+/// Added when Apple Mail import shipped as the first read-only backend: every
+/// conformer before it (Gmail) assumed it could `send`/`applyLabels`, and that
+/// assumption was never expressed in the type system — a read-only backend
+/// could only refuse those calls at runtime, by throwing. Expressing it here
+/// instead lets `MailProviderRouter` refuse a mutation BEFORE it ever reaches
+/// the provider, for every backend, without each one having to remember to
+/// guard its own `send`/`applyLabels`.
+public enum MailProviderCapabilities: Equatable, Sendable {
+    case readOnly
+    case readWrite
+}
+
 /// Everything a backend must do. One conformer per backend; Gmail is first.
 public protocol MailProvider: Sendable {
     var accountID: String { get }
+    /// `.readWrite` for every backend that predates this — Gmail included —
+    /// so this is a non-breaking addition to every existing conformer.
+    var capabilities: MailProviderCapabilities { get }
 
     /// Newest-first page walk, bounded by `since`.
     func fetchThreads(since: Date, pageToken: String?) async throws -> ThreadPage

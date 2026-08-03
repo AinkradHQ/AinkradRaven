@@ -349,10 +349,17 @@ public struct ComposeSurface: View {
     /// via `RavenRuntime.ownAddress`/`sendThreadReply`, with no override).
     /// `nil` renders as "Choose account" so an ambiguous send is visibly
     /// unresolved rather than looking like a default was silently picked.
+    /// Every writable account — a read-only import (Apple Mail) has no
+    /// transport to send through, so it is never an option here at all,
+    /// rather than being pickable and then refused at Send.
+    private var writableAccounts: [MailAccount] {
+        runtime.accounts.filter { !runtime.isReadOnly(accountID: $0.id) }
+    }
+
     private var fromAccountPicker: some View {
         AinkradFieldWrap(label: "From") {
             AinkradSegmentedPicker(
-                items: [nil] + runtime.accounts.map { Optional($0.id) },
+                items: [nil] + writableAccounts.map { Optional($0.id) },
                 selection: $selectedFromAccountID,
                 label: { accountID in
                     guard let accountID else {

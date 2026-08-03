@@ -225,28 +225,37 @@ public struct InboxSurface: View {
             .ainkradContextMenu(contextMenuItems(for: summary))
     }
 
+    /// Mutation affordances (star/read/archive/trash) never render for a
+    /// thread whose account is read-only (an Apple Mail import): the account
+    /// has no transport to carry any of them, and offering a button that
+    /// would only be refused deeper in the stack is worse than not showing
+    /// it at all. A read thread is still fully readable — only the mutating
+    /// actions disappear.
     private func rowActions(for summary: ThreadSummary) -> some View {
         HStack(spacing: 2) {
-            AinkradIconButton(systemName: summary.isStarred ? "star.fill" : "star",
-                              size: 22, tooltip: summary.isStarred ? "Unstar" : "Star") {
-                model.star([summary.id], starred: !summary.isStarred)
-            }
-            AinkradIconButton(systemName: summary.unreadCount > 0 ? "envelope.open" : "envelope.badge",
-                              size: 22,
-                              tooltip: summary.unreadCount > 0 ? "Mark read" : "Mark unread") {
-                model.setRead([summary.id], read: summary.unreadCount == 0)
-            }
-            AinkradIconButton(systemName: "archivebox", size: 22, tooltip: "Archive") {
-                model.archive([summary.id])
-            }
-            AinkradIconButton(systemName: "trash", size: 22, tooltip: "Trash") {
-                model.trash([summary.id])
+            if !runtime.isReadOnly(accountID: summary.accountID) {
+                AinkradIconButton(systemName: summary.isStarred ? "star.fill" : "star",
+                                  size: 22, tooltip: summary.isStarred ? "Unstar" : "Star") {
+                    model.star([summary.id], starred: !summary.isStarred)
+                }
+                AinkradIconButton(systemName: summary.unreadCount > 0 ? "envelope.open" : "envelope.badge",
+                                  size: 22,
+                                  tooltip: summary.unreadCount > 0 ? "Mark read" : "Mark unread") {
+                    model.setRead([summary.id], read: summary.unreadCount == 0)
+                }
+                AinkradIconButton(systemName: "archivebox", size: 22, tooltip: "Archive") {
+                    model.archive([summary.id])
+                }
+                AinkradIconButton(systemName: "trash", size: 22, tooltip: "Trash") {
+                    model.trash([summary.id])
+                }
             }
         }
     }
 
     private func contextMenuItems(for summary: ThreadSummary) -> [AinkradMenuItem] {
-        [
+        guard !runtime.isReadOnly(accountID: summary.accountID) else { return [] }
+        return [
             AinkradMenuItem(title: summary.isStarred ? "Unstar" : "Star", systemName: "star") {
                 model.star([summary.id], starred: !summary.isStarred)
             },

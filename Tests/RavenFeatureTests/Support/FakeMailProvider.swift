@@ -5,6 +5,10 @@ import Foundation
 /// expressed as data here rather than as a mock expectation.
 final class FakeMailProvider: MailProvider, @unchecked Sendable {
     let accountID: String
+    /// `.readWrite` by default, matching this fake's pre-capability
+    /// behaviour; tests targeting the read-only refusal path set it to
+    /// `.readOnly` directly.
+    var capabilities: MailProviderCapabilities = .readWrite
     var pages: [ThreadPage] = []
     var deltas: [MailDelta] = []
     var threadsByID: [String: MailThread] = [:]

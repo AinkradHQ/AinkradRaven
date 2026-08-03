@@ -52,6 +52,30 @@ import Foundation
         return acceptsAnyAccount ? sole : nil
     }
 
+    /// The provider for `accountID`, refusing up front if it cannot mutate.
+    ///
+    /// Every send/label-mutation routing path (`Outbox.drain()`,
+    /// `RavenMCPOperations`'s mutation tools) must go through THIS rather than
+    /// `provider(for:)` followed by an unconditional `send`/`applyLabels` —
+    /// otherwise a read-only backend (Apple Mail import) would only be
+    /// stopped by whichever call site remembered to check `capabilities`
+    /// itself. Enforcing it here means every caller, present and future,
+    /// gets the same refusal for free.
+    ///
+    /// Throws `.unknownAccount` when nothing is attached for `accountID` —
+    /// the same case `provider(for:)`'s callers already map a `nil` onto —
+    /// and `.readOnlyAccount` when a provider IS attached but declares
+    /// `.readOnly`.
+    public func writableProvider(for accountID: String) throws -> MailProvider {
+        guard let provider = provider(for: accountID) else {
+            throw MailError.unknownAccount(accountID)
+        }
+        guard provider.capabilities == .readWrite else {
+            throw MailError.readOnlyAccount(accountID)
+        }
+        return provider
+    }
+
     /// The one attached provider when there is exactly one, otherwise `nil`.
     /// Used where an operation has no account to key on (an outbox entry
     /// queued before any account was known) and guessing between two accounts
