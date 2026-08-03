@@ -35,18 +35,18 @@ public struct ComposeSurface: View {
     let onClose: () -> Void
 
     @State private var activeContext: ComposeContext
-    @State private var toChips: [RecipientChip] = []
-    @State private var ccChips: [RecipientChip] = []
-    @State private var subject = ""
-    @State private var bodyText = ""
+    @State var toChips: [RecipientChip] = []
+    @State var ccChips: [RecipientChip] = []
+    @State var subject = ""
+    @State var bodyText = ""
     /// Files the user attached via `ComposeAttachmentPicker`, in pick order. Emitted as
     /// one MIME part per file — see `GmailProvider.rfc822`. Held in memory
     /// only, like every other attachment byte stream in this app.
-    @State private var attachments: [OutgoingAttachment] = []
+    @State var attachments: [OutgoingAttachment] = []
     /// Owns the one `DraftBox` entry this composing session writes to, plus the
     /// generation guard that stops a debounced autosave landing after a send has
     /// removed the draft. See `ComposeDraftKeeper`.
-    @State private var keeper = ComposeDraftKeeper()
+    @State var keeper = ComposeDraftKeeper()
     @State private var isSending = false
     @State private var errorMessage: String?
     /// Styling for `errorMessage`. A still-queued send is not a failure, and
@@ -56,14 +56,14 @@ public struct ComposeSurface: View {
     @State private var errorStatus: AinkradStatus = .danger
     /// Bumped after every draft mutation so the list re-reads `DraftBox`,
     /// which is a plain in-memory box rather than an `@Observable` type.
-    @State private var draftsVersion = 0
+    @State var draftsVersion = 0
     /// The explicit sender for a NEW message, chosen from the picker below.
     /// This is local to Compose, not `model.accountID` (the Inbox filter) —
     /// picking a from-account for one message must not also re-scope the
     /// Inbox list. `nil` until the user picks one; with a single connected
     /// account there is nothing to pick, and `effectiveAccountID` resolves it
     /// silently via `runtime.composingAccountID` instead.
-    @State private var selectedFromAccountID: String?
+    @State var selectedFromAccountID: String?
     /// A future time picked in `schedulePicker`, or `nil` for "send normally
     /// (subject only to the undo-send hold window)". Reset on `clear()`.
     @State private var scheduledSendAt: Date?
@@ -76,7 +76,7 @@ public struct ComposeSurface: View {
     @State private var undoDeadline: Date?
     /// True once the reply/forward prefill has run, so re-rendering never
     /// overwrites what the user has since typed.
-    @State private var didPrefill = false
+    @State var didPrefill = false
 
     @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradTypography) private var typo
@@ -108,13 +108,26 @@ public struct ComposeSurface: View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
             ComposeTitleBar(context: activeContext, isEditingDraft: keeper.draftID != nil,
                            onClose: onClose)
+            // Two columns, deliberately: the composer is the PRIMARY column and
+            // takes all the width left over, the drafts rail is a fixed
+            // secondary column pinned to the trailing edge. It used to be the
+            // other way round — the rail first, at a fixed 220, with
+            // `.frame(maxHeight: .infinity)` applied OUTSIDE its
+            // `AinkradSectionFrame`, so the frame stretched but the card inside
+            // it centred vertically. That is the screenshot exactly: fields
+            // shoved right, dead space left, a chamfered DRAFTS card floating in
+            // the middle of it, anchored to nothing.
+            //
+            // `.top` alignment keeps both columns starting at the same line, and
+            // `showsRail` (not `showsDraftsRail`) is what decides whether the
+            // second column exists at all.
             HStack(alignment: .top, spacing: AinkradSpacing.md) {
-                if showsDraftsRail {
-                    draftList
-                        .frame(width: 220)
-                }
                 composer
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                if showsRail {
+                    draftList
+                        .frame(width: Self.draftsRailWidth)
+                }
             }
         }
         .task { prefillIfNeeded() }
@@ -136,91 +149,30 @@ public struct ComposeSurface: View {
         RecipientSuggestions.candidates(from: runtime.model.summaries)
     }
 
-    // MARK: Prefill and draft preservation
-
-    /// Fills the fields from `ReplyComposer` for a reply/forward. Runs once —
-    /// `didPrefill` guards it — because the overlay's body re-runs on every
-    /// keystroke and re-prefilling would erase what was typed.
-    private func prefillIfNeeded() {
-        guard !didPrefill else { return }
-        didPrefill = true
-        guard case .reply(let mode, let reference) = context,
-              let thread = runtime.store.thread(reference.threadID),
-              let last = thread.messages.last else { return }
-        let body = runtime.store.body(messageID: last.id)?.plainText ?? ""
-        let draft = ReplyComposer.compose(
-            mode: mode, thread: thread, lastMessage: last, lastMessageBody: body,
-            // The replying account is the thread's own, not "the" account:
-            // excluding the wrong address from a reply-all mails the user
-            // their own mailbox.
-            ownAddress: runtime.ownAddress(for: reference.accountID))
-        toChips = draft.to.map { RecipientChip(raw: rfc5322(for: $0)) }
-        subject = draft.subject
-        bodyText = draft.bodyText
-    }
-
-    /// How long after the last edit the draft is written. Long enough that
-    /// typing a sentence is one write, short enough that "I typed it, then the
-    /// overlay went away" is never a lost message.
-    private static let autosaveDelay: Duration = .milliseconds(600)
-
-    /// The digest `.task(id:)` watches. Every editable field is in it, so any
-    /// change restarts the debounce, and nothing else is, so an unrelated
-    /// re-render (a hover, a drafts-list refresh) does not schedule a write.
-    ///
-    /// Recipient chips contribute their raw text rather than their parsed
-    /// address: a half-typed recipient is still an edit worth saving.
-    private var autosaveKey: String {
-        [toChips.map(\.raw).joined(separator: ","),
-         ccChips.map(\.raw).joined(separator: ","),
-         subject,
-         bodyText,
-         attachments.map(\.filename).joined(separator: ","),
-         selectedFromAccountID ?? ""].joined(separator: "\u{1F}")
-    }
-
-    /// Writes the draft `autosaveDelay` after the last edit.
-    ///
-    /// The generation is read BEFORE the sleep, deliberately: if a send retires
-    /// the session while this is waiting, `ComposeDraftKeeper.save` refuses the
-    /// stale write rather than re-creating a draft for a message that has already
-    /// gone out. That ordering is the whole reason the counter exists.
-    private func autosave() async {
-        guard hasContent else { return }
-        let generation = keeper.generation
-        try? await Task.sleep(for: Self.autosaveDelay)
-        guard !Task.isCancelled else { return }
-        if keeper.save(stampedMessage(), generation: generation) != nil {
-            // So the rail shows the draft appearing as it is typed.
-            draftsVersion += 1
-        }
-    }
-
-    /// A final flush for an edit made inside the debounce window, nothing more.
-    ///
-    /// This used to BE the persistence guarantee, which made an unsent draft's
-    /// survival depend on SwiftUI calling `onDisappear` when the kit's modal tore
-    /// its content down — incidental, and the same bug class that has already
-    /// lost drafts in this app twice. The autosave above is the guarantee now; if
-    /// this never ran, at most the last 600ms of typing would be missing.
-    ///
-    /// It is a SAVE, never a delete, and it goes through the same keeper, so it
-    /// cannot resurrect a retired draft either.
-    private func preserveDraft() {
-        guard hasContent else { return }
-        keeper.save(stampedMessage(), generation: keeper.generation)
-    }
-
-    /// Whether there is anything worth keeping. Deliberately strict about
-    /// emptiness so opening the composer and immediately closing it does not
-    /// litter the drafts list with blanks.
-    private var hasContent: Bool {
-        !toChips.isEmpty || !ccChips.isEmpty || !attachments.isEmpty
-            || !subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     // MARK: Drafts rail
+
+    /// The width the rail earns when it is shown. Matches
+    /// `RavenShell.draftsRailMinWidth`'s assumption about what a rail costs.
+    private static let draftsRailWidth: CGFloat = 220
+
+    /// Whether the second column exists.
+    ///
+    /// Two conditions, both necessary. The shell's width threshold
+    /// (`showsDraftsRail`) is unchanged. The new one is "there is at least one
+    /// saved draft": a rail whose entire content was a sentence explaining that
+    /// nothing is saved yet cost 220pt of the composer's width to say nothing,
+    /// and it was the emptiest possible version of it — a brand-new message —
+    /// that the user was looking at. No drafts, no column; the first autosave
+    /// (600ms into typing) brings it in, and `draftsVersion` is already bumped
+    /// on every draft mutation so this re-evaluates then.
+    private var showsRail: Bool { showsDraftsRail && savedDraftCount > 0 }
+
+    /// Read through `draftsVersion` for the same reason `ComposeDraftsRail`
+    /// does: `DraftBox` is a plain in-memory box, not observable.
+    private var savedDraftCount: Int {
+        _ = draftsVersion
+        return DraftBox.shared.all().count
+    }
 
     private var draftList: some View {
         ComposeDraftsRail(
@@ -259,7 +211,7 @@ public struct ComposeSurface: View {
         }
     }
 
-    private func rfc5322(for address: MailAddress) -> String {
+    func rfc5322(for address: MailAddress) -> String {
         guard let name = address.name, !name.isEmpty else { return address.email }
         return "\(name) <\(address.email)>"
     }
@@ -314,9 +266,15 @@ public struct ComposeSurface: View {
             // timer) drain and transmit it — no special-casing needed here.
             if let undoDeadline {
                 ComposeUndoBanner(deadline: undoDeadline, holdWindow: runtime.holdWindow,
+                                 appearance: runtime.appearanceStore.appearance,
                                  onUndo: undoSend)
             }
 
+            // Pushes the action row to the BOTTOM of the primary column instead
+            // of letting it float directly under the body field with dead space
+            // beneath it. `minLength: 0` so it collapses in a short window
+            // rather than forcing the fields off the bottom.
+            Spacer(minLength: 0)
             footer
         }
     }
@@ -380,7 +338,7 @@ public struct ComposeSurface: View {
     }
 
     /// The typed content as an `OutgoingMessage`, before routing.
-    private func message() -> OutgoingMessage {
+    func message() -> OutgoingMessage {
         OutgoingMessage(
             to: ComposeValidation.validAddresses(toChips),
             cc: ComposeValidation.validAddresses(ccChips),
@@ -393,7 +351,7 @@ public struct ComposeSurface: View {
     /// Save Draft, `preserveDraft` and `send`, so a saved draft and the message
     /// that eventually goes out cannot disagree about which mailbox owns them
     /// or which conversation they belong to.
-    private func stampedMessage() -> OutgoingMessage {
+    func stampedMessage() -> OutgoingMessage {
         activeContext.stamp(message(), fallbackAccountID: effectiveAccountID)
     }
 

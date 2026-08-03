@@ -51,23 +51,40 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     /// The opacity range the UI is allowed to offer, and the clamp every read
     /// passes through.
     ///
-    /// The floor is a legibility guarantee, not a taste choice. Below roughly
-    /// 45% the blurred workspace behind the pane — which can be anything,
-    /// including a bright document or a light-themed pane — dominates the
-    /// composite, and at that point no foreground colour is reliably readable:
-    /// the theme's own `foreground` is chosen to contrast with the theme's
-    /// `background`, and that assumption stops holding once the background is
-    /// mostly not there. A slider that reaches 0 would let a user render their
-    /// own mail unreadable in one drag and then not be able to see the setting
-    /// well enough to drag it back. The ceiling is 1 so "fully opaque" is
-    /// still reachable for anyone who wants the old flat look.
-    public static let legibleRange: ClosedRange<Double> = 0.45...1.0
+    /// The floor is a legibility guarantee, not a taste choice — but it is the
+    /// floor at which *this* app's text is still readable, not a generic one.
+    /// It used to be 0.45, chosen defensively on the assumption that the
+    /// foreground colour is on its own against whatever shows through. It is
+    /// not: `ravenLegibleText` puts a contrast-picked halo (see
+    /// `RavenLegibleText` — `Color.contrastingText` against the theme's own
+    /// foreground, so light text gets a dark halo and dark text a light one)
+    /// behind every body and quoted-text run, and `bodyTextOpacity` drives the
+    /// glyphs themselves to full strength as the surface thins. With the halo
+    /// carrying the contrast, 0.30 is where body text stops being comfortable
+    /// — the remaining 30% of theme background plus the blur is still enough
+    /// to keep a bright document behind the window from bleeding through as
+    /// texture inside the glyphs. Below that the halo starts reading as an
+    /// outline rather than as a shadow, which is a legibility cliff as well as
+    /// an ugly one, so that is the floor.
+    ///
+    /// A slider that reached 0 would let a user render their own mail
+    /// unreadable in one drag and then not be able to see the setting well
+    /// enough to drag it back. The ceiling is 1 so "fully opaque" is still
+    /// reachable for anyone who wants the old flat look.
+    public static let legibleRange: ClosedRange<Double> = 0.30...1.0
 
-    /// The default: translucent enough to read as glass over the host island,
-    /// opaque enough that a long plain-text message is comfortable to read
-    /// without touching the setting. Deliberately NOT the bottom of the range
-    /// — out of the box this should look right, not maximally transparent.
-    public static let defaultSurfaceOpacity: Double = 0.72
+    /// The default: it should read as glass out of the box, because the bug
+    /// being fixed is "my panes are opaque" and a default that needs the user
+    /// to find a setting has not fixed it.
+    ///
+    /// 0.72 was the previous value and was wrong twice over: it painted 72% of
+    /// a near-black theme background over the blur, and message cards then
+    /// stacked their own fill on top of that for an effective ~85%. Sitting
+    /// just above the new floor rather than in the middle of the range is
+    /// deliberate — with the halo doing the legibility work there is no reason
+    /// to hedge toward opacity, and the surfaces the user complained about are
+    /// exactly the ones this governs.
+    public static let defaultSurfaceOpacity: Double = 0.42
 
     public static let `default` = RavenAppearance(
         rawSurfaceOpacity: defaultSurfaceOpacity, blur: .panel)
@@ -104,16 +121,99 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     /// the first thing to become illegible.
     public var secondaryTextOpacity: Double { lerp(0.55, 0.80) }
 
-    /// A message card's own fill, over the already-translucent thread pane.
+    // MARK: Stacked layers
+
+    /// What two translucent layers actually add up to: the alpha-compositing
+    /// law `1-(1-a)(1-b)`.
+    ///
+    /// This exists because the previous version of this file did not have it.
+    /// The thread pane painted `surfaceOpacity` of the theme background over
+    /// the blur, and a message card then painted its own fill over *that*, and
+    /// the two numbers were picked independently. At the old default the total
+    /// was `1-(1-0.72)(1-0.45·0.72)` ≈ 0.85 — the solid slab in the
+    /// screenshot. Two translucent layers are not "a bit more translucent than
+    /// one"; they multiply.
+    public static func composite(_ base: Double, _ layer: Double) -> Double {
+        1 - (1 - clampUnit(base)) * (1 - clampUnit(layer))
+    }
+
+    /// The inverse: the fill a layer must paint over `base` for the pair to
+    /// composite to `target`. Solves `composite(base, x) == target` for `x`.
+    ///
+    /// Returns 0 when `base` already reaches `target` (a layer cannot subtract
+    /// opacity) and when `base` is already 1 (nothing can be added).
+    public static func layer(over base: Double, toReach target: Double) -> Double {
+        let base = clampUnit(base), target = clampUnit(target)
+        guard base < 1, target > base else { return 0 }
+        return clampUnit((target - base) / (1 - base))
+    }
+
+    private static func clampUnit(_ value: Double) -> Double { min(max(value, 0), 1) }
+
+    /// How much *effective* opacity a card is allowed to add on top of the pane
+    /// it sits on — the elevation budget, expressed in the composite's own
+    /// units rather than as a fill to paint.
+    ///
+    /// Small on purpose. A card is distinguished by its chamfer, its accent
+    /// border and (unread) its accent edge — see `MessageRow` — not by being a
+    /// darker slab. These are absolute, not multiplied by `surfaceOpacity`:
+    /// "the card is a touch heavier than its pane" is the same visual
+    /// statement at every setting, and the multiply is what produced 0.85.
+    public static let readCardLift: Double = 0.05
+    public static let unreadCardLift: Double = 0.12
+
+    public func cardLift(isRead: Bool) -> Double {
+        isRead ? Self.readCardLift : Self.unreadCardLift
+    }
+
+    /// What a card's region composites to overall: the pane's opacity plus the
+    /// card's lift, capped at fully opaque. This is the number the user's
+    /// setting is a promise about — surfaces do not silently exceed it.
+    public func cardTargetOpacity(isRead: Bool) -> Double {
+        min(1, surfaceOpacity + cardLift(isRead: isRead))
+    }
+
+    /// The fill a card actually paints, derived from the pane's rather than
+    /// chosen next to it. `composite(surfaceOpacity, cardFillOpacity(isRead:))`
+    /// equals `cardTargetOpacity(isRead:)` by construction, which is the whole
+    /// point and is what `RavenAppearanceTests` pins.
     ///
     /// Cards deliberately do NOT get their own `VisualEffectBlur`. A blur per
     /// card would mean one `NSVisualEffectView` per message in a `LazyVStack`
     /// — a real cost on a long thread — and it is not needed: the card sits on
-    /// a pane that is already blurred, so a semi-transparent theme fill on top
-    /// of it reads as glass for free. What the cards needed was to stop being
-    /// a near-solid wash, which is what scaling them by `surfaceOpacity` does.
-    public func cardOpacity(isRead: Bool) -> Double {
-        (isRead ? 0.28 : 0.45) * surfaceOpacity
+    /// a pane that is already blurred.
+    public func cardFillOpacity(isRead: Bool) -> Double {
+        Self.layer(over: surfaceOpacity, toReach: cardTargetOpacity(isRead: isRead))
+    }
+
+    /// A card's border, which is what actually separates it from its pane now
+    /// that its fill no longer can. Strengthens as the surface thins, because
+    /// that is when the fill contributes least.
+    public func cardBorderOpacity(isRead: Bool) -> Double {
+        isRead ? lerp(0.22, 0.40) : lerp(0.55, 0.80)
+    }
+
+    /// The scrim `RavenTranslucentModal` draws behind the compose overlay.
+    /// Fixed, and deliberately not user-scaled: a scrim's job is to push the
+    /// mail behind it back, and one that thinned out with the panel would stop
+    /// separating the two. Named here because the modal's own fill has to be
+    /// computed *over* it — that is the second place two layers stack.
+    public static let scrimOpacity: Double = 0.45
+
+    /// A modal's elevation budget over the pane opacity, same idea as
+    /// `readCardLift`. Slightly larger than a card's: a modal genuinely is a
+    /// separate plane, and it holds editable fields rather than prose.
+    public static let modalLift: Double = 0.10
+
+    public var modalTargetOpacity: Double { min(1, surfaceOpacity + Self.modalLift) }
+
+    /// What the compose panel paints — over the scrim, not over nothing. At the
+    /// default this is a few percent rather than the kit's hardcoded 0.94.
+    /// Zero when the user's setting is already thinner than the scrim, in which
+    /// case the scrim alone is the surface and the panel is chamfer + brackets
+    /// + border, which is correct rather than a special case.
+    public var modalFillOpacity: Double {
+        Self.layer(over: Self.scrimOpacity, toReach: modalTargetOpacity)
     }
 
     /// How strongly to halo body text against whatever is showing through.

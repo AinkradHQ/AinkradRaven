@@ -42,13 +42,16 @@ private struct RavenTranslucentModalModifier<ModalContent: View>: ViewModifier {
                     VisualEffectBlur(level: appearance.blur.level, blendingMode: .withinWindow)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(0.6)
-                    // The scrim. Unchanged from the kit's 0.45 and deliberately
-                    // NOT scaled by the transparency setting: a scrim's whole
-                    // job is to push the content behind it back, and a scrim
-                    // that thins out with the panel would stop separating the
-                    // two. This is the layer the old focus ring was being drawn
-                    // on top of — see `RavenFocusRing`.
-                    Color.black.opacity(0.45)
+                    // The scrim. Unchanged from the kit's 0.45 — now named as
+                    // `RavenAppearance.scrimOpacity`, because the panel's own
+                    // fill is computed OVER it rather than independently of it
+                    // — and deliberately NOT scaled by the transparency
+                    // setting: a scrim's whole job is to push the content
+                    // behind it back, and a scrim that thins out with the panel
+                    // would stop separating the two. This is the layer the old
+                    // focus ring was being drawn on top of — see
+                    // `RavenFocusRing`.
+                    Color.black.opacity(RavenAppearance.scrimOpacity)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
                         .onTapGesture { isPresented = false }
@@ -56,8 +59,15 @@ private struct RavenTranslucentModalModifier<ModalContent: View>: ViewModifier {
                     modalContent()
                         .frame(maxWidth: contentWidth)
                         .padding(AinkradSpacing.lg)
+                        // `modalFillOpacity`, not `surfaceOpacity`: the panel is
+                        // the THIRD layer here (blur, scrim, panel), and
+                        // painting the pane's opacity over an existing 0.45
+                        // scrim composited to ~0.85 — the "messed up", flat
+                        // composer. This is the fill that makes the whole stack
+                        // land on the user's setting plus one modal lift. See
+                        // `RavenAppearance.modalFillOpacity`.
                         .ainkradPanel(blur: appearance.blur.level,
-                                      backgroundOpacity: appearance.surfaceOpacity,
+                                      backgroundOpacity: appearance.modalFillOpacity,
                                       showsBrackets: true)
                         .transition(
                             reduceMotion

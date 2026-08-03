@@ -289,6 +289,10 @@ public struct InboxSurface: View {
             summary: summary,
             isSelected: model.selectedThread?.id == summary.id || isFocused || isMultiSelected,
             isUnread: summary.unreadCount > 0,
+            // So a hovered row lifts by the same budget a message card does,
+            // rather than by a fixed 0.5 wash that reads as stone on a glass
+            // rail — one treatment across pane, cards and rail.
+            appearance: runtime.appearanceStore.appearance,
             accountLabel: accountBadgeLabel(for: summary),
             rowError: model.rowErrors[summary.id],
             onTap: {

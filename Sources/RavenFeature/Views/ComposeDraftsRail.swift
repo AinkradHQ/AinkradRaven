@@ -10,6 +10,16 @@ import AinkradAppKitUI
 /// removal a successful send performs), and a change to this parameter is what
 /// makes the list re-read. Owning the counter locally would leave the rail stale
 /// exactly when a send had just emptied it.
+///
+/// Shown only when there is at least one draft — `ComposeSurface.showsRail`
+/// decides, so there is no empty state here. The old one was a sentence saying
+/// nothing was saved yet, occupying a 220pt column of a brand-new composer; no
+/// rail says the same thing without spending the width.
+///
+/// The `maxHeight: .infinity` is INSIDE the `AinkradSectionFrame`, on its
+/// content. Applied outside it, the frame stretched to the column's height while
+/// the chamfered card inside stayed its natural size and centred — a card
+/// floating in dead space, which is what it was doing.
 struct ComposeDraftsRail: View {
     let version: Int
     let selectedDraftID: String?
@@ -22,40 +32,33 @@ struct ComposeDraftsRail: View {
     var body: some View {
         AinkradSectionFrame(title: "Drafts") {
             let drafts = { _ = version; return DraftBox.shared.all() }()
-            if drafts.isEmpty {
-                Text("Nothing saved yet. Closing this composer keeps whatever you have typed.")
-                    .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 2) {
-                        ForEach(drafts, id: \.id) { entry in
-                            AinkradListRow(
-                                isSelected: selectedDraftID == entry.id,
-                                onTap: { onSelect(entry.id, entry.message) },
-                                leading: {
-                                    // A threaded draft is a reply waiting to be
-                                    // finished, which is a different thing from
-                                    // an unsent new message.
-                                    AinkradIconGlyph(systemName: entry.message.threadID == nil
-                                                     ? "doc.text" : "arrowshape.turn.up.left")
-                                },
-                                title: entry.message.subject.isEmpty
-                                    ? "(no subject)" : entry.message.subject,
-                                subtitle: entry.message.to.first?.displayLabel,
-                                trailing: {
-                                    AinkradIconButton(systemName: "trash", size: 22,
-                                                      tooltip: "Delete draft") {
-                                        onDelete(entry.id)
-                                    }
-                                })
-                        }
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(drafts, id: \.id) { entry in
+                        AinkradListRow(
+                            isSelected: selectedDraftID == entry.id,
+                            onTap: { onSelect(entry.id, entry.message) },
+                            leading: {
+                                // A threaded draft is a reply waiting to be
+                                // finished, which is a different thing from
+                                // an unsent new message.
+                                AinkradIconGlyph(systemName: entry.message.threadID == nil
+                                                 ? "doc.text" : "arrowshape.turn.up.left")
+                            },
+                            title: entry.message.subject.isEmpty
+                                ? "(no subject)" : entry.message.subject,
+                            subtitle: entry.message.to.first?.displayLabel,
+                            trailing: {
+                                AinkradIconButton(systemName: "trash", size: 22,
+                                                  tooltip: "Delete draft") {
+                                    onDelete(entry.id)
+                                }
+                            })
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxHeight: .infinity)
     }
 }
 
@@ -72,6 +75,11 @@ struct ComposeUndoBanner: View {
     let deadline: Date
     /// The full hold window, so the gauge has a total to be a fraction of.
     let holdWindow: TimeInterval
+    /// Same reason `InboxRow` takes it: this banner sits INSIDE the compose
+    /// modal, whose own fill is now a few percent, so a fixed 0.5 wash here
+    /// would be the most solid thing on screen. Derived from the setting
+    /// instead.
+    let appearance: RavenAppearance
     let onUndo: () -> Void
 
     @Environment(\.ainkradTheme) private var theme
@@ -91,7 +99,11 @@ struct ComposeUndoBanner: View {
             .padding(AinkradSpacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(ChamferShape(cut: AinkradRadius.sm)
-                .fill(theme.surfaceElevated.opacity(0.5)))
+                .fill(theme.surfaceElevated
+                    .opacity(appearance.cardFillOpacity(isRead: false))))
+            .overlay(ChamferShape(cut: AinkradRadius.sm)
+                .strokeBorder(theme.accentSecondary
+                    .opacity(appearance.cardBorderOpacity(isRead: false)), lineWidth: 1))
         }
     }
 }

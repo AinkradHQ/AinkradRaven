@@ -40,19 +40,95 @@ import Foundation
 
     // MARK: Contrast compensation
 
-    @Test("At full opacity every derived value equals the old hardcoded one")
+    @Test("At full opacity the text treatment is the original one and nothing stacks")
     func opaqueIsVisuallyUnchanged() {
-        // This is the no-regression test: a user who drags the slider to 1
-        // must get exactly the Raven that shipped before, not an approximation
-        // of it.
         let opaque = RavenAppearance(rawSurfaceOpacity: 1)
         #expect(opaque.transparency == 0)
         #expect(opaque.bodyTextOpacity == 0.90)
         #expect(opaque.secondaryTextOpacity == 0.55)
         // No halo on an opaque panel — it would read as a print artifact.
         #expect(opaque.textHaloOpacity == 0)
-        #expect(opaque.cardOpacity(isRead: true) == 0.28)
-        #expect(opaque.cardOpacity(isRead: false) == 0.45)
+        // An opaque pane leaves a card nothing to add: the pane is already 1,
+        // so any further fill is wasted paint. The card is still distinguished
+        // — by its chamfer and its border, which is where the distinction now
+        // lives at every setting.
+        #expect(opaque.cardFillOpacity(isRead: true) == 0)
+        #expect(opaque.cardFillOpacity(isRead: false) == 0)
+        #expect(opaque.cardTargetOpacity(isRead: false) == 1)
+        // The modal likewise: the pane's opacity already exceeds the scrim's
+        // and reaches the cap.
+        #expect(opaque.modalTargetOpacity == 1)
+        #expect(opaque.modalFillOpacity == 1)
+    }
+
+    // MARK: The composite law
+
+    @Test("Two translucent layers composite by 1-(1-a)(1-b)")
+    func compositeIsAlphaCompositing() {
+        #expect(RavenAppearance.composite(0, 0) == 0)
+        #expect(RavenAppearance.composite(1, 0) == 1)
+        #expect(RavenAppearance.composite(0, 1) == 1)
+        #expect(abs(RavenAppearance.composite(0.5, 0.5) - 0.75) < 1e-12)
+        // The old default's actual total, which is why the pane read as a slab:
+        // 0.72 pane + a 0.45·0.72 (= 0.324) card fill was effectively 0.81072
+        // opaque, i.e. the user's "72% transparent-ish" was really 81% solid
+        // wherever a message sat, and the blur behind it had ~19% to show
+        // through. That is the slab in the screenshot.
+        #expect(abs(RavenAppearance.composite(0.72, 0.45 * 0.72) - 0.81072) < 1e-9)
+        // Out-of-range inputs are clamped rather than producing an opacity
+        // outside 0...1.
+        #expect(RavenAppearance.composite(-1, 0.5) == 0.5)
+        #expect(RavenAppearance.composite(2, 0.5) == 1)
+    }
+
+    @Test("layer(over:toReach:) is the exact inverse of composite")
+    func layerInvertsComposite() {
+        for base in [0.0, 0.3, 0.45, 0.62, 0.9] {
+            for target in [0.35, 0.5, 0.7, 0.95, 1.0] where target >= base {
+                let fill = RavenAppearance.layer(over: base, toReach: target)
+                #expect(abs(RavenAppearance.composite(base, fill) - target) < 1e-12)
+            }
+        }
+        // A layer cannot subtract opacity, and nothing can be added to opaque.
+        #expect(RavenAppearance.layer(over: 0.8, toReach: 0.5) == 0)
+        #expect(RavenAppearance.layer(over: 1, toReach: 1) == 0)
+    }
+
+    @Test("A card's fill is derived so pane+card lands on the user's setting plus one lift")
+    func cardCompositeHitsItsTarget() {
+        for raw in [0.30, 0.42, 0.6, 0.8, 0.95, 1.0] {
+            let appearance = RavenAppearance(rawSurfaceOpacity: raw)
+            for isRead in [true, false] {
+                let total = RavenAppearance.composite(
+                    appearance.surfaceOpacity, appearance.cardFillOpacity(isRead: isRead))
+                #expect(abs(total - appearance.cardTargetOpacity(isRead: isRead)) < 1e-12)
+                // And that target is the setting plus a small absolute lift,
+                // never the product of two independently chosen numbers.
+                #expect(total <= min(1, appearance.surfaceOpacity
+                                     + appearance.cardLift(isRead: isRead)) + 1e-12)
+                #expect(total >= appearance.surfaceOpacity - 1e-12)
+            }
+        }
+    }
+
+    @Test("The compose modal's fill is computed over the scrim, not over nothing")
+    func modalCompositeAccountsForTheScrim() {
+        for raw in [0.30, 0.42, 0.6, 0.8, 1.0] {
+            let appearance = RavenAppearance(rawSurfaceOpacity: raw)
+            let total = RavenAppearance.composite(RavenAppearance.scrimOpacity,
+                                                  appearance.modalFillOpacity)
+            // Either it reaches the target exactly, or the scrim alone already
+            // exceeds it and the panel paints nothing.
+            #expect(total >= appearance.modalTargetOpacity - 1e-12)
+            if appearance.modalTargetOpacity > RavenAppearance.scrimOpacity {
+                #expect(abs(total - appearance.modalTargetOpacity) < 1e-12)
+            } else {
+                #expect(appearance.modalFillOpacity == 0)
+            }
+        }
+        // At the default the panel is a few percent of theme background, not
+        // the kit's hardcoded 0.94 — that difference IS the "messed up" overlay.
+        #expect(RavenAppearance.default.modalFillOpacity < 0.2)
     }
 
     @Test("Text compensation strengthens as the surface thins out")
@@ -71,18 +147,44 @@ import Foundation
         #expect(clearest.textHaloOpacity <= 1)
     }
 
-    @Test("A card is never more solid than the pane holding it")
+    @Test("A card never composites to more than a hair above the pane holding it")
     func cardsFollowTheSurface() {
         // The specific symptom in the screenshot: the pane went to glass and
-        // the message cards stayed opaque slabs on top of it.
-        for raw in [0.45, 0.6, 0.72, 0.85, 1.0] {
+        // the message cards stayed opaque slabs on top of it. The bound is on
+        // the COMPOSITE, which is the thing the eye sees.
+        for raw in [0.30, 0.42, 0.6, 0.85, 1.0] {
             let appearance = RavenAppearance(rawSurfaceOpacity: raw)
-            #expect(appearance.cardOpacity(isRead: true) <= appearance.surfaceOpacity)
-            #expect(appearance.cardOpacity(isRead: false) <= appearance.surfaceOpacity)
-            // Unread still reads as heavier than read at every setting.
-            #expect(appearance.cardOpacity(isRead: false)
-                    > appearance.cardOpacity(isRead: true))
+            for isRead in [true, false] {
+                let total = RavenAppearance.composite(
+                    appearance.surfaceOpacity, appearance.cardFillOpacity(isRead: isRead))
+                #expect(total <= appearance.surfaceOpacity
+                        + RavenAppearance.unreadCardLift + 1e-12)
+            }
+            // Unread still reads as heavier than read wherever there is room
+            // left to be heavier in.
+            if appearance.surfaceOpacity < 1 {
+                #expect(appearance.cardFillOpacity(isRead: false)
+                        > appearance.cardFillOpacity(isRead: true))
+                #expect(appearance.cardBorderOpacity(isRead: false)
+                        > appearance.cardBorderOpacity(isRead: true))
+            }
         }
+    }
+
+    @Test("The default reads as glass, and the floor is the halo-backed 0.30")
+    func defaultAndFloorAreTheNewOnes() {
+        // Pinned as values, not just as relations: these two numbers are the
+        // whole user-visible fix, and a silent drift back toward 0.72 is
+        // exactly the regression to catch.
+        #expect(RavenAppearance.legibleRange.lowerBound == 0.30)
+        #expect(RavenAppearance.defaultSurfaceOpacity == 0.42)
+        // Substantially more transparent than the old default that shipped as
+        // an opaque slab.
+        #expect(RavenAppearance.defaultSurfaceOpacity < 0.72)
+        // The halo the lower floor leans on is genuinely engaged at the default
+        // — the floor is only defensible because this is non-trivial there.
+        #expect(RavenAppearance.default.textHaloOpacity > 0.4)
+        #expect(RavenAppearance.default.bodyTextOpacity > 0.95)
     }
 
     // MARK: Persistence

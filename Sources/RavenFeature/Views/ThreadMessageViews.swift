@@ -53,13 +53,21 @@ struct MessageRow: View {
         // Theme surface, not `Color.primary` — the host is themeable and a
         // primary-derived wash reads as grey on a tinted theme.
         //
-        // Scaled by the user's surface opacity so a card cannot be more solid
-        // than the pane holding it: at full transparency the old fixed 0.28/
-        // 0.45 wash was the thing still reading as an opaque slab even after
-        // the pane behind it went to glass. `cardOpacity` also documents why
-        // cards get no blur of their own.
+        // The fill is DERIVED from the pane's, not chosen beside it: it is
+        // exactly the layer needed for pane+card to composite to the user's
+        // opacity plus a small elevation lift — see
+        // `RavenAppearance.cardFillOpacity`. Two independently-picked
+        // translucent fills is what made this card an opaque slab over an
+        // already-glass pane (0.72 pane + 0.45·0.72 card ≈ 0.85 effective).
         .background(ChamferShape(cut: AinkradRadius.sm)
-            .fill(theme.surfaceElevated.opacity(appearance.cardOpacity(isRead: message.isRead))))
+            .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: message.isRead))))
+        // What actually separates the card from its pane now that its fill is
+        // a few percent: the chamfer plus a theme accent border, the same
+        // language `AinkradCard` uses. Elevation without a second dark layer.
+        .overlay(ChamferShape(cut: AinkradRadius.sm)
+            .strokeBorder(theme.accentSecondary
+                .opacity(appearance.cardBorderOpacity(isRead: message.isRead)),
+                          lineWidth: message.isRead ? 1 : 1.5))
         .overlay(alignment: .leading) {
             // Unread messages carry an accent edge rather than a colour swap,
             // matching `AinkradListRow`'s own selected treatment.

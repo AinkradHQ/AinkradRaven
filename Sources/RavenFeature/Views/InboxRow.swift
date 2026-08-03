@@ -34,6 +34,11 @@ struct InboxRow: View {
     let summary: ThreadSummary
     let isSelected: Bool
     let isUnread: Bool
+    /// The live surface setting, so a row's hover/selection fill is derived
+    /// from the rail's own translucency instead of being a fixed wash on top of
+    /// it — the same `cardFillOpacity` arithmetic the thread's message cards
+    /// use. Without this the rail was glass and its rows were stone.
+    let appearance: RavenAppearance
     /// Rendered under the date. Passed in rather than derived here because
     /// which badges apply is `InboxSurface`'s knowledge (how many accounts are
     /// connected, whether the list is filtered, what the row's last error was).
@@ -125,9 +130,15 @@ struct InboxRow: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
+    /// Selection stays an accent tint — an accent is not a dark layer, so it
+    /// does not fight the rail's translucency and reads at any setting. Hover
+    /// is the one that had to change: a flat 0.5 of `surfaceElevated` over an
+    /// already-translucent rail composited to a near-solid row.
     private var rowFill: Color {
         if isSelected { return theme.accentPrimary.opacity(0.16) }
-        if hovering { return theme.surfaceElevated.opacity(0.5) }
+        if hovering {
+            return theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false))
+        }
         return .clear
     }
 
