@@ -836,6 +836,18 @@ public enum ArchiveSearchState: Equatable {
         RemoteImageAllowList.allow(sender, documents: host.documents)
     }
 
+    /// Every sender previously granted "Load images", for the Privacy group in
+    /// Settings to list. A read only — granting still happens exclusively from
+    /// the message the user was looking at when they decided.
+    public var allowedImageSenders: [String] {
+        RemoteImageAllowList.allowedSenders(documents: host.documents)
+    }
+
+    /// Withdraws a previous grant, so that sender's images are blocked again.
+    public func revokeImages(for sender: String) {
+        RemoteImageAllowList.revoke(sender, documents: host.documents)
+    }
+
     // MARK: Compose (reply/reply-all/forward)
 
     /// The address of the account that owns `accountID`, so `ReplyComposer` can

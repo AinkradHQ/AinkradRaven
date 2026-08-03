@@ -33,6 +33,29 @@ public enum RemoteImageAllowList {
         documents.setData(data, forKey: DocumentKeys.remoteImageAllowList)
     }
 
+    /// Every sender the user has granted "Load images" to, sorted so the
+    /// Privacy settings list is stable between reads rather than reordering
+    /// itself on each render (`Set` iteration order is not stable).
+    ///
+    /// A read the Settings surface genuinely needs: the allow-list was
+    /// previously write-plus-single-address-query only, so a user could grant
+    /// a sender and then had no way to see, let alone undo, what they had
+    /// granted.
+    public static func allowedSenders(documents: PluginDocumentStore) -> [String] {
+        allowed(documents: documents).sorted()
+    }
+
+    /// Revokes a previous "Load images" grant, returning `sender` to the
+    /// blocked default. Writing the reduced list back — rather than recording
+    /// a separate deny-list — keeps `isAllowed`'s single source of truth, so
+    /// there is no state in which the two disagree about one address.
+    public static func revoke(_ sender: String, documents: PluginDocumentStore) {
+        var current = allowed(documents: documents)
+        guard current.remove(normalize(sender)) != nil else { return }
+        guard let data = try? JSONEncoder().encode(Array(current)) else { return }
+        documents.setData(data, forKey: DocumentKeys.remoteImageAllowList)
+    }
+
     private static func allowed(documents: PluginDocumentStore) -> Set<String> {
         guard let data = documents.data(forKey: DocumentKeys.remoteImageAllowList),
               let list = try? JSONDecoder().decode([String].self, from: data) else { return [] }
