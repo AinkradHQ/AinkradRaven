@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import AinkradAppKit
 import AinkradAppKitUI
 
@@ -155,6 +157,100 @@ struct WrappingChips: Layout {
             subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
             x += size.width + AinkradSpacing.xs
             rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+/// Picks files to attach.
+///
+/// `NSOpenPanel`, allowing multiple selection of any file type — Compose does
+/// not restrict which files can be attached, matching every other mail client.
+/// Reads each picked file's bytes into memory immediately (never a cache
+/// directory) and derives its MIME type from the file's extension via `UTType`,
+/// falling back to `application/octet-stream` for a type `UTType` cannot
+/// classify.
+enum ComposeAttachmentPicker {
+    @MainActor static func pick() -> [OutgoingAttachment] {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return [] }
+        var picked: [OutgoingAttachment] = []
+        for url in panel.urls {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                ?? "application/octet-stream"
+            picked.append(OutgoingAttachment(filename: url.lastPathComponent,
+                                             mimeType: mimeType, data: data))
+        }
+        return picked
+    }
+}
+
+/// The attached-files chips, each removable. Renders nothing when there are
+/// none, so the composer does not reserve a row for an empty state.
+struct ComposeAttachmentsRow: View {
+    @Binding var attachments: [OutgoingAttachment]
+
+    var body: some View {
+        if !attachments.isEmpty {
+            WrappingChips {
+                ForEach(attachments) { attachment in
+                    AinkradChip(label: label(attachment), systemName: "paperclip",
+                                onRemove: {
+                                    attachments.removeAll { $0.id == attachment.id }
+                                })
+                }
+            }
+        }
+    }
+
+    private func label(_ attachment: OutgoingAttachment) -> String {
+        let sizeKB = attachment.data.count / 1024
+        return sizeKB > 0 ? "\(attachment.filename) (\(sizeKB) KB)" : attachment.filename
+    }
+}
+
+/// The From picker, for a NEW message only.
+///
+/// A reply's account is the thread's own, with no override (see
+/// `ComposeContext.stamp`), so this is never shown for one — offering a picker
+/// whose choice `stamp` would then ignore is worse than offering none.
+///
+/// Every WRITABLE account. A read-only import (Apple Mail) has no transport to
+/// send through, so it is never an option here at all, rather than being
+/// pickable and then refused at Send. `nil` renders as "Choose account" so an
+/// ambiguous send is visibly unresolved rather than looking like a default was
+/// silently picked.
+struct ComposeFromPicker: View {
+    let runtime: RavenRuntime
+    @Binding var selection: String?
+
+    private var writableAccounts: [MailAccount] {
+        runtime.accounts.filter { !runtime.isReadOnly(accountID: $0.id) }
+    }
+
+    var body: some View {
+        ComposeFieldWrap(label: "From") {
+            AinkradSegmentedPicker(
+                items: [nil] + writableAccounts.map { Optional($0.id) },
+                selection: $selection,
+                label: { accountID in
+                    guard let accountID else {
+                        // The "no explicit pick" segment. If something already
+                        // resolves unambiguously (the Inbox's own filter), say
+                        // which — otherwise this is genuinely unresolved, and
+                        // `ComposeSurface.send()` refuses until a real segment
+                        // is picked.
+                        if let resolved = runtime.composingAccountID {
+                            let address = runtime.accounts.first { $0.id == resolved }?.address
+                            return address ?? resolved
+                        }
+                        return "Choose account"
+                    }
+                    return runtime.accounts.first { $0.id == accountID }?.address ?? accountID
+                })
         }
     }
 }

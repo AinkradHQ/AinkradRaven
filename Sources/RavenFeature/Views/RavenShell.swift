@@ -44,6 +44,17 @@ public struct RavenShell: View {
     }
 
     public var body: some View {
+        // A root-level `GeometryReader` purely to size the compose overlay
+        // against the room actually available. The shell already fills both
+        // axes, so this changes nothing about the split's own layout — and it is
+        // the shell, not the composer, that chooses `contentWidth`, so this is
+        // where the measurement belongs.
+        GeometryReader { proxy in
+            split(availableWidth: proxy.size.width)
+        }
+    }
+
+    private func split(availableWidth: CGFloat) -> some View {
         HStack(spacing: AinkradSpacing.sm) {
             InboxSurface(model: runtime.model, runtime: runtime)
                 .frame(width: Self.inboxWidth)
@@ -63,9 +74,17 @@ public struct RavenShell: View {
         // recipient row wants). A sheet is edge-anchored and full-bleed on its
         // cross axis, which suits a filter or a detail drawer, not a form the
         // user will spend a minute inside.
-        .ainkradModal(isPresented: isComposing, contentWidth: Self.composeWidth) {
+        .ainkradModal(isPresented: isComposing,
+                     contentWidth: Self.composeWidth(in: availableWidth)) {
             if let composing {
                 ComposeSurface(runtime: runtime, context: composing,
+                              // Below the threshold the rail is dropped rather
+                              // than squeezed: at that width it would be taking
+                              // room from the fields the user is actually typing
+                              // into, and the drafts it lists are still reachable
+                              // by reopening the composer.
+                              showsDraftsRail:
+                                Self.composeWidth(in: availableWidth) >= Self.draftsRailMinWidth,
                               onClose: { self.composing = nil })
                     // `maxHeight`, not a fixed height: the modal is scoped to
                     // this view's bounds, and a fixed 520 would overflow a
@@ -79,9 +98,24 @@ public struct RavenShell: View {
     /// Wide enough for the drafts rail plus a composer that does not wrap a
     /// typical recipient list, and short enough to leave the scrim visible so
     /// the overlay still reads as sitting above the mail rather than replacing
-    /// it.
-    private static let composeWidth: CGFloat = 780
+    /// it — but never wider than the room there actually is. Raven runs in the
+    /// host's overlay presentation as well as a full pane, and a flat 780 there
+    /// pushed the panel border over its own content.
+    private static let idealComposeWidth: CGFloat = 780
+    /// The floor: below this the overlay stops shrinking and simply uses what
+    /// there is, because a composer narrower than this is unusable either way.
+    private static let minComposeWidth: CGFloat = 360
+    /// The width at which the drafts rail earns its 220pt.
+    private static let draftsRailMinWidth: CGFloat = 660
     private static let composeHeight: CGFloat = 520
+
+    static func composeWidth(in availableWidth: CGFloat) -> CGFloat {
+        // The scrim has to stay visible on both edges, hence the inset — the
+        // overlay must read as sitting above the mail, not replacing it.
+        let usable = availableWidth - 2 * AinkradSpacing.xl
+        guard usable > 0 else { return minComposeWidth }
+        return max(minComposeWidth, min(idealComposeWidth, usable))
+    }
 
     /// The floating compose affordance: the kit's own `AinkradIconButton`
     /// inside a chamfered, glowing plate, so it is the same HUD language as

@@ -187,10 +187,15 @@ public struct ThreadSurface: View {
 
     // The toolbar's "Show original" targets the NEWEST message and is always
     // offered, rather than being gated on that message actually having HTML.
-    // Gating it would mean a `store.body(messageID:)` read per message on every
-    // render pass of this view — a document read per keystroke elsewhere in the
-    // pane — to hide a button. `ThreadOriginalLoader` says "no original to show"
-    // for a plain-text message instead, which costs one read when asked.
+    //
+    // Checked for a cheaper signal on the message metadata first: there is none.
+    // `MailMessage` records `hasAttachments` and `attachments` but nothing about
+    // which body parts a message carried; whether HTML exists is known only from
+    // `MessageBody.html`, which requires `store.body(messageID:)` — a document
+    // read per message on every render pass of this pane (i.e. per keystroke in
+    // the search field next to it) purely to hide a button. So it stays
+    // ungated, and `ThreadOriginalLoader` says "no original to show" for a
+    // plain-text message instead, costing one read only when asked.
     // Older messages in a long thread keep their own copy of the button (see
     // `MessageRow`), which is already loading its body anyway.
 

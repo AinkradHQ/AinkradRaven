@@ -27,6 +27,11 @@ public struct ComposeSurface: View {
     /// How this composer was opened. `activeContext` below is what it is
     /// currently composing, which loading a saved draft can change.
     let context: ComposeContext
+    /// Whether there is room for the drafts rail beside the fields. The shell
+    /// decides this from the width it actually has — see
+    /// `RavenShell.composeWidth(in:)`. When false the rail is dropped rather
+    /// than squeezed; its drafts are still there, one reopen away.
+    let showsDraftsRail: Bool
     let onClose: () -> Void
 
     @State private var activeContext: ComposeContext
@@ -34,11 +39,14 @@ public struct ComposeSurface: View {
     @State private var ccChips: [RecipientChip] = []
     @State private var subject = ""
     @State private var bodyText = ""
-    /// Files the user attached via `attachFiles()`, in pick order. Emitted as
+    /// Files the user attached via `ComposeAttachmentPicker`, in pick order. Emitted as
     /// one MIME part per file — see `GmailProvider.rfc822`. Held in memory
     /// only, like every other attachment byte stream in this app.
     @State private var attachments: [OutgoingAttachment] = []
-    @State private var editingDraftID: String?
+    /// Owns the one `DraftBox` entry this composing session writes to, plus the
+    /// generation guard that stops a debounced autosave landing after a send has
+    /// removed the draft. See `ComposeDraftKeeper`.
+    @State private var keeper = ComposeDraftKeeper()
     @State private var isSending = false
     @State private var errorMessage: String?
     /// Styling for `errorMessage`. A still-queued send is not a failure, and
@@ -74,9 +82,11 @@ public struct ComposeSurface: View {
     @Environment(\.ainkradTypography) private var typo
 
     public init(runtime: RavenRuntime, context: ComposeContext = .new,
+                showsDraftsRail: Bool = true,
                 onClose: @escaping () -> Void = {}) {
         self.runtime = runtime
         self.context = context
+        self.showsDraftsRail = showsDraftsRail
         self.onClose = onClose
         _activeContext = State(initialValue: context)
     }
@@ -96,16 +106,26 @@ public struct ComposeSurface: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
-            ComposeTitleBar(context: activeContext, isEditingDraft: editingDraftID != nil,
+            ComposeTitleBar(context: activeContext, isEditingDraft: keeper.draftID != nil,
                            onClose: onClose)
             HStack(alignment: .top, spacing: AinkradSpacing.md) {
-                draftList
-                    .frame(width: 220)
+                if showsDraftsRail {
+                    draftList
+                        .frame(width: 220)
+                }
                 composer
                     .frame(maxWidth: .infinity)
             }
         }
         .task { prefillIfNeeded() }
+        // The autosave. `.task(id:)` is the debounce: SwiftUI cancels the
+        // in-flight task and starts a new one every time `autosaveKey` changes,
+        // so a burst of keystrokes performs exactly one write, `delay` after the
+        // last of them. Nothing here depends on the view being torn down.
+        .task(id: autosaveKey) { await autosave() }
+        // Belt and braces only. The guarantee is the autosave above; this just
+        // flushes a change made inside the debounce window when the overlay is
+        // dismissed in that window.
         .onDisappear(perform: preserveDraft)
     }
 
@@ -139,20 +159,56 @@ public struct ComposeSurface: View {
         bodyText = draft.bodyText
     }
 
-    /// Saves what is on screen as a draft when the overlay goes away without a
-    /// send having cleared it.
+    /// How long after the last edit the draft is written. Long enough that
+    /// typing a sentence is one write, short enough that "I typed it, then the
+    /// overlay went away" is never a lost message.
+    private static let autosaveDelay: Duration = .milliseconds(600)
+
+    /// The digest `.task(id:)` watches. Every editable field is in it, so any
+    /// change restarts the debounce, and nothing else is, so an unrelated
+    /// re-render (a hover, a drafts-list refresh) does not schedule a write.
     ///
-    /// The composer is destroyed on dismissal (the kit's modal only builds its
-    /// content while presented), so without this every scrim tap would lose the
-    /// message. It is a SAVE, never a delete: the "draft removed iff sent"
-    /// invariant belongs to `send()`, and this path cannot violate it.
+    /// Recipient chips contribute their raw text rather than their parsed
+    /// address: a half-typed recipient is still an edit worth saving.
+    private var autosaveKey: String {
+        [toChips.map(\.raw).joined(separator: ","),
+         ccChips.map(\.raw).joined(separator: ","),
+         subject,
+         bodyText,
+         attachments.map(\.filename).joined(separator: ","),
+         selectedFromAccountID ?? ""].joined(separator: "\u{1F}")
+    }
+
+    /// Writes the draft `autosaveDelay` after the last edit.
     ///
-    /// The saved message is stamped by `activeContext` first, so a dismissed
-    /// reply keeps its `threadID`/`In-Reply-To`/account and still threads when
-    /// resumed — see `load`, which reads them back off the stored draft.
+    /// The generation is read BEFORE the sleep, deliberately: if a send retires
+    /// the session while this is waiting, `ComposeDraftKeeper.save` refuses the
+    /// stale write rather than re-creating a draft for a message that has already
+    /// gone out. That ordering is the whole reason the counter exists.
+    private func autosave() async {
+        guard hasContent else { return }
+        let generation = keeper.generation
+        try? await Task.sleep(for: Self.autosaveDelay)
+        guard !Task.isCancelled else { return }
+        if keeper.save(stampedMessage(), generation: generation) != nil {
+            // So the rail shows the draft appearing as it is typed.
+            draftsVersion += 1
+        }
+    }
+
+    /// A final flush for an edit made inside the debounce window, nothing more.
+    ///
+    /// This used to BE the persistence guarantee, which made an unsent draft's
+    /// survival depend on SwiftUI calling `onDisappear` when the kit's modal tore
+    /// its content down — incidental, and the same bug class that has already
+    /// lost drafts in this app twice. The autosave above is the guarantee now; if
+    /// this never ran, at most the last 600ms of typing would be missing.
+    ///
+    /// It is a SAVE, never a delete, and it goes through the same keeper, so it
+    /// cannot resurrect a retired draft either.
     private func preserveDraft() {
         guard hasContent else { return }
-        try? DraftBox.shared.save(stampedMessage(), id: editingDraftID)
+        keeper.save(stampedMessage(), generation: keeper.generation)
     }
 
     /// Whether there is anything worth keeping. Deliberately strict about
@@ -169,11 +225,13 @@ public struct ComposeSurface: View {
     private var draftList: some View {
         ComposeDraftsRail(
             version: draftsVersion,
-            selectedDraftID: editingDraftID,
+            selectedDraftID: keeper.draftID,
             onSelect: load,
             onDelete: { id in
                 DraftBox.shared.remove(id)
-                if editingDraftID == id { clear() }
+                // Deleting the draft being edited retires the session too, so the
+                // pending autosave cannot immediately write it back.
+                if keeper.draftID == id { keeper.retire(); clear() }
                 draftsVersion += 1
             })
     }
@@ -184,7 +242,8 @@ public struct ComposeSurface: View {
     /// resuming it restores a reply rather than silently demoting it to a new
     /// message that would land outside the thread.
     private func load(_ id: String, _ message: OutgoingMessage) {
-        editingDraftID = id
+        // Autosaves from here on update THIS entry rather than forking a copy.
+        keeper.adopt(id)
         toChips = message.to.map { RecipientChip(raw: rfc5322(for: $0)) }
         ccChips = message.cc.map { RecipientChip(raw: rfc5322(for: $0)) }
         subject = message.subject
@@ -205,56 +264,17 @@ public struct ComposeSurface: View {
         return "\(name) <\(address.email)>"
     }
 
+    /// Empties the composer. Deliberately does NOT retire the keeper — the two
+    /// callers that need that (`send`, and deleting the edited draft) do it
+    /// explicitly, because `clear` is also how a session legitimately starts over
+    /// and a retire there would be silent.
     private func clear() {
-        editingDraftID = nil
         toChips = []; ccChips = []; subject = ""; bodyText = ""
         attachments = []
         selectedFromAccountID = nil
         scheduledSendAt = nil
         isScheduling = false
         activeContext = .new
-    }
-
-    // MARK: Attachments
-
-    /// `NSOpenPanel`, allowing multiple selection of any file type — Compose
-    /// does not restrict which files can be attached, matching every other
-    /// mail client. Reads each picked file's bytes into memory immediately
-    /// (never a cache directory) and derives its MIME type from the file's
-    /// extension via `UTType`, falling back to `application/octet-stream`
-    /// for a type `UTType` cannot classify.
-    private func attachFiles() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        guard panel.runModal() == .OK else { return }
-        for url in panel.urls {
-            guard let data = try? Data(contentsOf: url) else { continue }
-            let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
-                ?? "application/octet-stream"
-            attachments.append(OutgoingAttachment(filename: url.lastPathComponent,
-                                                   mimeType: mimeType, data: data))
-        }
-    }
-
-    @ViewBuilder
-    private var attachmentsRow: some View {
-        if !attachments.isEmpty {
-            WrappingChips {
-                ForEach(attachments) { attachment in
-                    AinkradChip(label: chipLabel(attachment), systemName: "paperclip",
-                                onRemove: {
-                                    attachments.removeAll { $0.id == attachment.id }
-                                })
-                }
-            }
-        }
-    }
-
-    private func chipLabel(_ attachment: OutgoingAttachment) -> String {
-        let sizeKB = attachment.data.count / 1024
-        return sizeKB > 0 ? "\(attachment.filename) (\(sizeKB) KB)" : attachment.filename
     }
 
     // MARK: Composer
@@ -265,7 +285,7 @@ public struct ComposeSurface: View {
             // thread's, with no override — offering a picker that `stamp` would
             // then ignore is worse than offering none.
             if activeContext.thread == nil, runtime.accounts.count > 1 {
-                fromAccountPicker
+                ComposeFromPicker(runtime: runtime, selection: $selectedFromAccountID)
             } else if let thread = activeContext.thread,
                       let address = runtime.ownAddress(for: thread.accountID) {
                 ComposeFieldWrap(label: "From") {
@@ -279,7 +299,7 @@ public struct ComposeSurface: View {
             AinkradTextField(text: $subject, placeholder: "Subject")
             AinkradTextArea(text: $bodyText, placeholder: "Write your message…", minHeight: 140)
 
-            attachmentsRow
+            ComposeAttachmentsRow(attachments: $attachments)
 
             if let errorMessage {
                 AinkradBanner(message: errorMessage, status: errorStatus,
@@ -306,8 +326,9 @@ public struct ComposeSurface: View {
     /// taller than the message being written.
     private var footer: some View {
         HStack(spacing: AinkradSpacing.xs) {
-            AinkradIconButton(systemName: "paperclip", size: 26, tooltip: "Attach files…",
-                              action: attachFiles)
+            AinkradIconButton(systemName: "paperclip", size: 26, tooltip: "Attach files…") {
+                attachments.append(contentsOf: ComposeAttachmentPicker.pick())
+            }
             AinkradIconButton(systemName: "clock", size: 26,
                               tooltip: isScheduling ? "Cancel scheduling" : "Schedule for later") {
                 isScheduling.toggle()
@@ -348,44 +369,13 @@ public struct ComposeSurface: View {
             // Restored exactly as `load` would show an existing draft: the
             // recipient chips, subject, and body come straight back into the
             // composer rather than being silently discarded.
-            let restoredID = try? DraftBox.shared.save(message, id: editingDraftID)
+            let restoredID = keeper.save(message, generation: keeper.generation)
             self.undoableEntryID = nil
             self.undoDeadline = nil
             if let restoredID {
                 load(restoredID, message)
             }
             draftsVersion += 1
-        }
-    }
-
-    /// Every writable account. A read-only import (Apple Mail) has no transport
-    /// to send through, so it is never an option here at all, rather than being
-    /// pickable and then refused at Send. `nil` renders as "Choose account" so
-    /// an ambiguous send is visibly unresolved rather than looking like a
-    /// default was silently picked.
-    private var writableAccounts: [MailAccount] {
-        runtime.accounts.filter { !runtime.isReadOnly(accountID: $0.id) }
-    }
-
-    private var fromAccountPicker: some View {
-        ComposeFieldWrap(label: "From") {
-            AinkradSegmentedPicker(
-                items: [nil] + writableAccounts.map { Optional($0.id) },
-                selection: $selectedFromAccountID,
-                label: { accountID in
-                    guard let accountID else {
-                        // The "no explicit pick" segment. If something already
-                        // resolves unambiguously (the Inbox's own filter), say
-                        // which — otherwise this is genuinely unresolved, and
-                        // `send()` refuses until a real segment is picked.
-                        if let resolved = runtime.composingAccountID {
-                            let address = runtime.accounts.first { $0.id == resolved }?.address
-                            return address ?? resolved
-                        }
-                        return "Choose account"
-                    }
-                    return runtime.accounts.first { $0.id == accountID }?.address ?? accountID
-                })
         }
     }
 
@@ -407,15 +397,16 @@ public struct ComposeSurface: View {
         activeContext.stamp(message(), fallbackAccountID: effectiveAccountID)
     }
 
+    /// The explicit Save Draft button. The autosave already covers the same
+    /// ground; this stays because "I pressed Save" deserves an immediate,
+    /// visible result rather than a 600ms wait.
     private func saveDraft() {
-        do {
-            let id = try DraftBox.shared.save(stampedMessage(), id: editingDraftID)
-            editingDraftID = id
-            draftsVersion += 1
-        } catch {
-            errorMessage = "Could not save draft: \(error)"
+        guard keeper.save(stampedMessage(), generation: keeper.generation) != nil else {
+            errorMessage = "Could not save draft."
             errorStatus = .danger
+            return
         }
+        draftsVersion += 1
     }
 
     /// Clears the composer and deletes the draft ONLY when the send genuinely
@@ -446,7 +437,7 @@ public struct ComposeSurface: View {
         }
         isSending = true
         errorMessage = nil
-        let draftID = editingDraftID
+        let draftID = keeper.draftID
         let holdUntil = Date().addingTimeInterval(runtime.holdWindow)
         let scheduledFor = scheduledSendAt
         Task {
@@ -461,6 +452,13 @@ public struct ComposeSurface: View {
                     // Transmitted immediately in this same call — only
                     // possible if a test or future caller passes a `nil`
                     // hold; the two real send paths always pass one.
+                    // `SendAttempt` removed the draft on `.sent`; retiring here
+                    // is what stops an autosave scheduled before this send from
+                    // writing it back afterwards. Retired ONLY on the two
+                    // outcomes that actually remove the draft — retiring on a
+                    // failure would detach from the surviving entry and let the
+                    // next autosave create a duplicate of it.
+                    keeper.retire()
                     clear()
                 } else if result.outcome.isBenign {
                     // Held (undo window) and/or scheduled: the message left
@@ -470,6 +468,7 @@ public struct ComposeSurface: View {
                     // (`OutboxEntry.draftID`/the entry itself) and `undoSend`
                     // can pull it back via `Outbox.cancelHeld`.
                     if let draftID { DraftBox.shared.remove(draftID) }
+                    keeper.retire()
                     undoableEntryID = result.entryID
                     undoDeadline = holdUntil
                     clear()
