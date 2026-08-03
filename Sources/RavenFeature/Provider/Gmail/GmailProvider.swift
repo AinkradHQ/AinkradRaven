@@ -213,36 +213,82 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
         try await get(GmailProfileDTO.self, path: "profile").historyId
     }
 
-    /// Minimal RFC822, base64url encoded as Gmail's `raw` field requires.
+    /// RFC822, base64url encoded as Gmail's `raw` field requires.
     ///
-    /// KNOWN LIMITATION (see task report): this does not MIME-encode the
-    /// `Subject` header or the body for non-ASCII content. `Content-Type:
-    /// text/plain; charset=UTF-8` on the body is honored by Gmail's `raw`
-    /// parser as raw UTF-8 bytes, so the body text itself round-trips
-    /// correctly. The `Subject:` header, however, is inserted as literal
-    /// UTF-8 bytes with no RFC 2047 `=?UTF-8?B?...?=` encoded-word wrapping,
-    /// which is what RFC 5322 actually requires for non-ASCII header field
-    /// bodies — most real mail clients and Gmail's own web UI decode this
-    /// leniently. This is exercised and documented, not hidden.
+    /// `Subject` (and any `To`/`Cc` display name) is RFC 2047 encoded-word
+    /// wrapped via `RFC2047.encode` whenever it contains non-ASCII — RFC 5322
+    /// header field bodies are ASCII-only, so a literal non-ASCII byte there
+    /// is either mangled or rejected by a strict parser. A pure-ASCII value
+    /// is left unencoded.
+    ///
+    /// The body is sent as `multipart/alternative`: the plain text exactly as
+    /// typed (the fallback part, kept byte-for-byte — see `OutgoingMessage.
+    /// bodyText`'s callers, which append the signature before this is ever
+    /// called) alongside an HTML part rendered from that same text via
+    /// `MarkdownToHTML`, so a richer client can show the formatted version
+    /// while a plain-text client still gets something readable. The boundary
+    /// is a fresh random token checked against both parts before use, and
+    /// every line — headers, part headers, and the boundary delimiters — uses
+    /// CRLF, per RFC 5322/2046; a bare `\n` anywhere in a MIME structure this
+    /// picky is exactly how a recipient ends up seeing raw boundary markers.
     static func rfc822(_ message: OutgoingMessage) -> String {
+        let html = MarkdownToHTML.render(message.bodyText)
+        let boundary = randomBoundary(avoiding: [message.bodyText, html])
+
         var lines = [
-            "To: \(message.to.map(\.email).joined(separator: ", "))",
-            "Subject: \(message.subject)",
+            "To: \(encodedAddressList(message.to))",
+            "Subject: \(RFC2047.encode(message.subject))",
             "MIME-Version: 1.0",
-            "Content-Type: text/plain; charset=UTF-8",
         ]
         if !message.cc.isEmpty {
-            lines.append("Cc: \(message.cc.map(\.email).joined(separator: ", "))")
+            lines.append("Cc: \(encodedAddressList(message.cc))")
         }
         if let inReplyTo = message.inReplyToMessageID {
             lines.append("In-Reply-To: \(inReplyTo)")
             lines.append("References: \(inReplyTo)")
         }
-        let raw = lines.joined(separator: "\r\n") + "\r\n\r\n" + message.bodyText
+        lines.append("Content-Type: multipart/alternative; boundary=\"\(boundary)\"")
+
+        let body = [
+            "--\(boundary)",
+            "Content-Type: text/plain; charset=UTF-8",
+            "",
+            message.bodyText,
+            "--\(boundary)",
+            "Content-Type: text/html; charset=UTF-8",
+            "",
+            html,
+            "--\(boundary)--",
+            "",
+        ].joined(separator: "\r\n")
+
+        let raw = lines.joined(separator: "\r\n") + "\r\n\r\n" + body
         return Data(raw.utf8).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
+    }
+
+    /// A boundary token guaranteed absent from every part it separates —
+    /// otherwise a part containing a line that happens to match the boundary
+    /// would truncate or corrupt the MIME structure. Astronomically unlikely
+    /// with a fresh UUID per call, but checked (and re-rolled) rather than
+    /// assumed.
+    private static func randomBoundary(avoiding texts: [String]) -> String {
+        var boundary = "raven-\(UUID().uuidString)"
+        while texts.contains(where: { $0.contains(boundary) }) {
+            boundary = "raven-\(UUID().uuidString)"
+        }
+        return boundary
+    }
+
+    private static func encodedAddressList(_ addresses: [MailAddress]) -> String {
+        addresses.map(encodedAddress).joined(separator: ", ")
+    }
+
+    private static func encodedAddress(_ address: MailAddress) -> String {
+        guard let name = address.name, !name.isEmpty else { return address.email }
+        return "\(RFC2047.encode(name)) <\(address.email)>"
     }
 
     private func rfc822(_ message: OutgoingMessage) -> String { Self.rfc822(message) }

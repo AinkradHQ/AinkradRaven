@@ -16,10 +16,11 @@ import Foundation
     func successRemovesDraft() async throws {
         let provider = FakeMailProvider()
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
         let result = try await SendAttempt.send(message(), draftID: draftID,
-                                                outbox: outbox, drain: outbox.drain)
+                                                outbox: outbox, store: store, drain: outbox.drain)
 
         #expect(result.isSent)
         #expect(provider.sentMessages.count == 1)
@@ -31,10 +32,11 @@ import Foundation
         let provider = FakeMailProvider()
         provider.failures["send"] = [MailError.notAuthenticated(accountID: "a1")]
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider, maxAttempts: 1)
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
         let result = try await SendAttempt.send(message(), draftID: draftID,
-                                                outbox: outbox, drain: outbox.drain)
+                                                outbox: outbox, store: store, drain: outbox.drain)
 
         #expect(result.isSent == false)
         #expect(provider.sentMessages.isEmpty)
@@ -48,10 +50,11 @@ import Foundation
         let provider = FakeMailProvider()
         provider.failures["send"] = [MailError.providerFailed(status: 500, message: "boom")]
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
         let result = try await SendAttempt.send(message(), draftID: draftID,
-                                                outbox: outbox, drain: outbox.drain)
+                                                outbox: outbox, store: store, drain: outbox.drain)
 
         #expect(result.outcome == .queued(inFlight: false))
         #expect(result.isSent == false)
@@ -76,9 +79,10 @@ import Foundation
         // Never park a second send, so this test asserts rather than hangs.
         provider.allowFutureSends()
 
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
         let result = try await SendAttempt.send(message(), draftID: draftID,
-                                                outbox: outbox, drain: outbox.drain)
+                                                outbox: outbox, store: store, drain: outbox.drain)
 
         #expect(result.isSent == false)
         #expect(DraftBox.shared.draft(draftID) != nil)
@@ -102,13 +106,14 @@ import Foundation
         provider.sendErrorAfterGate = MailError.providerFailed(status: 500, message: "boom")
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
                             accountID: "a1")
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
         // Start the send and let it park inside `provider.send`.
         var entryID: UUID?
         let attempt = Task { () -> SendAttempt.Result in
             try await SendAttempt.send(self.message(), draftID: draftID, outbox: outbox,
-                                       drain: outbox.drain)
+                                       store: store, drain: outbox.drain)
         }
         await provider.waitUntilSendEntered()
         entryID = outbox.inFlight().first?.id
@@ -166,6 +171,46 @@ import Foundation
         #expect(OutboxSendOutcome.sent.isBenign == false)
     }
 
+    // MARK: signature
+
+    @Test("an empty signature adds nothing to the sent body")
+    func emptySignatureAddsNothing() async throws {
+        let provider = FakeMailProvider()
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
+                            accountID: "a1")
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a@x.com",
+                                          displayName: "A", signature: ""))
+        let draftID = try DraftBox.shared.save(message())
+
+        _ = try await SendAttempt.send(message(), draftID: draftID, outbox: outbox,
+                                       store: store, drain: outbox.drain)
+
+        #expect(provider.sentMessages.count == 1)
+        #expect(provider.sentMessages.first?.bodyText == "b")
+        #expect(provider.sentMessages.first?.bodyText.contains("-- ") == false)
+    }
+
+    @Test("a non-empty signature is appended after a single sigdash")
+    func signatureIsAppendedAfterSigdash() async throws {
+        let provider = FakeMailProvider()
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
+                            accountID: "a1")
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a@x.com",
+                                          displayName: "A", signature: "Best,\nA"))
+        let draftID = try DraftBox.shared.save(message())
+
+        _ = try await SendAttempt.send(message(), draftID: draftID, outbox: outbox,
+                                       store: store, drain: outbox.drain)
+
+        #expect(provider.sentMessages.count == 1)
+        let sentBody = provider.sentMessages.first?.bodyText ?? ""
+        #expect(sentBody == "b\n-- \nBest,\nA")
+        // Exactly one sigdash — the separator does not double up.
+        #expect(sentBody.components(separatedBy: "-- ").count == 2)
+    }
+
     @Test("send_draft and the compose Send button share one outcome decision")
     func bothPathsShareTheSameLogic() async throws {
         // Same provider behaviour, same expectation, two entry points. The
@@ -185,9 +230,11 @@ import Foundation
         uiProvider.failures["send"] = [MailError.notAuthenticated(accountID: "a1")]
         let uiOutbox = Outbox(documents: InMemoryDocumentStore(),
                               provider: uiProvider, maxAttempts: 1)
+        let uiStore = DocumentMailStore(documents: InMemoryDocumentStore())
         let uiDraft = try DraftBox.shared.save(message())
         let uiResult = try await SendAttempt.send(message(), draftID: uiDraft,
-                                                  outbox: uiOutbox, drain: uiOutbox.drain)
+                                                  outbox: uiOutbox, store: uiStore,
+                                                  drain: uiOutbox.drain)
 
         // Both must refuse to claim success and both must keep the draft.
         #expect(agentResult.isError)

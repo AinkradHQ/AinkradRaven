@@ -148,6 +148,7 @@ public struct ComposeSurface: View {
             do {
                 let result = try await SendAttempt.send(outgoing, draftID: draftID,
                                                         outbox: runtime.outbox,
+                                                        store: runtime.store,
                                                         drain: runtime.drainOutbox)
                 if result.isSent {
                     clear()

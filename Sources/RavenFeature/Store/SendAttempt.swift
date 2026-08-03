@@ -56,6 +56,16 @@ public enum SendAttempt {
     /// Queues `message`, drains once, and reports what actually happened.
     /// Removes `draftID` from `DraftBox` only on `.sent`.
     ///
+    /// This is also the one place the account signature is applied — both
+    /// the UI compose path and the MCP `create_draft`/`send_draft` path call
+    /// this function (see the type's own documentation for why sending lives
+    /// in exactly one place), so appending it here, rather than in
+    /// `ComposeSurface` or `RavenMCPOperations`, is the only way both routes
+    /// genuinely share it instead of one of them silently missing it. `store`
+    /// is looked up by `outbox.accountID` — the account the message is about
+    /// to transmit through — and an empty or missing signature appends
+    /// nothing at all (no stray `\n-- \n` with nothing after it).
+    ///
     /// - Parameter drain: how to run the drain. `ComposeSurface` passes
     ///   `runtime.drainOutbox` so the dead-letter/needs-review snapshots the
     ///   Accounts surface renders are refreshed too; the MCP path passes
@@ -64,8 +74,9 @@ public enum SendAttempt {
     ///   case nothing was sent and the draft is untouched.
     @discardableResult
     public static func send(_ message: OutgoingMessage, draftID: String?,
-                            outbox: Outbox,
+                            outbox: Outbox, store: MailStore,
                             drain: () async -> Void) async throws -> Result {
+        let message = withSignature(message, outbox: outbox, store: store)
         let entryID = try outbox.enqueue(.send(message))
         await drain()
         let outcome = outbox.outcome(for: entryID)
@@ -73,6 +84,27 @@ public enum SendAttempt {
             DraftBox.shared.remove(draftID)
         }
         return Result(outcome: outcome, message: describe(outcome, draftID: draftID))
+    }
+
+    /// Conventional signature separator (sigdash) — a line consisting of
+    /// exactly `-- ` (dash dash space), which mail clients treat specially
+    /// (e.g. trimming it on reply). Only ever written when there is a
+    /// non-empty signature to follow it.
+    private static let sigdash = "\n-- \n"
+
+    /// Appends the account's signature to `message.bodyText`, or returns
+    /// `message` unchanged if the account is unknown or its signature is
+    /// empty. Never mutates `message.subject`, addressing, or threading —
+    /// only the body.
+    private static func withSignature(_ message: OutgoingMessage, outbox: Outbox,
+                                      store: MailStore) -> OutgoingMessage {
+        guard let accountID = outbox.accountID,
+              let account = store.accounts().first(where: { $0.id == accountID }),
+              !account.signature.isEmpty else { return message }
+        return OutgoingMessage(to: message.to, cc: message.cc, subject: message.subject,
+                               bodyText: message.bodyText + sigdash + account.signature,
+                               inReplyToMessageID: message.inReplyToMessageID,
+                               threadID: message.threadID)
     }
 
     /// Shared wording, so the composer banner and the agent's tool result say

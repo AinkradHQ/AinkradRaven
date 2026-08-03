@@ -235,7 +235,7 @@ struct GmailProviderTests {
 
     // MARK: send() / raw RFC822 encoding
 
-    @Test("send's raw RFC822 round-trips an ASCII subject and body correctly")
+    @Test("send's raw RFC822 round-trips an ASCII subject and body correctly, and leaves the subject unencoded")
     func sendRoundTripsASCII() {
         let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
                                       subject: "Hello there",
@@ -244,31 +244,163 @@ struct GmailProviderTests {
         let decoded = GmailMapping.decodeBase64URL(raw) ?? ""
         #expect(decoded.contains("Subject: Hello there"))
         #expect(decoded.contains("Line one\nLine two"))
+        // Encoding an ASCII-only subject is legal but ugly in some clients —
+        // it must stay literal.
+        #expect(decoded.contains("=?UTF-8?B?") == false)
     }
 
-    // KNOWN LIMITATION, documented rather than hidden (see task report): the
-    // current minimal RFC822 builder writes the `Subject:` header as literal
-    // UTF-8 bytes with no RFC 2047 encoded-word wrapping. RFC 5322 requires
-    // non-ASCII header field bodies to be MIME-encoded; this implementation
-    // does not do that. The body itself is fine — `Content-Type: text/plain;
-    // charset=UTF-8` on a UTF-8-encoded byte stream round-trips exactly. This
-    // test documents ACTUAL behaviour (the literal bytes appear, unencoded)
-    // rather than asserting a level of correctness the code does not have.
-    @Test("send's raw RFC822 preserves non-ASCII body bytes; the Subject header is emitted unencoded (documented limitation)")
-    func sendRawEncodingOfNonASCII() {
+    // MARK: RFC 2047 subject encoding
+
+    /// The headline defect this task fixes: a non-ASCII `Subject:` header
+    /// must be RFC 2047 encoded-word wrapped, not emitted as literal UTF-8
+    /// bytes RFC 5322 does not allow in a header field body.
+    @Test("an Arabic subject is emitted as a valid RFC 2047 encoded word that decodes back byte-exact")
+    func arabicSubjectEncodesAndDecodesExactly() {
+        let subject = "مرحبا بكم في البريد"
         let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
-                                      subject: "Café ☕️ update",
-                                      bodyText: "Bonjour café\nSecond line — emdash")
+                                      subject: subject, bodyText: "body")
         let raw = GmailProvider.rfc822(message)
         let decoded = GmailMapping.decodeBase64URL(raw) ?? ""
 
-        // The body round-trips exactly, non-ASCII and newline included.
-        #expect(decoded.contains("Bonjour café\nSecond line — emdash"))
+        let subjectLine = decoded.split(separator: "\r\n")
+            .reduce(into: [String]()) { lines, line in
+                if line.hasPrefix("Subject:") || (line.hasPrefix(" ") && lines.last?.hasPrefix("Subject:") == true) {
+                    lines.append(String(line))
+                }
+            }
+        let header = subjectLine.joined(separator: "\r\n")
+        #expect(header.contains("=?UTF-8?B?"))
+        let value = header.replacingOccurrences(of: "Subject: ", with: "")
+        #expect(RFC2047.decode(value) == subject)
+    }
 
-        // The Subject header is present but literal, unencoded UTF-8 — not
-        // the RFC 2047 `=?UTF-8?B?...?=` form a strictly-conformant parser
-        // would require. Documented here, not silently accepted as correct.
-        #expect(decoded.contains("Subject: Café ☕️ update"))
-        #expect(decoded.contains("=?UTF-8?B?") == false)
+    /// A long non-ASCII subject must fold into multiple encoded words (each
+    /// capped at 75 characters including delimiters) without ever splitting
+    /// a multi-byte UTF-8 sequence across the fold — the classic bug that
+    /// produces replacement characters in a recipient's client.
+    @Test("a long non-ASCII subject folds across multiple encoded words without splitting a UTF-8 sequence")
+    func longNonASCIISubjectFoldsWithoutSplittingUTF8() {
+        let subject = String(repeating: "café ☕️ مرحبا ", count: 15)
+        let encoded = RFC2047.encode(subject)
+
+        // More than one encoded word was needed.
+        let words = encoded.components(separatedBy: "\r\n ")
+        #expect(words.count > 1)
+        for word in words {
+            #expect(word.count <= 75, "each encoded word must respect the 75-char RFC 2047 cap")
+            #expect(word.hasPrefix("=?UTF-8?B?") && word.hasSuffix("?="))
+        }
+
+        // Decoding every word's base64 payload independently must never
+        // fail to produce valid UTF-8 for that chunk — proof no scalar was
+        // split across a fold boundary.
+        for word in words {
+            let base64 = word
+                .replacingOccurrences(of: "=?UTF-8?B?", with: "")
+                .replacingOccurrences(of: "?=", with: "")
+            let data = try! #require(Data(base64Encoded: base64))
+            #expect(String(data: data, encoding: .utf8) != nil,
+                    "a chunk that isn't valid UTF-8 on its own means a scalar was split")
+        }
+
+        #expect(RFC2047.decode(encoded) == subject)
+    }
+
+    // MARK: BODY round-trip (Arabic + emoji, byte-exact)
+
+    @Test("a body containing Arabic and emoji round-trips byte-exact through the raw RFC822 encoding")
+    func bodyWithArabicAndEmojiRoundTripsByteExact() {
+        let body = "مرحبا! 👋 هذا اختبار مع نص عربي وإيموجي 🎉📧\nSecond line: café — done."
+        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
+                                      subject: "ok", bodyText: body)
+        let raw = GmailProvider.rfc822(message)
+        let decoded = GmailMapping.decodeBase64URL(raw) ?? ""
+        #expect(decoded.contains(body))
+    }
+
+    // MARK: multipart/alternative structure
+
+    @Test("send's raw RFC822 is a multipart/alternative message with a boundary absent from both parts")
+    func multipartStructureHasSafeBoundary() {
+        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
+                                      subject: "Plans", bodyText: "**bold** plan with a [link](https://example.com)")
+        let raw = GmailProvider.rfc822(message)
+        let decoded = GmailMapping.decodeBase64URL(raw) ?? ""
+
+        #expect(decoded.contains("Content-Type: multipart/alternative; boundary=\""))
+        #expect(decoded.contains("Content-Type: text/plain; charset=UTF-8"))
+        #expect(decoded.contains("Content-Type: text/html; charset=UTF-8"))
+
+        guard let boundaryRange = decoded.range(of: "boundary=\"") else {
+            Issue.record("no boundary found")
+            return
+        }
+        let afterQuote = decoded[boundaryRange.upperBound...]
+        guard let endQuote = afterQuote.firstIndex(of: "\"") else {
+            Issue.record("boundary not closed")
+            return
+        }
+        let boundary = String(afterQuote[afterQuote.startIndex..<endQuote])
+        #expect(!boundary.isEmpty)
+
+        // The boundary line itself is excluded from this check — only the
+        // PART BODIES must never contain it.
+        let parts = decoded.components(separatedBy: "--\(boundary)")
+        for part in parts.dropFirst().dropLast() {
+            #expect(part.contains(boundary) == false)
+        }
+
+        // CRLF throughout, not bare LF.
+        #expect(decoded.contains("\r\n"))
+    }
+
+    // MARK: markdown -> HTML on send
+
+    @Test("markdown bold, italic, inline code, a link, and a bullet list all appear in the HTML part")
+    func markdownFeaturesAppearInHTMLPart() {
+        let markdown = """
+        Hello **bold** and *italic* and `code` and [a link](https://example.com).
+
+        - first item
+        - second item
+        """
+        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
+                                      subject: "s", bodyText: markdown)
+        let raw = GmailProvider.rfc822(message)
+        let decoded = GmailMapping.decodeBase64URL(raw) ?? ""
+
+        #expect(decoded.contains("<strong>bold</strong>"))
+        #expect(decoded.contains("<em>italic</em>"))
+        #expect(decoded.contains("<code>code</code>"))
+        #expect(decoded.contains("<a href=\"https://example.com\">a link</a>"))
+        #expect(decoded.contains("<ul>"))
+        #expect(decoded.contains("<li>first item</li>"))
+        #expect(decoded.contains("<li>second item</li>"))
+
+        // The plain part is kept exactly as typed — the fallback must stay
+        // readable, not itself be HTML.
+        #expect(decoded.contains(markdown))
+    }
+
+    @Test("a body containing <script> is escaped in the HTML part rather than injected")
+    func scriptTagIsEscapedNotInjected() {
+        let malicious = "Look at this: <script>alert('x')</script> & also <b>bold</b>."
+        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
+                                      subject: "s", bodyText: malicious)
+        let raw = GmailProvider.rfc822(message)
+        let decoded = GmailMapping.decodeBase64URL(raw) ?? ""
+
+        // The HTML part must never contain a live <script> tag.
+        guard let htmlPartRange = decoded.range(of: "Content-Type: text/html") else {
+            Issue.record("no HTML part found")
+            return
+        }
+        let htmlPart = decoded[htmlPartRange.lowerBound...]
+        #expect(htmlPart.contains("<script>") == false)
+        #expect(htmlPart.contains("&lt;script&gt;"))
+        #expect(htmlPart.contains("&amp;"))
+
+        // The plain part keeps the literal text unescaped, exactly as typed.
+        #expect(decoded.contains(malicious))
     }
 }

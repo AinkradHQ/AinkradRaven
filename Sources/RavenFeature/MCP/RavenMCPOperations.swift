@@ -136,7 +136,7 @@ public enum RavenMCPOperations {
             let result: SendAttempt.Result
             do {
                 result = try await SendAttempt.send(draft, draftID: id, outbox: outbox,
-                                                    drain: outbox.drain)
+                                                    store: store, drain: outbox.drain)
             } catch {
                 return fail("Could not queue send: \(error)")
             }
