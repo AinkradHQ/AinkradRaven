@@ -16,7 +16,7 @@ packages:
     url: https://github.com/AhmedMElhalaby/AinkradAppKit
     # EXACTLY the revision the host's build checks out. Verify, never copy:
     #   git -C ../Ainkrad/build/SourcePackages/checkouts/AinkradAppKit rev-parse HEAD
-    revision: 31f89bc9e186354077035316a832237ce6993a09
+    revision: 60036ad9abe5d0ca4e84109bcc78a51f7b8578f0
 targets:
   RavenFeature:
     type: library.static

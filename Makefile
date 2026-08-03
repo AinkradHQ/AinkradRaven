@@ -1,6 +1,20 @@
 DEVELOPER_DIR ?= /Applications/Xcode-beta.app/Contents/Developer
 export DEVELOPER_DIR
-DEV_PLUGINS := $(HOME)/Library/Application Support/com.ainkrad.devhost/Documents/DevPlugins
+# Where a DEBUG host actually scans for sideloaded plugins:
+# `AinkradHome.defaultCacheRoot(bundleID:)` is
+# <App Support>/<bundleID>/Cache, and `AppEnvironment+BootstrapStores`
+# appends `DevPlugins` to it. Release builds never scan this directory —
+# `PluginTrust.scansDevPluginsDirectory` is `#if DEBUG`.
+#
+# The bundle id is the HOST's, not this plugin's. `com.ainkrad.app` is the
+# main Ainkrad app (the Xcode Debug build); `com.ainkrad.devhost` is the
+# separate Dev Host target. Quest's Makefile — which this was copied from —
+# points at the devhost's *Documents* directory, which is both the wrong app
+# and the pre-`VaultMigration` location, so a bundle placed there is invisible
+# to the main app. Override on the command line to target the Dev Host:
+#   make sideload HOST_BUNDLE_ID=com.ainkrad.devhost
+HOST_BUNDLE_ID ?= com.ainkrad.app
+DEV_PLUGINS := $(HOME)/Library/Application Support/$(HOST_BUNDLE_ID)/Cache/DevPlugins
 
 generate: ; xcodegen generate
 build: generate ; xcodebuild -scheme RavenPlugin -configuration Debug -derivedDataPath build -destination 'platform=macOS' build
