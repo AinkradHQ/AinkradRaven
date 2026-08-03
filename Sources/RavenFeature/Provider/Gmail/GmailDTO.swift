@@ -21,15 +21,22 @@ public struct GmailMessageDTO: Decodable {
     public struct Body: Decodable {
         public let data: String?
         public let size: Int?
-        public init(data: String?, size: Int?) { self.data = data; self.size = size }
+        /// Present only when this part's bytes are NOT inlined in `data` and
+        /// must be fetched separately via `messages.attachments.get`.
+        public let attachmentId: String?
+        public init(data: String?, size: Int?, attachmentId: String? = nil) {
+            self.data = data; self.size = size; self.attachmentId = attachmentId
+        }
     }
     public struct Payload: Decodable {
         public let headers: [Header]
         public let mimeType: String?
+        public let filename: String?
         public let body: Body?
         public let parts: [Payload]?
-        public init(headers: [Header], mimeType: String?, body: Body?, parts: [Payload]?) {
-            self.headers = headers; self.mimeType = mimeType
+        public init(headers: [Header], mimeType: String?, filename: String? = nil,
+                    body: Body?, parts: [Payload]?) {
+            self.headers = headers; self.mimeType = mimeType; self.filename = filename
             self.body = body; self.parts = parts
         }
     }

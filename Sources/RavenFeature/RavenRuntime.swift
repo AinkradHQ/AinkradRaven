@@ -45,6 +45,9 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     func fetchBody(messageID: String) async throws -> MessageBody {
         try await require().fetchBody(messageID: messageID)
     }
+    func fetchAttachment(messageID: String, attachmentID: String) async throws -> Data {
+        try await require().fetchAttachment(messageID: messageID, attachmentID: attachmentID)
+    }
     func fetchLabels() async throws -> [MailLabel] {
         try await require().fetchLabels()
     }
@@ -534,5 +537,57 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
             host.log.error("RavenRuntime.loadBody failed for \(message.id): \(error)")
             return nil
         }
+    }
+
+    // MARK: Attachments
+
+    /// Fetches one attachment's bytes on demand, off the main actor — never
+    /// written to a cache directory (see the task report's attachment-fetch
+    /// notes). `nil` when there is no attached provider or the fetch fails;
+    /// the caller (the Thread surface's chip tap handler) treats that as "try
+    /// again later" rather than crashing.
+    public func fetchAttachment(_ attachment: MailAttachment, messageID: String) async -> Data? {
+        guard let provider = providerProxy.current else { return nil }
+        do {
+            return try await Task.detached {
+                try await provider.fetchAttachment(messageID: messageID,
+                                                    attachmentID: attachment.attachmentID)
+            }.value
+        } catch {
+            host.log.error("RavenRuntime.fetchAttachment failed for \(attachment.attachmentID): \(error)")
+            return nil
+        }
+    }
+
+    // MARK: Remote-image opt-in (persisted per sender)
+
+    /// Whether `sender`'s remote images auto-load without the user pressing
+    /// "Load images" again — see `RemoteImageAllowList`. Unknown senders
+    /// default to blocked; this must never default to `true`.
+    public func imagesAllowed(for sender: String) -> Bool {
+        RemoteImageAllowList.isAllowed(sender, documents: host.documents)
+    }
+
+    /// Persists that `sender`'s images should auto-load from now on.
+    public func allowImages(for sender: String) {
+        RemoteImageAllowList.allow(sender, documents: host.documents)
+    }
+
+    // MARK: Compose (reply/reply-all/forward)
+
+    /// The signed-in account's own address, so `ReplyComposer` can exclude it
+    /// from a reply-all — never mail yourself.
+    public var ownAddress: String? {
+        store.accounts().first(where: { $0.id == providerProxy.accountID })?.address
+    }
+
+    /// Sends a reply/reply-all/forward composed on the Thread surface through
+    /// the exact same queue-drain-classify path every other send in this app
+    /// uses (`SendAttempt`) — see that type's documentation for why sending
+    /// lives in exactly one place. No draft id: a thread reply is not backed
+    /// by a `DraftBox` entry.
+    public func sendThreadReply(_ message: OutgoingMessage) async throws -> SendAttempt.Result {
+        try await SendAttempt.send(message, draftID: nil, outbox: outbox, store: store,
+                                   drain: drainOutbox)
     }
 }

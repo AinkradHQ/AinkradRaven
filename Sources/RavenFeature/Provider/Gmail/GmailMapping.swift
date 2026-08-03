@@ -39,7 +39,31 @@ public enum GmailMapping {
             isStarred: labels.contains("STARRED"),
             labelIDs: labels,
             hasAttachments: hasAttachment(dto.payload),
-            snippet: dto.snippet ?? "")
+            snippet: dto.snippet ?? "",
+            attachments: attachments(dto.payload))
+    }
+
+    /// Walks `parts` recursively (same shape `hasAttachment`/`body` already
+    /// walk) collecting every part that carries an `attachmentId` — Gmail's
+    /// own signal that a part's bytes are NOT inlined in this response and
+    /// must be fetched separately via `messages.attachments.get`. A part with
+    /// no filename (e.g. the text/plain or text/html body part itself) is not
+    /// an attachment even if it happens to carry an `attachmentId`.
+    private static func attachments(_ payload: GmailMessageDTO.Payload?) -> [MailAttachment] {
+        guard let payload else { return [] }
+        var results: [MailAttachment] = []
+        if let filename = payload.filename, !filename.isEmpty,
+           let attachmentID = payload.body?.attachmentId {
+            results.append(MailAttachment(
+                attachmentID: attachmentID,
+                filename: filename,
+                mimeType: payload.mimeType ?? "application/octet-stream",
+                size: payload.body?.size ?? 0))
+        }
+        for part in payload.parts ?? [] {
+            results.append(contentsOf: attachments(part))
+        }
+        return results
     }
 
     /// Prefers `text/plain`; falls back to sanitized `text/html` when no
@@ -80,12 +104,18 @@ public enum GmailMapping {
 
     /// Gmail encodes bodies base64url without padding.
     public static func decodeBase64URL(_ encoded: String) -> String? {
+        decodeAttachmentBase64URL(encoded).map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// Same base64url-without-padding decoding as `decodeBase64URL`, but
+    /// returning raw `Data` — for binary attachment bytes, which are not
+    /// necessarily valid UTF-8 text.
+    public static func decodeAttachmentBase64URL(_ encoded: String) -> Data? {
         var normalized = encoded
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
         while normalized.count % 4 != 0 { normalized.append("=") }
-        guard let data = Data(base64Encoded: normalized) else { return nil }
-        return String(decoding: data, as: UTF8.self)
+        return Data(base64Encoded: normalized)
     }
 
     private static func hasAttachment(_ payload: GmailMessageDTO.Payload?) -> Bool {

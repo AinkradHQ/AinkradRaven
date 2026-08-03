@@ -66,7 +66,7 @@ import Observation
         let months = (0..<4).compactMap { offset in
             calendar.date(byAdding: .month, value: -offset, to: Date()).map(MonthShard.key(for:))
         }
-        summaries = store.summaries(accountID: accountID, months: months)
+        summaries = InboxFilter.apply(store.summaries(accountID: accountID, months: months))
         // The selection can point at a thread that just left the window (e.g.
         // archived out from under it); re-resolve so stale detail doesn't
         // linger next to a list that no longer contains it.

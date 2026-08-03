@@ -60,6 +60,9 @@ public protocol MailProvider: Sendable {
     func fetchDelta(cursor: String) async throws -> MailDelta
     func fetchThread(id: String) async throws -> MailThread
     func fetchBody(messageID: String) async throws -> MessageBody
+    /// Fetches one attachment's raw bytes on demand. Never cached by the
+    /// caller to disk — see `RavenRuntime.fetchAttachment`.
+    func fetchAttachment(messageID: String, attachmentID: String) async throws -> Data
     func fetchLabels() async throws -> [MailLabel]
     func applyLabels(_ mutation: LabelMutation) async throws
     func send(_ message: OutgoingMessage) async throws -> String  // provider message id

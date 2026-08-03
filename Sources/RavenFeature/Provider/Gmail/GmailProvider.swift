@@ -189,6 +189,17 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
         return GmailMapping.body(dto)
     }
 
+    public func fetchAttachment(messageID: String, attachmentID: String) async throws -> Data {
+        struct AttachmentDTO: Decodable { let data: String? }
+        let dto = try await get(AttachmentDTO.self,
+                                path: "messages/\(messageID)/attachments/\(attachmentID)")
+        guard let encoded = dto.data,
+              let decoded = GmailMapping.decodeAttachmentBase64URL(encoded) else {
+            throw MailError.decodingFailed("attachment \(attachmentID)")
+        }
+        return decoded
+    }
+
     public func fetchLabels() async throws -> [MailLabel] {
         GmailMapping.labels(try await get(GmailLabelsDTO.self, path: "labels"))
     }

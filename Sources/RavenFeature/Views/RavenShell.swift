@@ -29,7 +29,7 @@ public struct RavenShell: View {
                 HStack(spacing: AinkradSpacing.sm) {
                     InboxSurface(model: runtime.model)
                         .frame(width: 340)
-                    ThreadSurface(model: runtime.model, loadBody: runtime.loadBody)
+                    ThreadSurface(model: runtime.model, runtime: runtime)
                         .frame(maxWidth: .infinity)
                 }
             case .compose:

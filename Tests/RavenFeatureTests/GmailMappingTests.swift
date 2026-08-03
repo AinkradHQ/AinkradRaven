@@ -80,6 +80,28 @@ struct GmailMappingTests {
         #expect(body.html != nil)
     }
 
+    @Test("attachment parts (filename + attachmentId present) are mapped into MailAttachment metadata")
+    func mapsAttachments() {
+        let dto = GmailMessageDTO(
+            id: "m1", threadId: "t1", labelIds: [], snippet: "",
+            internalDate: "1772000000000",
+            payload: .init(
+                headers: [], mimeType: "multipart/mixed", body: nil,
+                parts: [
+                    .init(headers: [], mimeType: "text/plain",
+                          body: .init(data: GmailMapping.base64URL("hi"), size: 2), parts: nil),
+                    .init(headers: [], mimeType: "application/pdf", filename: "report.pdf",
+                          body: .init(data: nil, size: 12345, attachmentId: "att-1"), parts: nil),
+                ]))
+        let message = GmailMapping.message(dto)
+        #expect(message.hasAttachments)
+        #expect(message.attachments.count == 1)
+        #expect(message.attachments.first?.filename == "report.pdf")
+        #expect(message.attachments.first?.mimeType == "application/pdf")
+        #expect(message.attachments.first?.attachmentID == "att-1")
+        #expect(message.attachments.first?.size == 12345)
+    }
+
     @Test("body falls back to sanitized HTML when there is no text/plain part")
     func bodyFallsBackToSanitizedHTML() {
         let htmlOnly = GmailMessageDTO(

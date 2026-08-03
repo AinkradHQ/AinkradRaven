@@ -91,6 +91,13 @@ final class FakeMailProvider: MailProvider, @unchecked Sendable {
         return bodies[messageID] ?? MessageBody(messageID: messageID, plainText: "", html: nil)
     }
 
+    var attachmentBytes: [String: Data] = [:]
+
+    func fetchAttachment(messageID: String, attachmentID: String) async throws -> Data {
+        try failIfScripted("fetchAttachment")
+        return attachmentBytes[attachmentID] ?? Data()
+    }
+
     func fetchLabels() async throws -> [MailLabel] {
         try failIfScripted("fetchLabels")
         return labelList

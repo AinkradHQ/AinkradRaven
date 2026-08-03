@@ -50,8 +50,13 @@ public enum RavenMCPOperations {
                     ?? store.accounts().first?.id else { return fail("No account.") }
             let query = args["query"] as? String ?? ""
             let limit = args["limit"] as? Int ?? 25
-            let hits = ThreadSearch.match(store.summaries(accountID: accountID,
-                                                          months: recentMonths()),
+            // Filtered to the same "in the inbox" set the Inbox list and
+            // `unread_summary` use — see `InboxFilter`'s documentation for
+            // why these three must never disagree. A thread that left the
+            // inbox is still readable via `read_thread`; it just doesn't
+            // show up as an inbox search hit.
+            let hits = ThreadSearch.match(InboxFilter.apply(store.summaries(accountID: accountID,
+                                                                            months: recentMonths())),
                                           query: query).prefix(limit)
             if hits.isEmpty {
                 return ok("No matching threads in the synced window (last 90 days). " +
@@ -63,7 +68,7 @@ public enum RavenMCPOperations {
         case "unread_summary":
             guard let accountID = args["account_id"] as? String
                     ?? store.accounts().first?.id else { return fail("No account.") }
-            let unread = store.summaries(accountID: accountID, months: recentMonths())
+            let unread = InboxFilter.apply(store.summaries(accountID: accountID, months: recentMonths()))
                 .filter { $0.unreadCount > 0 }
             if unread.isEmpty {
                 return ok("No unread threads in the synced window (last 90 days).")
