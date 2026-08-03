@@ -1,17 +1,6 @@
 import Foundation
 import AinkradAppKit
 
-/// Result of a deliberate "search all mail" act — see `RavenRuntime.
-/// searchArchive`. Distinct `.results([])` vs `.failed` on purpose: a remote
-/// search that genuinely found nothing must never look the same as one that
-/// couldn't run at all (rate-limited, unauthenticated, transport failure).
-public enum ArchiveSearchState: Equatable {
-    case idle
-    case searching
-    case results([ThreadSummary])
-    case failed(String)
-}
-
 /// One instance per `HostServices`, so the on-screen UI and the MCP server
 /// (`RavenApp.makeMCPServer`) drive the SAME store, outbox, and account state
 /// rather than two detached copies — `RavenApp` caches one runtime per host
@@ -23,6 +12,27 @@ public enum ArchiveSearchState: Equatable {
 /// account (see `syncOnce`). Per-account sync state is tracked separately so a
 /// failure on one account is independently observable and cannot stall the
 /// others.
+///
+/// **This file is the whole of the runtime's state.** Every stored property,
+/// the initializer, `teardown()`, the credential path and the account lifecycle
+/// live here; the behaviour that operates on that state is split into
+/// extensions purely for length, and each names what it may mutate:
+///
+/// - `RavenRuntime+Sync.swift` — the poll loop, delta syncs, backfills, engine
+///   attachment.
+/// - `RavenRuntime+ArchiveSearch.swift` — "search all mail" and its state.
+/// - `RavenRuntime+Preferences.swift` — the document-backed preferences (rules,
+///   hold window, remote-image opt-in, signature) and `log`.
+/// - `RavenRuntime+Content.swift` — on-demand body/attachment fetches and the
+///   thread-reply send path.
+///
+/// The split is deliberately NOT a set of collaborator objects. `RavenRuntime`
+/// stays the single object the app hands around, and the published per-account
+/// dictionaries below keep their `private(set)`: the extensions mutate them
+/// only through the named mutators in "State mutation" at the bottom of this
+/// file, so there is exactly one place to look to find every write to sync
+/// state. `auth` and the credential keys are the one thing that did NOT move
+/// and are still `private` to this file.
 @MainActor @Observable public final class RavenRuntime {
     public let store: DocumentMailStore
     public let outbox: Outbox
@@ -46,7 +56,13 @@ public enum ArchiveSearchState: Equatable {
     /// See `RavenSettingsDraft`.
     public let settingsDraft = RavenSettingsDraft()
 
-    private let host: HostServices
+    /// Internal, not private, because every extension listed in this type's
+    /// documentation reads `host.documents`/`host.log` through it. Still
+    /// invisible outside `RavenFeature`.
+    let host: HostServices
+    /// Stays `private` — this is the credential path. Nothing outside this file
+    /// may read or replace it, which is why `attachStoredAccounts(auth:)` takes
+    /// the value as an argument instead of reading this property.
     private var auth: GmailAuth?
     /// One engine per connected account. Not `private` — see `syncEngine`
     /// below for the test seam that writes here.
@@ -66,7 +82,11 @@ public enum ArchiveSearchState: Equatable {
     /// The running poll loop started in `init` and cancelled in `teardown()`.
     /// Not resumed once cancelled — a closed instance must stop calling
     /// Gmail, not just stop being observed. ONE loop for every account.
-    private var syncTask: Task<Void, Never>?
+    ///
+    /// Internal rather than private so `startSyncTimer` can live in
+    /// `RavenRuntime+Sync.swift`. It is an implementation detail either way —
+    /// never `public`, so no caller outside this module can reach it.
+    var syncTask: Task<Void, Never>?
     /// The detached 90-day backfills kicked off by `connectAccount`/
     /// `resyncFromScratch`, one per account. Cancelled (never resumed) in
     /// `teardown()`, exactly like `syncTask` — a closed instance must stop
@@ -74,7 +94,7 @@ public enum ArchiveSearchState: Equatable {
     /// out, so a backfill for an account that no longer exists locally cannot
     /// keep writing to the store underneath it while other accounts' backfills
     /// continue untouched.
-    private var backfillTasks: [String: Task<Void, Never>] = [:]
+    var backfillTasks: [String: Task<Void, Never>] = [:]
     /// The accounts with a backfill currently walking pages. An id is inserted
     /// synchronously inside `startBackfill(accountID:)` — before the `Task` it
     /// creates has had any chance to run — and removed at the end of
@@ -86,7 +106,7 @@ public enum ArchiveSearchState: Equatable {
     /// already in flight, and two overlapping walks writing into the same
     /// account's shards is exactly what must never happen. Different accounts
     /// write to different shards, so they may backfill concurrently.
-    private var backfillingAccounts: Set<String> = []
+    var backfillingAccounts: Set<String> = []
     private var contextToken: PluginContextToken?
     private var actionTokens: [AgentActionToken] = []
 
@@ -99,6 +119,9 @@ public enum ArchiveSearchState: Equatable {
     /// ONLY — never `host.documents`, never logged, never echoed back into
     /// any field.
     private static let clientSecretKey = "gmail-client-secret"
+    /// Read by `holdWindow` in `RavenRuntime+Preferences.swift`, hence internal
+    /// rather than private. Not a secret — a preference.
+    static let holdWindowKey = "send-hold-window-seconds"
 
     /// Per-account sync state. Independently observable, so one account's
     /// failure is visible as that account's failure rather than as a single
@@ -234,17 +257,6 @@ public enum ArchiveSearchState: Equatable {
     /// documentation of why a per-instance runtime that never tears down is a
     /// leak, not a cache. Safe to call more than once (each step is a no-op
     /// the second time).
-    /// Attaches a provider for EVERY account already in the store — one per
-    /// account, so a relaunch restores every connected mailbox rather than the
-    /// arbitrary first one. Each account's refresh token is looked up by
-    /// `GmailAuth` under that account's id, so one `auth` serves them all.
-    private func attachStoredAccounts(auth: GmailAuth) {
-        for account in store.accounts() {
-            attach(provider: GmailProvider(accountID: account.id, auth: auth),
-                   accountID: account.id)
-        }
-    }
-
     public func teardown() {
         syncTask?.cancel()
         syncTask = nil
@@ -358,24 +370,6 @@ public enum ArchiveSearchState: Equatable {
         startBackfill(accountID: accountID)
     }
 
-    /// Kicks off `runBackfill()` in a new detached-from-the-caller `Task`
-    /// (still `@MainActor`-isolated, same as `startSyncTimer`'s poll loop) so
-    /// whoever calls this (`connectAccount`, `resyncFromScratch`) does not
-    /// block on it. Cancels any backfill already in flight first — starting
-    /// a second one for the same runtime while the first is still walking
-    /// pages would race writes into the same store. `isBackfilling` is set
-    /// here, synchronously, BEFORE the `Task` below is even scheduled to
-    /// run — not inside `runBackfill()` — so there is no window between a
-    /// caller checking it and this method flipping it in which a second
-    /// caller on the same main actor could slip through.
-    private func startBackfill(accountID: String) {
-        backfillTasks[accountID]?.cancel()
-        backfillingAccounts.insert(accountID)
-        backfillTasks[accountID] = Task { [weak self] in
-            await self?.runBackfill(accountID: accountID)
-        }
-    }
-
     /// Signing out must leave nothing of the account behind. Three things go,
     /// in this order:
     ///
@@ -429,252 +423,6 @@ public enum ArchiveSearchState: Equatable {
         model.reload()
     }
 
-    /// Re-walks the full sync window from scratch, kicking the walk off and
-    /// returning immediately — exactly the shape `connectAccount` uses for
-    /// its own backfill (see `startBackfill`), and for the same reason:
-    /// awaiting `runBackfill()` here froze the "Resync from scratch" button
-    /// for the length of a full 90-day walk, the same defect already fixed
-    /// for Connect. `SyncEngine.backfill()` always does a fresh page walk
-    /// (not a delta against the stored cursor), so kicking it off again IS
-    /// the "resync from scratch" the Accounts surface offers — no separate
-    /// code path needed.
-    ///
-    /// REFUSES a second call while one is already running, rather than
-    /// cancelling the first and coalescing into the new one — see
-    /// `isBackfilling`'s documentation for why cancellation of the wrapper
-    /// `Task` alone is not good enough here. A caller that wants to know
-    /// whether the request was actually honored can check `isResyncing`
-    /// immediately after calling this.
-    /// Resyncs one account, or — with no argument — every attached account.
-    /// The per-account refusal is unchanged: a second call for an account
-    /// already walking pages is ignored, while a different account may start
-    /// its own walk, since the two write to different shards.
-    public func resyncFromScratch(accountID: String? = nil) {
-        // Keyed off the engines rather than the attached providers: a backfill
-        // is an engine's walk, and an account without an engine has nothing to
-        // resync.
-        let targets = accountID.map { [$0] } ?? syncEngines.keys.sorted()
-        for target in targets {
-            guard !backfillingAccounts.contains(target) else {
-                host.log.info("Raven: resync already in progress for \(target); " +
-                              "ignoring the new request.")
-                continue
-            }
-            startBackfill(accountID: target)
-        }
-    }
-
-    /// Whether a backfill (from `connectAccount` or `resyncFromScratch`) is
-    /// currently walking pages for `accountID`. Exposed read-only so a caller
-    /// — tests in particular — can confirm a `resyncFromScratch` call was
-    /// refused rather than silently starting a second walk.
-    public func isResyncing(_ accountID: String) -> Bool {
-        backfillingAccounts.contains(accountID)
-    }
-
-    /// Whether ANY account is currently backfilling.
-    public var isResyncing: Bool { !backfillingAccounts.isEmpty }
-
-    /// Delta-syncs one account, or every account when none is named. Each
-    /// account is handled independently — see `syncAccount`.
-    public func syncNow(accountID: String? = nil) async {
-        let targets = accountID.map { [$0] } ?? syncEngines.keys.sorted()
-        for target in targets { await syncAccount(target) }
-        model.reload()
-    }
-
-    /// One account's delta sync, with its outcome recorded against THAT
-    /// account. `syncDelta()` deliberately does NOT throw on a transient
-    /// per-thread failure — it holds the cursor and records the failure on the
-    /// account/`state` instead, precisely so a flaky network blip can't advance
-    /// the cursor past mail that was never durably synced (see
-    /// `SyncEngine.syncDelta`'s own documentation). A bare `do/catch` around
-    /// the call would miss that failure entirely, so this reads
-    /// `engine.state` after the call whether or not it threw.
-    private func syncAccount(_ accountID: String) async {
-        guard let engine = syncEngines[accountID] else { return }
-        do {
-            try await engine.syncDelta()
-            syncErrors[accountID] = nil
-        } catch {
-            syncErrors[accountID] = String(describing: error)
-        }
-        syncStates[accountID] = engine.state
-        if case .failed(let message) = engine.state {
-            syncErrors[accountID] = message
-        }
-        refreshAggregateSyncError()
-    }
-
-    /// Recomputes the one-line roll-up from the per-account errors. Ordered by
-    /// account id so the line shown is deterministic rather than dependent on
-    /// which account's sync finished last, and `nil` only when NO account is
-    /// currently failing.
-    private func refreshAggregateSyncError() {
-        lastSyncError = syncErrors.keys.sorted().compactMap { syncErrors[$0] }.first
-    }
-
-    /// Polls on a timer and on window focus (`syncNow`, called by the UI). No
-    /// Pub/Sub push in M0 — that needs a public HTTPS endpoint, which is
-    /// disproportionate for a personal client.
-    private func startSyncTimer() {
-        syncTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.syncOnce()
-                try? await Task.sleep(for: .seconds(120))
-            }
-        }
-    }
-
-    /// The timer's tick. `syncDelta()` deliberately does NOT throw on a
-    /// transient per-thread failure — it holds the cursor and records the
-    /// failure on the account/`state` instead, precisely so a flaky network
-    /// blip can't advance the cursor past mail that was never durably synced
-    /// (see `SyncEngine.syncDelta`'s own documentation). A bare `do/catch`
-    /// around the call would miss that failure entirely and log nothing, so
-    /// this reads `syncEngine.state` after the call whether or not it threw,
-    /// exactly like `syncNow()`. `outbox.drain()` never throws either — it
-    /// records failures on the entries themselves — so `refreshOutboxSnapshots()`
-    /// is what actually surfaces those, into `outboxDeadLettered`/`outboxNeedsReview`.
-    /// Nothing here logs message content, addresses, or tokens: only the
-    /// `String(describing:)` of a `MailError`/status, matching `syncNow`.
-    /// Services EVERY connected account on this one tick — one timer for the
-    /// app, never one per account. Each account is synced in its own
-    /// `syncAccount` call, whose failure is recorded against that account and
-    /// then left behind: the loop continues, so a broken or rate-limited
-    /// account cannot stall the accounts after it in the pass. Accounts are
-    /// visited in id order so the pass is deterministic rather than
-    /// dictionary-ordered.
-    ///
-    /// `outbox.drain()` never throws either — it records failures on the
-    /// entries themselves — so `refreshOutboxSnapshots()` is what actually
-    /// surfaces those. One drain covers every account, since the outbox routes
-    /// each entry to its own provider.
-    func syncOnce() async {
-        for accountID in syncEngines.keys.sorted() {
-            await syncAccount(accountID)
-        }
-        await outbox.drain()
-        refreshOutboxSnapshots()
-        model.reload()
-    }
-
-    /// Runs a full backfill. Progress reaches the Accounts surface via
-    /// `SyncEngine.onChange` (wired in `attach()`), which pushes every
-    /// `state`/`lastBackfillTruncated` change straight into `mirrorSyncEngineState()`
-    /// as it happens — see that property's documentation. This used to poll
-    /// `syncEngine.state` off a 500ms timer instead; the timer is gone, not
-    /// just idle, so there is no periodic task left running for as long as a
-    /// backfill happens to take.
-    ///
-    /// A failure here is NOT swallowed: `SyncEngine.backfill()` already
-    /// records it onto the account's `state`/`lastError` before rethrowing
-    /// (see that method), and the `catch` below additionally surfaces it via
-    /// `lastSyncError`, matching `syncNow()`/`syncOnce()`'s existing
-    /// convention — so a failure in this detached call still reaches the UI
-    /// exactly as it did when `connectAccount` awaited it inline.
-    ///
-    /// `isBackfilling` is reset here, unconditionally, whether the walk
-    /// succeeded, failed, or was cancelled — this is the one place a
-    /// `resyncFromScratch()` guarded on it is guaranteed to unblock.
-    private func runBackfill(accountID: String) async {
-        defer { backfillingAccounts.remove(accountID) }
-        guard let engine = syncEngines[accountID] else { return }
-        do {
-            try await engine.backfill()
-            syncErrors[accountID] = nil
-        } catch {
-            syncErrors[accountID] = String(describing: error)
-        }
-        refreshAggregateSyncError()
-        syncStates[accountID] = engine.state
-        setTruncated(engine.lastBackfillTruncated, for: accountID)
-        model.reload()
-    }
-
-    private func setTruncated(_ truncated: Bool, for accountID: String) {
-        if truncated { truncatedBackfills.insert(accountID) }
-        else { truncatedBackfills.remove(accountID) }
-    }
-
-    /// Mirrors `syncEngine.state`/`lastBackfillTruncated` into this
-    /// `@Observable` instance's own properties and reloads `model`. Wired as
-    /// `SyncEngine.onChange` by `attach()` so every page of a backfill (and
-    /// every `syncDelta()` state transition) pushes here instead of the
-    /// Accounts surface having to poll for it.
-    private func mirrorSyncEngineState(accountID: String) {
-        guard let engine = syncEngines[accountID] else { return }
-        syncStates[accountID] = engine.state
-        setTruncated(engine.lastBackfillTruncated, for: accountID)
-        model.reload()
-    }
-
-    /// Test-only seam: attaches an arbitrary `MailProvider` (e.g.
-    /// `FakeMailProvider`) directly to the proxy, bypassing `attach(provider:
-    /// accountID:)`'s `GmailProvider`-specific signature. `RavenAgentBridgeTests`
-    /// already swaps `syncEngine` directly for the same reason (exercising a
-    /// real `RavenRuntime` without a live network); this lets `searchArchive`
-    /// be exercised the same way, without widening the public surface.
-    func attachTestProvider(_ provider: MailProvider, accountID: String) {
-        providers.attach(provider, accountID: accountID)
-    }
-
-    private func attach(provider: GmailProvider, accountID: String) {
-        providers.attach(provider, accountID: accountID)
-        let engine = SyncEngine(store: store, provider: provider, accountID: accountID)
-        engine.onChange = { [weak self] in self?.mirrorSyncEngineState(accountID: accountID) }
-        engine.onNewThreads = { [weak self] threadIDs in self?.applyRules(threadIDs: threadIDs) }
-        syncEngines[accountID] = engine
-    }
-
-    // MARK: Rules
-
-    /// The user's saved filter rules — read fresh from `host.documents` on
-    /// every access rather than cached, since `RavenSettingsView`'s rule
-    /// editor writes the same document and must be reflected on the very
-    /// next delta sync without this runtime needing to be told to reload.
-    public var rules: RuleSet {
-        get { RuleSet.load(documents: host.documents) }
-        set { newValue.save(documents: host.documents) }
-    }
-
-    /// Runs the saved rules against exactly the thread ids a delta sync just
-    /// discovered — see `SyncEngine.onNewThreads`'s documentation for why
-    /// this must never be called with a wider set (e.g. everything in the
-    /// store). Goes through `RuleEngine.apply`, which itself only ever calls
-    /// `ThreadMutationApplier`/`outbox.enqueue` — never a provider directly.
-    private func applyRules(threadIDs: [String]) {
-        let ruleSet = rules
-        guard !ruleSet.rules.isEmpty else { return }
-        RuleEngine.apply(ruleSet: ruleSet, threadIDs: threadIDs, store: store, outbox: outbox)
-        model.reload()
-    }
-
-    /// Read-modify-write of the CURRENT account row.
-    ///
-    /// The Settings signature field used to write back a `MailAccount` value
-    /// captured when the row was rendered, so every keystroke clobbered
-    /// `syncCursor`, `lastSyncedAt`, `state` and `lastError` with whatever
-    /// they were at render time — rolling the cursor back re-walks mail, and
-    /// rolling it to `nil` forces a full backfill. Only the signature may
-    /// change here.
-    public func updateSignature(_ signature: String, accountID: String) {
-        guard var account = store.accounts().first(where: { $0.id == accountID }),
-              account.signature != signature else { return }
-        account.signature = signature
-        do {
-            try store.saveAccount(account)
-        } catch {
-            host.log.error("Raven: could not save the signature: \(error)")
-        }
-    }
-
-    /// Routes a diagnostic line to the host's logger. Views must not `print()`
-    /// — a shipped plugin's stdout goes nowhere the user or the host can see.
-    public func log(_ message: String) {
-        host.log.info(message)
-    }
-
     // MARK: Outbox
 
     public func refreshOutboxSnapshots() {
@@ -692,225 +440,55 @@ public enum ArchiveSearchState: Equatable {
         refreshOutboxSnapshots()
     }
 
-    // MARK: Archive search (outside the synced window)
+    // MARK: State mutation
 
-    /// A deliberate, explicit "search all mail" act — never triggered per
-    /// keystroke. Delegates to the provider's server-side search
-    /// (`MailProvider.searchThreads`), which reaches Gmail's full archive,
-    /// not just the locally-synced window `ThreadSearch` filters.
+    /// The complete set of writes to this type's published state that happen
+    /// outside this file.
     ///
-    /// Every hit is cached locally via `store.upsertThread` so the thread
-    /// becomes a normal store row from then on — it opens, renders, and can
-    /// be archived/replied like any synced thread, with its body still
-    /// fetched lazily exactly as today. That matters because a 6-month-old
-    /// hit lands in a month-shard the Inbox's windowed view (`RavenViewModel.
-    /// reload`, `RavenMCPOperations.recentMonths`) never loads — caching it
-    /// does NOT make it show up in the Inbox list. This is deliberate, not a
-    /// gap: `archiveSearchState` is surfaced as its OWN "results from all
-    /// mail" list, kept visibly separate from the Inbox's windowed view,
-    /// rather than silently blending an archive hit into a list whose whole
-    /// contract is "the last 90 days" — the honest presentation the task
-    /// calls for. Selecting a hit from that list still works normally
-    /// (`RavenViewModel.select`/`store.thread`), since `upsertThread` already
-    /// made it a real row.
+    /// Swift's `private(set)` is file-scoped, so an extension in another file
+    /// cannot assign to `syncStates`/`syncErrors`/`truncatedBackfills`/
+    /// `archiveSearchState` — and widening them to `internal(set)` would hand
+    /// every view and every MCP operation in `RavenFeature` blanket write
+    /// access to the sync state, which is exactly the second source of truth a
+    /// file split must not create. These named mutators are the narrower
+    /// alternative: the setters stay closed, each write is a documented
+    /// operation on ONE account rather than an assignment to a whole
+    /// dictionary, and this section is the single place to look to enumerate
+    /// every mutation the extensions can perform.
+
+    /// Records `accountID`'s sync state. Called from `syncAccount`,
+    /// `runBackfill` and `mirrorSyncEngineState`.
+    func setSyncState(_ state: SyncState, for accountID: String) {
+        syncStates[accountID] = state
+    }
+
+    /// Records (or clears, with `nil`) `accountID`'s most recent sync failure.
+    /// Per-account on purpose: one account's failure must never overwrite
+    /// another's.
+    func setSyncError(_ message: String?, for accountID: String) {
+        syncErrors[accountID] = message
+    }
+
+    /// Records whether `accountID`'s most recent backfill stopped early.
+    func setTruncated(_ truncated: Bool, for accountID: String) {
+        if truncated { truncatedBackfills.insert(accountID) }
+        else { truncatedBackfills.remove(accountID) }
+    }
+
+    /// Recomputes the one-line roll-up from the per-account errors. Ordered by
+    /// account id so the line shown is deterministic rather than dependent on
+    /// which account's sync finished last, and `nil` only when NO account is
+    /// currently failing.
     ///
-    /// Failure is distinguishable from an empty result: `.failed` carries a
-    /// short, safe message (never Gmail's raw response body — see
-    /// `GmailProvider.perform`'s documentation for why that must never reach
-    /// a persisted field) while `.results([])` means the provider actually
-    /// ran and genuinely found nothing.
-    /// Searches one account, or — with no argument — every attached account,
-    /// merging the hits into one date-ordered list via `UnifiedInbox.merge` so
-    /// the results read exactly like the unified Inbox does, each row still
-    /// attributed to the account it came from.
-    ///
-    /// With several accounts, `.failed` means EVERY account that was asked
-    /// failed. If one account answers and another errors, the answer is
-    /// `.results` for what was actually found — silently reporting a total
-    /// failure would hide real hits, and reporting a clean success would hide
-    /// nothing more than the M0 single-account case already did. A search with
-    /// no attached providers at all is `.failed`, not an empty result, exactly
-    /// as before.
-    public func searchArchive(query: String, accountID: String? = nil) async {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { archiveSearchState = .idle; return }
-        let targets = accountID.map { [$0] } ?? providers.attachedAccountIDs
-        guard !targets.isEmpty else {
-            archiveSearchState = .failed(Self.archiveSearchFailureMessage(
-                MailError.notAuthenticated(accountID: accountID ?? "")))
-            return
-        }
-        archiveSearchState = .searching
-        var groups: [[ThreadSummary]] = []
-        var failure: String?
-        var succeeded = false
-        for target in targets {
-            guard let provider = providers.provider(for: target) else {
-                failure = failure ?? Self.archiveSearchFailureMessage(
-                    MailError.notAuthenticated(accountID: target))
-                continue
-            }
-            do {
-                let threads = try await provider.searchThreads(query: trimmed, limit: 50)
-                for thread in threads {
-                    try? store.upsertThread(thread)
-                }
-                groups.append(threads.map { $0.summary() })
-                succeeded = true
-            } catch {
-                failure = failure ?? Self.archiveSearchFailureMessage(error)
-            }
-        }
-        if !succeeded, let failure {
-            archiveSearchState = .failed(failure)
-            return
-        }
-        archiveSearchState = .results(UnifiedInbox.merge(groups))
+    /// The sole writer of `lastSyncError`, which is why that property's
+    /// `didSet` mirror into `model` cannot be bypassed.
+    func refreshAggregateSyncError() {
+        lastSyncError = syncErrors.keys.sorted().compactMap { syncErrors[$0] }.first
     }
 
-    /// Clears the last archive search — called when the search field itself
-    /// is cleared or edited, so a stale "results from all mail" list never
-    /// lingers next to a search string that no longer produced it.
-    public func clearArchiveSearch() {
-        archiveSearchState = .idle
+    /// The only write to `archiveSearchState`. `RavenRuntime+ArchiveSearch.swift`
+    /// is its only caller.
+    func setArchiveSearchState(_ state: ArchiveSearchState) {
+        archiveSearchState = state
     }
-
-    /// Maps a thrown error to a short, user-safe message — reusing
-    /// `MailError`'s existing cases rather than `String(describing:)`-ing an
-    /// arbitrary error, which for `.providerFailed` could echo a Gmail
-    /// response body. Never written to `MailAccount.lastError` (that field is
-    /// document-backed and persisted); this only ever feeds `archiveSearchState`.
-    private static func archiveSearchFailureMessage(_ error: Error) -> String {
-        switch error {
-        case MailError.notAuthenticated:
-            return "No account connected."
-        case MailError.rateLimited(let retryAfter):
-            return "Gmail rate-limited this search; try again in \(Int(retryAfter))s."
-        case MailError.providerFailed(let status, _):
-            return "Search all mail failed (status \(status))."
-        case MailError.decodingFailed:
-            return "Search all mail failed to decode the provider's response."
-        default:
-            return "Search all mail failed."
-        }
-    }
-
-    // MARK: Bodies
-
-    /// Returns the cached body if the store already has one, otherwise fetches
-    /// it from the provider. The fetch (and the HTML-to-plain-text sanitizing
-    /// it triggers inside `GmailMapping.body`, which the brief clocks at
-    /// ~0.5s on a ~1MB body) runs off the main actor via `Task.detached` —
-    /// this method is `async` precisely so callers await it rather than
-    /// blocking the UI while it runs.
-    /// The account is resolved from the message's own thread, so with several
-    /// accounts connected a body is fetched by the mailbox it actually belongs
-    /// to — and cached under that same account, so sign-out purges it.
-    public func loadBody(for message: MailMessage) async -> MessageBody? {
-        if let cached = store.body(messageID: message.id) { return cached }
-        guard let accountID = store.thread(message.threadID)?.accountID,
-              let provider = providers.provider(for: accountID) else { return nil }
-        do {
-            let body = try await Task.detached {
-                try await provider.fetchBody(messageID: message.id)
-            }.value
-            // Attributed to the account that fetched it, so sign-out can purge
-            // it even if this message's thread document never lands.
-            try? store.saveBody(body, accountID: accountID)
-            return body
-        } catch {
-            host.log.error("RavenRuntime.loadBody failed for \(message.id): \(error)")
-            return nil
-        }
-    }
-
-    // MARK: Attachments
-
-    /// Fetches one attachment's bytes on demand, off the main actor — never
-    /// written to a cache directory (see the task report's attachment-fetch
-    /// notes). `nil` when there is no attached provider or the fetch fails;
-    /// the caller (the Thread surface's chip tap handler) treats that as "try
-    /// again later" rather than crashing.
-    public func fetchAttachment(_ attachment: MailAttachment, messageID: String,
-                                threadID: String) async -> Data? {
-        guard let accountID = store.thread(threadID)?.accountID,
-              let provider = providers.provider(for: accountID) else { return nil }
-        do {
-            return try await Task.detached {
-                try await provider.fetchAttachment(messageID: messageID,
-                                                    attachmentID: attachment.attachmentID)
-            }.value
-        } catch {
-            host.log.error("RavenRuntime.fetchAttachment failed for \(attachment.attachmentID): \(error)")
-            return nil
-        }
-    }
-
-    // MARK: Remote-image opt-in (persisted per sender)
-
-    /// Whether `sender`'s remote images auto-load without the user pressing
-    /// "Load images" again — see `RemoteImageAllowList`. Unknown senders
-    /// default to blocked; this must never default to `true`.
-    public func imagesAllowed(for sender: String) -> Bool {
-        RemoteImageAllowList.isAllowed(sender, documents: host.documents)
-    }
-
-    /// Persists that `sender`'s images should auto-load from now on.
-    public func allowImages(for sender: String) {
-        RemoteImageAllowList.allow(sender, documents: host.documents)
-    }
-
-    /// Every sender previously granted "Load images", for the Privacy group in
-    /// Settings to list. A read only — granting still happens exclusively from
-    /// the message the user was looking at when they decided.
-    public var allowedImageSenders: [String] {
-        RemoteImageAllowList.allowedSenders(documents: host.documents)
-    }
-
-    /// Withdraws a previous grant, so that sender's images are blocked again.
-    public func revokeImages(for sender: String) {
-        RemoteImageAllowList.revoke(sender, documents: host.documents)
-    }
-
-    // MARK: Compose (reply/reply-all/forward)
-
-    /// The address of the account that owns `accountID`, so `ReplyComposer` can
-    /// exclude it from a reply-all — never mail yourself. Takes the account
-    /// explicitly (the caller reads it off the thread being replied to) rather
-    /// than guessing at "the" account, which with several connected would
-    /// exclude the wrong address and mail the user their own mailbox.
-    public func ownAddress(for accountID: String) -> String? {
-        store.accounts().first { $0.id == accountID }?.address
-    }
-
-    /// Sends a reply/reply-all/forward composed on the Thread surface through
-    /// the exact same queue-drain-classify path every other send in this app
-    /// uses (`SendAttempt`) — see that type's documentation for why sending
-    /// lives in exactly one place. No draft id: a thread reply is not backed
-    /// by a `DraftBox` entry.
-    public func sendThreadReply(_ message: OutgoingMessage) async throws -> SendAttempt.Result {
-        try await SendAttempt.send(message, draftID: nil, outbox: outbox, store: store,
-                                   holdUntil: Date().addingTimeInterval(holdWindow),
-                                   drain: drainOutbox)
-    }
-
-    /// The undo-send hold window applied to every real send this runtime
-    /// issues (compose, reply, and — see `RavenMCPOperations`'s `send_draft`
-    /// documentation — Sage's `send_draft` too). Configurable from Accounts;
-    /// `SendAttempt.defaultHoldWindow` (20s) until the user changes it.
-    /// Persisted as a document since it is a preference, not a secret.
-    public var holdWindow: TimeInterval {
-        get {
-            guard let data = host.documents.data(forKey: Self.holdWindowKey),
-                  let seconds = try? JSONDecoder().decode(Double.self, from: data)
-            else { return SendAttempt.defaultHoldWindow }
-            return seconds
-        }
-        set {
-            if let data = try? JSONEncoder().encode(newValue) {
-                host.documents.setData(data, forKey: Self.holdWindowKey)
-            }
-        }
-    }
-    private static let holdWindowKey = "send-hold-window-seconds"
 }
