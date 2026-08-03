@@ -86,6 +86,13 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     /// Not resumed once cancelled — a closed instance must stop calling
     /// Gmail, not just stop being observed.
     private var syncTask: Task<Void, Never>?
+    /// The detached 90-day backfill kicked off by `connectAccount`/
+    /// `resyncFromScratch`. Cancelled (never resumed) in `teardown()`, exactly
+    /// like `syncTask` — a closed instance must stop calling Gmail — and also
+    /// cancelled when the account it belongs to is signed out, so a backfill
+    /// for an account that no longer exists locally cannot keep writing to
+    /// the store underneath it.
+    private var backfillTask: Task<Void, Never>?
     private var contextToken: PluginContextToken?
     private var actionTokens: [AgentActionToken] = []
 
@@ -124,9 +131,30 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         self.outbox = outbox
         self.model = RavenViewModel(store: store, outbox: outbox)
 
-        if let idData = host.documents.data(forKey: Self.clientIDKey),
+        // Baked credentials (see `BakedOAuthCredentials` / `isCredentialsBaked`)
+        // are preferred over anything the user typed in manually — that is
+        // the whole point of baking them in: the Accounts surface should
+        // need to show only a Connect button. `BakedOAuthCredentials.
+        // clientSecret` is read directly into `GmailAuth`'s init argument and
+        // never written to `host.secrets` or `host.documents` — that keeps
+        // the number of at-rest copies of the secret to the one already
+        // compiled into the binary, rather than adding a Keychain copy of a
+        // value the binary already carries. (The refresh TOKEN `GmailAuth`
+        // obtains once the user signs in is still persisted to
+        // `host.secrets` exactly as before — that is a real per-account
+        // credential, not a static baked-in client secret, and there is only
+        // one of it regardless.)
+        if let clientID = BakedOAuthCredentials.clientID, let clientSecret = BakedOAuthCredentials.clientSecret {
+            let auth = GmailAuth(secrets: host.secrets, clientID: clientID, clientSecret: clientSecret)
+            self.auth = auth
+            if let account = store.accounts().first {
+                attach(provider: GmailProvider(accountID: account.id, auth: auth), accountID: account.id)
+            }
+        } else if let idData = host.documents.data(forKey: Self.clientIDKey),
            let clientID = String(data: idData, encoding: .utf8),
            let clientSecret = host.secrets.secret(forKey: Self.clientSecretKey) {
+            // Fallback for a developer build with no Config/oauth-client.json:
+            // the manually-entered credentials saved via `saveCredentials`.
             let auth = GmailAuth(secrets: host.secrets, clientID: clientID, clientSecret: clientSecret)
             self.auth = auth
             if let account = store.accounts().first {
@@ -157,6 +185,8 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     public func teardown() {
         syncTask?.cancel()
         syncTask = nil
+        backfillTask?.cancel()
+        backfillTask = nil
         if let contextToken {
             host.context.remove(contextToken)
             self.contextToken = nil
@@ -173,10 +203,20 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
     /// the user typed it into. There is deliberately no equivalent getter for
     /// the secret; see `clientSecretKey`.
     public var savedClientID: String? {
-        host.documents.data(forKey: Self.clientIDKey).flatMap { String(data: $0, encoding: .utf8) }
+        BakedOAuthCredentials.clientID
+            ?? host.documents.data(forKey: Self.clientIDKey).flatMap { String(data: $0, encoding: .utf8) }
     }
 
     public var hasCredentials: Bool { auth != nil }
+
+    /// Whether `BakedOAuthCredentials` supplied both values at build time
+    /// (see `scripts/generate-oauth-credentials.sh`). When true, the
+    /// Accounts surface shows only the Connect button and the connected
+    /// account — no manual client id/secret fields, since there is nothing
+    /// for the user to enter.
+    public var isCredentialsBaked: Bool {
+        BakedOAuthCredentials.clientID != nil && BakedOAuthCredentials.clientSecret != nil
+    }
 
     public func saveCredentials(clientID: String, clientSecret: String) {
         guard let data = clientID.data(using: .utf8) else { return }
@@ -193,9 +233,16 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
 
     public var accounts: [MailAccount] { store.accounts() }
 
-    /// Runs the loopback OAuth flow, saves the resulting account, and kicks
-    /// off its first backfill. `onAuthorizationURL` lets the caller present
-    /// the URL if the browser doesn't visibly pop (see `GmailAuth.authorize`).
+    /// Runs the loopback OAuth flow, saves the resulting account, attaches
+    /// its provider, and returns — WITHOUT waiting for the 90-day backfill
+    /// that follows. The account is already saved as `.syncing` by the time
+    /// this returns, so the Connect button's `Task` completes as soon as the
+    /// browser sign-in itself finishes, not a minute later once every thread
+    /// in the window has been fetched. The backfill itself runs as a
+    /// separate, detached task (`startBackfill()`) that publishes progress
+    /// into `syncState`/`model` as it goes — see that method's documentation.
+    /// `onAuthorizationURL` lets the caller present the URL if the browser
+    /// doesn't visibly pop (see `GmailAuth.authorize`).
     public func connectAccount(onAuthorizationURL: (@Sendable (URL) -> Void)? = nil) async throws {
         guard let auth else { throw MailError.notAuthenticated(accountID: "") }
         let (accountID, address) = try await auth.authorize(onAuthorizationURL: onAuthorizationURL)
@@ -203,7 +250,21 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
                                           displayName: address, state: .syncing))
         attach(provider: GmailProvider(accountID: accountID, auth: auth), accountID: accountID)
         model.accountID = accountID
-        await runBackfill()
+        model.reload()
+        startBackfill()
+    }
+
+    /// Kicks off `runBackfill()` in a new detached-from-the-caller `Task`
+    /// (still `@MainActor`-isolated, same as `startSyncTimer`'s poll loop) so
+    /// whoever calls this (`connectAccount`, `resyncFromScratch`) does not
+    /// block on it. Cancels any backfill already in flight first — starting
+    /// a second one for the same runtime while the first is still walking
+    /// pages would race writes into the same store.
+    private func startBackfill() {
+        backfillTask?.cancel()
+        backfillTask = Task { [weak self] in
+            await self?.runBackfill()
+        }
     }
 
     /// Signing out must leave nothing of the account behind. Three things go,
@@ -231,6 +292,11 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         }
         refreshOutboxSnapshots()
         if providerProxy.accountID == accountID {
+            // A backfill in flight for this account must stop too — it would
+            // otherwise keep fetching and writing threads for an account this
+            // instance no longer has a provider for.
+            backfillTask?.cancel()
+            backfillTask = nil
             providerProxy.current = nil
             syncEngine = nil
             outbox.accountID = nil
@@ -302,14 +368,39 @@ final class RavenProviderProxy: MailProvider, @unchecked Sendable {
         model.reload()
     }
 
+    /// Runs a full backfill and, for as long as it is in flight, mirrors
+    /// `syncEngine.state` (which `SyncEngine.backfill()` updates to
+    /// `.backfilling(threadsSynced:)` after every page) into `syncState` and
+    /// re-reloads `model` every half second. That is what lets the Accounts
+    /// surface show "Syncing… N threads" instead of a blank spinner, and lets
+    /// the Inbox populate underneath as pages land — the whole point of the
+    /// store being offline-first. The poller and `syncEngine.backfill()` are
+    /// both `@MainActor`, so they interleave cooperatively at suspension
+    /// points (network awaits) without racing each other's reads/writes.
+    ///
+    /// A failure here is NOT swallowed: `SyncEngine.backfill()` already
+    /// records it onto the account's `state`/`lastError` before rethrowing
+    /// (see that method), and the `catch` below additionally surfaces it via
+    /// `lastSyncError`, matching `syncNow()`/`syncOnce()`'s existing
+    /// convention — so a failure in this now-detached call still reaches the
+    /// UI exactly as it did when `connectAccount` awaited it inline.
     private func runBackfill() async {
         guard let syncEngine else { return }
+        let progressTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, let self, let syncEngine = self.syncEngine else { return }
+                self.syncState = syncEngine.state
+                self.model.reload()
+            }
+        }
         do {
             try await syncEngine.backfill()
             lastSyncError = nil
         } catch {
             lastSyncError = String(describing: error)
         }
+        progressTask.cancel()
         syncState = syncEngine.state
         lastBackfillTruncated = syncEngine.lastBackfillTruncated
         model.reload()

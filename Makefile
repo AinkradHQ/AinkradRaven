@@ -16,7 +16,7 @@ export DEVELOPER_DIR
 HOST_BUNDLE_ID ?= com.ainkrad.app
 DEV_PLUGINS := $(HOME)/Library/Application Support/$(HOST_BUNDLE_ID)/Cache/DevPlugins
 
-generate: ; xcodegen generate
+generate: ; ./scripts/generate-oauth-credentials.sh && xcodegen generate
 build: generate ; xcodebuild -scheme RavenPlugin -configuration Debug -derivedDataPath build -destination 'platform=macOS' build
 sideload: build
 	mkdir -p "$(DEV_PLUGINS)"

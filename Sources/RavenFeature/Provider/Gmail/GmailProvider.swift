@@ -85,35 +85,67 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
 
     // MARK: MailProvider
 
+    /// Bound on concurrent per-thread fetches below. Gmail rate-limits
+    /// aggressively (see the 429 handling in `perform`), so this is a small
+    /// cap rather than "fire them all at once" — 5-6 in flight is enough to
+    /// turn a ~50-thread page from 50 sequential round trips into ~10 while
+    /// staying well clear of the limiter SyncEngine has to fail on.
+    private static let maxConcurrentThreadFetches = 5
+
     public func fetchThreads(since: Date, pageToken: String?) async throws -> ThreadPage {
         var query = [URLQueryItem(name: "q", value: "after:\(Int(since.timeIntervalSince1970))"),
                      URLQueryItem(name: "maxResults", value: "50")]
         if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
         let list = try await get(GmailListDTO.self, path: "threads", query: query)
+        let references = list.threads ?? []
 
-        var threads: [MailThread] = []
-        for reference in list.threads ?? [] {
-            do {
-                threads.append(try await fetchThread(id: reference.id))
-            } catch MailError.unknownThread {
-                // Genuinely gone: a thread listed on page N can be deleted
-                // before we fetch it. Skipping is correct — there is nothing
-                // to store and it will never come back.
-                continue
+        // Fetched with BOUNDED concurrency (see `maxConcurrentThreadFetches`),
+        // but slotted back into `slots` by original index so the returned
+        // page's order is deterministic regardless of which request answers
+        // first — callers (and tests) depend on that order matching the
+        // listing order.
+        var slots = [MailThread?](repeating: nil, count: references.count)
+        try await withThrowingTaskGroup(of: (Int, MailThread?).self) { group in
+            var nextIndex = 0
+            func scheduleNext() {
+                guard nextIndex < references.count else { return }
+                let index = nextIndex
+                let id = references[index].id
+                nextIndex += 1
+                group.addTask {
+                    do {
+                        return (index, try await self.fetchThread(id: id))
+                    } catch MailError.unknownThread {
+                        // Genuinely gone: a thread listed on page N can be
+                        // deleted before we fetch it. Skipping (nil) is
+                        // correct — there is nothing to store and it will
+                        // never come back.
+                        return (index, nil)
+                    }
+                    // Everything else (429, 500, a network blip) is
+                    // TRANSIENT and is deliberately rethrown rather than
+                    // swallowed. `SyncEngine.backfill()` seeds `syncCursor`
+                    // on success, so a silently dropped thread here would be
+                    // filed behind the cursor and no delta would ever
+                    // re-deliver it — permanent, invisible mail loss. Failing
+                    // the whole page instead means the cursor is NOT seeded
+                    // and the next backfill re-walks: backfill is a fresh
+                    // page walk and `upsertThread` is idempotent, so retrying
+                    // costs bandwidth and nothing else. That is the opposite
+                    // trade from `syncDelta`, where the *cursor* is the thing
+                    // that cannot be replayed. Do not "simplify" this back
+                    // into `try?`.
+                }
             }
-            // Everything else (429, 500, a network blip) is TRANSIENT and is
-            // deliberately rethrown rather than swallowed. `SyncEngine.
-            // backfill()` seeds `syncCursor` on success, so a silently dropped
-            // thread here would be filed behind the cursor and no delta would
-            // ever re-deliver it — permanent, invisible mail loss. Failing the
-            // page instead means the cursor is NOT seeded and the next
-            // backfill re-walks: backfill is a fresh page walk and
-            // `upsertThread` is idempotent, so retrying costs bandwidth and
-            // nothing else. That is the opposite trade from `syncDelta`, where
-            // the *cursor* is the thing that cannot be replayed. Do not
-            // "simplify" this back into `try?`.
+            for _ in 0..<min(Self.maxConcurrentThreadFetches, references.count) {
+                scheduleNext()
+            }
+            while let (index, thread) = try await group.next() {
+                slots[index] = thread
+                scheduleNext()
+            }
         }
-        return ThreadPage(threads: threads, nextPageToken: list.nextPageToken)
+        return ThreadPage(threads: slots.compactMap { $0 }, nextPageToken: list.nextPageToken)
     }
 
     public func fetchThread(id: String) async throws -> MailThread {

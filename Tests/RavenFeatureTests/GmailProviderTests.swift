@@ -168,6 +168,71 @@ struct GmailProviderTests {
         #expect(page.threads.map(\.id) == ["19fc3a0d1591338e"])
     }
 
+    // MARK: fetchThreads concurrency
+
+    /// `fetchThreads` fetches per-thread bodies with bounded concurrency
+    /// (Task 9/post-launch fix), which previously issued one sequential
+    /// round trip per thread. Concurrency must not scramble the page's
+    /// order: callers depend on `page.threads` matching the listing order
+    /// from Gmail, not whichever request happens to answer first.
+    @Test("fetchThreads returns threads in listing order even though they are fetched concurrently")
+    func fetchThreadsPreservesOrderUnderConcurrency() async throws {
+        let provider = makeProvider()
+        // More ids than the concurrency cap, so at least one batch has to
+        // schedule a second wave — if slot placement used completion order
+        // instead of the original index, this would be the case most likely
+        // to show it.
+        let ids = (0..<9).map { "t\($0)" }
+        StubURLProtocol.handler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/threads") {
+                let refs = ids.map { "{\"id\":\"\($0)\"}" }.joined(separator: ",")
+                return (200, [:], Data("{\"threads\":[\(refs)]}".utf8))
+            }
+            let id = String(path.split(separator: "/").last ?? "")
+            let thread = "{\"id\":\"\(id)\",\"historyId\":\"1\",\"messages\":[" +
+                "{\"id\":\"\(id)\",\"threadId\":\"\(id)\",\"labelIds\":[]," +
+                "\"snippet\":\"\",\"payload\":{\"headers\":[]}}]}"
+            return (200, [:], Data(thread.utf8))
+        }
+        defer { StubURLProtocol.handler = nil }
+
+        let page = try await provider.fetchThreads(since: Date(timeIntervalSince1970: 0),
+                                                    pageToken: nil)
+        #expect(page.threads.map(\.id) == ids)
+    }
+
+    /// The skip-on-404 semantics (`vanishedThreadDuringListingIsSkipped`
+    /// above) must keep holding once fetches run concurrently: a vanished
+    /// thread in the middle of a larger page is dropped, and every other
+    /// thread still comes back in order.
+    @Test("a vanished thread in the middle of a larger page is skipped without disturbing the order of the rest")
+    func vanishedThreadAmongManyIsSkippedInOrder() async throws {
+        let provider = makeProvider()
+        let ids = (0..<8).map { "t\($0)" }
+        let goneID = "t4"
+        StubURLProtocol.handler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/threads") {
+                let refs = ids.map { "{\"id\":\"\($0)\"}" }.joined(separator: ",")
+                return (200, [:], Data("{\"threads\":[\(refs)]}".utf8))
+            }
+            let id = String(path.split(separator: "/").last ?? "")
+            if id == goneID {
+                return (404, [:], Data(#"{"error":{"message":"not found"}}"#.utf8))
+            }
+            let thread = "{\"id\":\"\(id)\",\"historyId\":\"1\",\"messages\":[" +
+                "{\"id\":\"\(id)\",\"threadId\":\"\(id)\",\"labelIds\":[]," +
+                "\"snippet\":\"\",\"payload\":{\"headers\":[]}}]}"
+            return (200, [:], Data(thread.utf8))
+        }
+        defer { StubURLProtocol.handler = nil }
+
+        let page = try await provider.fetchThreads(since: Date(timeIntervalSince1970: 0),
+                                                    pageToken: nil)
+        #expect(page.threads.map(\.id) == ids.filter { $0 != goneID })
+    }
+
     // MARK: send() / raw RFC822 encoding
 
     @Test("send's raw RFC822 round-trips an ASCII subject and body correctly")

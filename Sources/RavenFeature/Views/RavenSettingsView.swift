@@ -42,32 +42,51 @@ public struct RavenSettingsView: View {
     private var credentialsPanel: some View {
         AinkradSettingsPanel(
             title: "Gmail account",
-            hint: "The Desktop OAuth client id and secret from Google Cloud Console. " +
+            hint: runtime.isCredentialsBaked
+                ? "OAuth credentials are built into this app — just connect."
+                : "The Desktop OAuth client id and secret from Google Cloud Console. " +
                   "The secret is stored in the system Keychain, never as a plain document."
         ) {
             VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
-                AinkradFormRow(title: "Client ID") {
-                    AinkradTextField(text: $clientID, placeholder: "xxxx.apps.googleusercontent.com")
-                        .frame(width: 340)
-                }
-                AinkradFormRow(title: "Client secret") {
-                    AinkradSecureField(text: $clientSecret, placeholder: "Client secret")
-                        .frame(width: 340)
+                // With baked credentials there is nothing for the user to
+                // type — showing the fields anyway would invite them to
+                // (harmlessly, but confusingly) overwrite a working client
+                // id/secret with their own. Manual entry is a fallback for a
+                // developer build with no `Config/oauth-client.json`, shown
+                // ONLY when nothing was baked in.
+                if !runtime.isCredentialsBaked {
+                    AinkradFormRow(title: "Client ID") {
+                        AinkradTextField(text: $clientID, placeholder: "xxxx.apps.googleusercontent.com")
+                            .frame(width: 340)
+                    }
+                    AinkradFormRow(title: "Client secret") {
+                        AinkradSecureField(text: $clientSecret, placeholder: "Client secret")
+                            .frame(width: 340)
+                    }
                 }
                 if let connectError {
                     AinkradBanner(message: connectError, status: .danger,
                                   onDismiss: { self.connectError = nil })
                 }
+                if !runtime.isCredentialsBaked && !runtime.hasCredentials {
+                    // Neither baked nor previously saved: there is no way
+                    // this button could work yet. Disabled with a clear
+                    // reason rather than enabled-but-guaranteed-to-fail (or,
+                    // worse, a spinner that can never resolve).
+                    AinkradBanner(message: "Enter a Gmail OAuth client id and secret above to " +
+                                  "enable Connect.", status: .warning)
+                }
                 AinkradButton(title: "Connect", style: .primary, icon: "person.badge.plus",
                               isLoading: isConnecting, action: connect)
-                    .disabled(clientID.isEmpty || (clientSecret.isEmpty && !runtime.hasCredentials)
+                    .disabled(!runtime.isCredentialsBaked &&
+                              (clientID.isEmpty || (clientSecret.isEmpty && !runtime.hasCredentials))
                               || isConnecting)
             }
         }
     }
 
     private func connect() {
-        if !clientSecret.isEmpty || !runtime.hasCredentials {
+        if !runtime.isCredentialsBaked && (!clientSecret.isEmpty || !runtime.hasCredentials) {
             guard !clientSecret.isEmpty else {
                 connectError = "Enter the client secret to save new credentials."
                 return
@@ -130,6 +149,15 @@ public struct RavenSettingsView: View {
                     runtime.signOut(account.id)
                     accountsVersion += 1
                 })
+            }
+            if case .backfilling(let threadsSynced) = runtime.syncState {
+                // Live progress for the backfill `connectAccount`/
+                // `resyncFromScratch` now run detached (see
+                // `RavenRuntime.runBackfill`) — without this the Accounts
+                // surface would just sit on the "Syncing" badge with nothing
+                // else to look at for up to a minute.
+                Text("Syncing… \(threadsSynced) thread\(threadsSynced == 1 ? "" : "s")")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             if let lastSyncedAt = account.lastSyncedAt {
                 Text("Last synced \(lastSyncedAt.formatted(date: .abbreviated, time: .shortened))")
