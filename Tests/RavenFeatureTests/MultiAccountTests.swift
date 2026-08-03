@@ -295,6 +295,30 @@ import AinkradAppKit
         #expect(p1.sentMessages.isEmpty)
     }
 
+    @Test("signing out of one account leaves the other's rows in the unified inbox read")
+    func signOutLeavesOtherAccountInUnifiedInbox() async throws {
+        let host = FakeHostServices()
+        let runtime = RavenRuntime(host: host)
+        runtime.teardown()
+        try runtime.store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a1@x.com",
+                                                  displayName: "A1", state: .ready))
+        try runtime.store.saveAccount(MailAccount(id: "a2", provider: .gmail, address: "a2@x.com",
+                                                  displayName: "A2", state: .ready))
+        try runtime.store.upsertThread(thread("t1", account: "a1", subject: "one", date: Date()))
+        try runtime.store.upsertThread(thread("t2", account: "a2", subject: "two", date: Date()))
+        runtime.attachTestProvider(FakeMailProvider(accountID: "a1"), accountID: "a1")
+        runtime.attachTestProvider(FakeMailProvider(accountID: "a2"), accountID: "a2")
+        runtime.model.reload()
+        #expect(Set(runtime.model.summaries.map(\.id)) == ["t1", "t2"])
+
+        runtime.signOut("a1")
+
+        let rows = UnifiedInbox.inbox(store: runtime.store, months: UnifiedInbox.recentMonths())
+        #expect(rows.map(\.id) == ["t2"], "a2's rows must survive a1's sign-out, via the same shared read")
+        #expect(runtime.model.summaries.map(\.id) == ["t2"],
+                "model.reload(), called by signOut, must reflect the same surviving row")
+    }
+
     // MARK: MCP account awareness
 
     @Test("MCP reads with no account_id cover every account")
@@ -454,6 +478,32 @@ import AinkradAppKit
             return
         }
         #expect(hits.map(\.id) == ["hit-a2"])
+    }
+
+    // MARK: composingAccountID resolution
+
+    @Test("with one account composingAccountID resolves silently; with two it stays nil until chosen")
+    func composingAccountIDResolution() async throws {
+        let host = FakeHostServices()
+        let runtime = RavenRuntime(host: host)
+        runtime.teardown()
+        try runtime.store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a1@x.com",
+                                                  displayName: "A1", state: .ready))
+        runtime.attachTestProvider(FakeMailProvider(accountID: "a1"), accountID: "a1")
+
+        #expect(runtime.composingAccountID == "a1",
+                "a single connected account must resolve silently, with no picker needed")
+
+        try runtime.store.saveAccount(MailAccount(id: "a2", provider: .gmail, address: "a2@x.com",
+                                                  displayName: "A2", state: .ready))
+        runtime.attachTestProvider(FakeMailProvider(accountID: "a2"), accountID: "a2")
+
+        #expect(runtime.composingAccountID == nil,
+                "two connected accounts with none chosen must stay ambiguous, never accounts.first")
+
+        // Choosing one (the Inbox filter, or Compose's own picker) resolves it.
+        runtime.model.accountID = "a2"
+        #expect(runtime.composingAccountID == "a2")
     }
 
     // MARK: Router

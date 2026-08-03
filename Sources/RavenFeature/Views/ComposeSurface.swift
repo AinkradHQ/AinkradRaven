@@ -24,8 +24,25 @@ public struct ComposeSurface: View {
     /// Bumped after every draft mutation so the list re-reads `DraftBox`,
     /// which is a plain in-memory box rather than an `@Observable` type.
     @State private var draftsVersion = 0
+    /// The explicit sender for a NEW message, chosen from the picker below.
+    /// This is local to Compose, not `model.accountID` (the Inbox filter) —
+    /// picking a from-account for one message must not also re-scope the
+    /// Inbox list. `nil` until the user picks one; with a single connected
+    /// account there is nothing to pick, and `effectiveAccountID` resolves it
+    /// silently via `runtime.composingAccountID` instead.
+    @State private var selectedFromAccountID: String?
 
     public init(runtime: RavenRuntime) { self.runtime = runtime }
+
+    /// The account a NEW message actually goes out from: the picker's choice
+    /// if the user made one, otherwise whatever `RavenRuntime.
+    /// composingAccountID` already resolves unambiguously (the sole account,
+    /// or the Inbox's own filter). `nil` only when several accounts are
+    /// connected, none is the Inbox filter, and the picker has not been used
+    /// — exactly the case `send()` still refuses rather than guesses.
+    private var effectiveAccountID: String? {
+        selectedFromAccountID ?? runtime.composingAccountID
+    }
 
     public var body: some View {
         HStack(alignment: .top, spacing: AinkradSpacing.md) {
@@ -142,12 +159,16 @@ public struct ComposeSurface: View {
     private func clear() {
         editingDraftID = nil
         toChips = []; ccChips = []; subject = ""; bodyText = ""
+        selectedFromAccountID = nil
     }
 
     // MARK: Composer
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
+            if runtime.accounts.count > 1 {
+                fromAccountPicker
+            }
             RecipientChipField(label: "To", chips: $toChips, candidates: suggestionCandidates)
             RecipientChipField(label: "Cc", chips: $ccChips, candidates: suggestionCandidates)
             AinkradTextField(text: $subject, placeholder: "Subject")
@@ -169,6 +190,34 @@ public struct ComposeSurface: View {
         }
     }
 
+    /// Only for a NEW message — never shown for a reply/forward, which is
+    /// composed on `ThreadSurface`/`ReplyComposer` and never routes through
+    /// this view at all (its account comes from the thread being replied to,
+    /// via `RavenRuntime.ownAddress`/`sendThreadReply`, with no override).
+    /// `nil` renders as "Choose account" so an ambiguous send is visibly
+    /// unresolved rather than looking like a default was silently picked.
+    private var fromAccountPicker: some View {
+        AinkradFieldWrap(label: "From") {
+            AinkradSegmentedPicker(
+                items: [nil] + runtime.accounts.map { Optional($0.id) },
+                selection: $selectedFromAccountID,
+                label: { accountID in
+                    guard let accountID else {
+                        // The "no explicit pick" segment. If something already
+                        // resolves unambiguously (the Inbox's own filter), say
+                        // which — otherwise this is genuinely unresolved, and
+                        // `send()` refuses until a real segment is picked.
+                        if let resolved = runtime.composingAccountID {
+                            let address = runtime.accounts.first { $0.id == resolved }?.address
+                            return address ?? resolved
+                        }
+                        return "Choose account"
+                    }
+                    return runtime.accounts.first { $0.id == accountID }?.address ?? accountID
+                })
+        }
+    }
+
     /// Attributed to the composing account (`RavenRuntime.composingAccountID`)
     /// so the outbox transmits it through that mailbox's provider and
     /// `SendAttempt` appends that account's signature.
@@ -178,7 +227,7 @@ public struct ComposeSurface: View {
             cc: ComposeValidation.validAddresses(ccChips),
             subject: subject,
             bodyText: bodyText,
-            accountID: runtime.composingAccountID)
+            accountID: effectiveAccountID)
     }
 
     private func saveDraft() {
@@ -202,12 +251,11 @@ public struct ComposeSurface: View {
     private func send() {
         guard ComposeValidation.canSend(toChips) else { return }
         // Refuses rather than guessing which mailbox this goes out from — see
-        // `RavenRuntime.composingAccountID`. Nothing is queued, so nothing can
-        // later leave from the wrong address.
-        guard runtime.composingAccountID != nil else {
+        // `effectiveAccountID`/`RavenRuntime.composingAccountID`. Nothing is
+        // queued, so nothing can later leave from the wrong address.
+        guard effectiveAccountID != nil else {
             errorMessage = "Several accounts are connected, so Raven cannot tell which one " +
-                           "should send this. Filter the Inbox to one account first; nothing " +
-                           "was queued."
+                           "should send this. Choose a From account above; nothing was queued."
             errorStatus = .warning
             return
         }

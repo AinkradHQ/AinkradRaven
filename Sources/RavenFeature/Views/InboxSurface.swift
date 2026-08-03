@@ -40,6 +40,10 @@ public struct InboxSurface: View {
                     }
                 }
 
+            if runtime.accounts.count > 1 {
+                accountFilter
+            }
+
             if !model.multiSelection.isEmpty {
                 selectionBar
             }
@@ -56,6 +60,24 @@ public struct InboxSurface: View {
             model.reload()
             listFocused = true
         }
+    }
+
+    /// The per-account filter that drives `model.accountID` — and, through it,
+    /// `RavenViewModel.reload()`'s `scopedAccountIDs`, which is what actually
+    /// narrows `UnifiedInbox.inbox(store:accountIDs:months:)`. There is
+    /// deliberately no client-side re-filtering of an already-merged list
+    /// here: picking an account changes what gets READ, not what gets hidden
+    /// after the fact. Only shown once there is something to disambiguate —
+    /// with a single account this row would be pure noise.
+    private var accountFilter: some View {
+        AinkradSegmentedPicker(
+            items: [nil] + runtime.accounts.map { Optional($0.id) },
+            selection: $model.accountID,
+            label: { accountID in
+                guard let accountID else { return "All" }
+                return runtime.accounts.first { $0.id == accountID }?.address ?? accountID
+            })
+            .onChange(of: model.accountID) { _, _ in model.reload() }
     }
 
     /// A "results from all mail" list, kept visibly SEPARATE from the Inbox's
@@ -181,6 +203,9 @@ public struct InboxSurface: View {
             subtitle: subtitle(for: summary),
             trailing: {
                 HStack(spacing: AinkradSpacing.xs) {
+                    if let accountLabel = accountBadgeLabel(for: summary) {
+                        AinkradBadge(text: accountLabel, status: .neutral)
+                    }
                     if let error = model.rowErrors[summary.id] {
                         AinkradBadge(text: "!", status: .danger).ainkradTooltip(error)
                     }
@@ -236,6 +261,19 @@ public struct InboxSurface: View {
                 model.trash([summary.id])
             }
         ]
+    }
+
+    /// The account attribution badge text for a row, or `nil` when there is
+    /// nothing to disambiguate: with a single connected account, or with the
+    /// Inbox already filtered to exactly one, every row obviously belongs to
+    /// the same mailbox and a badge would be noise rather than information.
+    /// Present but unobtrusive is the point with several accounts unfiltered
+    /// — a short local part, not the full address, keeps the row's real
+    /// content (subject/snippet) the visual lead.
+    private func accountBadgeLabel(for summary: ThreadSummary) -> String? {
+        guard runtime.accounts.count > 1, model.accountID == nil else { return nil }
+        let address = model.address(ofAccount: summary.accountID) ?? summary.accountID
+        return String(address.split(separator: "@").first ?? Substring(address))
     }
 
     private func subtitle(for summary: ThreadSummary) -> String {

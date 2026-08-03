@@ -128,10 +128,45 @@ extension MutationOutbox {
     /// the entry still eligible, mark it in-flight again, and send the same
     /// email twice. Both filters are needed; neither subsumes the other.
     public func pending() -> [OutboxEntry] {
-        entries.filter {
+        reviewUnattributableLegacyEntries()
+        return entries.filter {
             !$0.isDeadLettered && !$0.needsReview && $0.inFlightAt == nil
                 && provider(forEntryAccount: $0.accountID) != nil
         }
+    }
+
+    /// An entry with no `accountID` at all — queued before per-account
+    /// routing existed, or by the single-provider convenience init/tests —
+    /// is not itself a problem: `provider(forEntryAccount:)`'s own fallback
+    /// resolves it to the claimed or sole account, exactly as intended for
+    /// that ordinary case, and such an entry is left alone here. The gap this
+    /// closes is narrower: a nil-stamped entry that fallback CANNOT resolve
+    /// — several real accounts routed and none claimed as the default — has
+    /// no account to fall back to and, left alone, would sit in `pending()`
+    /// forever without ever being drained OR being visible anywhere. Rather
+    /// than strand it silently, it is pulled into `needsReview()` so a human
+    /// sees it and can re-attribute (discard, or re-`enqueue` with an
+    /// explicit account) it. Re-checked on every `pending()`/`needsReview()`
+    /// read rather than once at load, since which accounts are attached can
+    /// change after the outbox itself is constructed (see `RavenRuntime.
+    /// init`, which attaches providers after the outbox already exists).
+    private func reviewUnattributableLegacyEntries() {
+        var changed = false
+        for index in entries.indices {
+            let entry = entries[index]
+            guard entry.accountID == nil, !entry.isDeadLettered, !entry.needsReview,
+                  entry.inFlightAt == nil, provider(forEntryAccount: nil) == nil
+            else { continue }
+            entries[index].needsReview = true
+            if entries[index].lastError == nil {
+                entries[index].lastError = "This operation has no attributed account, and no " +
+                    "connected account is an unambiguous default. Held for manual review rather " +
+                    "than guessed at, since guessing wrong would send or apply it against the " +
+                    "wrong mailbox."
+            }
+            changed = true
+        }
+        if changed { persistRecordingFailure() }
     }
 
     /// The provider that may transmit an entry stamped `entryAccountID`, or
@@ -169,7 +204,10 @@ extension MutationOutbox {
     /// they were in flight. Excluded from `pending()` so they are never
     /// silently retried; a human must resolve them (confirm the send did or
     /// didn't happen, then `discard` or re-`enqueue` as appropriate).
-    public func needsReview() -> [OutboxEntry] { entries.filter(\.needsReview) }
+    public func needsReview() -> [OutboxEntry] {
+        reviewUnattributableLegacyEntries()
+        return entries.filter(\.needsReview)
+    }
 
     /// Returns the id of the entry just queued, so a caller that must know
     /// this exact operation's fate (`SendAttempt`) can ask for it by id rather

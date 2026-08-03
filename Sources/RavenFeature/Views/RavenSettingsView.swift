@@ -22,6 +22,12 @@ public struct RavenSettingsView: View {
     /// Bumped after any mutation so this view re-reads `runtime.accounts`,
     /// which is a plain (non-`@Observable`) snapshot method.
     @State private var accountsVersion = 0
+    /// The account a sign-out confirmation is currently pending for, if any.
+    /// `signOut` is a surgical single-account purge (see `RavenRuntime.
+    /// signOut`'s own documentation) — the confirmation must name that
+    /// account's actual address, never a bare ambiguous "Sign out?", so the
+    /// account is captured here rather than the button acting immediately.
+    @State private var pendingSignOut: MailAccount?
 
     public init(runtime: RavenRuntime) { self.runtime = runtime }
 
@@ -35,6 +41,21 @@ public struct RavenSettingsView: View {
             .padding(AinkradSpacing.lg)
         }
         .ainkradPanel()
+        .ainkradConfirmDialog(
+            isPresented: Binding(
+                get: { pendingSignOut != nil },
+                set: { if !$0 { pendingSignOut = nil } }),
+            title: "Sign out",
+            message: "Sign out of \(pendingSignOut?.address ?? "this account")? Every local " +
+                     "copy of its mail and any queued sends for it will be removed from this " +
+                     "device. Other connected accounts are not affected.",
+            confirmTitle: "Sign Out",
+            isDestructive: true,
+            onConfirm: {
+                guard let account = pendingSignOut else { return }
+                runtime.signOut(account.id)
+                accountsVersion += 1
+            })
         .onAppear {
             clientID = runtime.savedClientID ?? clientID
             for account in runtime.accounts { signatures[account.id] = account.signature }
@@ -161,8 +182,7 @@ public struct RavenSettingsView: View {
                 statusBadge(account)
                 Spacer()
                 AinkradButton(title: "Sign Out", style: .danger, action: {
-                    runtime.signOut(account.id)
-                    accountsVersion += 1
+                    pendingSignOut = account
                 })
             }
             if case .backfilling(let threadsSynced) = runtime.syncState(for: account.id) {

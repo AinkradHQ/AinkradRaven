@@ -212,4 +212,58 @@ import Foundation
 
         #expect(outbox.pending().map(\.id) == [keep])
     }
+
+    // MARK: Legacy entries with no accountID
+
+    @Test("a legacy entry with no accountID is surfaced for review, not stranded, once it has no default account to fall back to")
+    func legacyEntryWithNoAccountIDNeedsReview() async throws {
+        let documents = InMemoryDocumentStore()
+        // Simulate a pre-M1 queue: encoded directly, with no `accountID`
+        // (`Outbox.enqueue` today would always stamp one).
+        let legacy = OutboxEntry(operation: .send(aMessage()))
+        #expect(legacy.accountID == nil)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        documents.setData(try encoder.encode([legacy]), forKey: DocumentKeys.outbox)
+
+        // Two real accounts routed, neither claimed as the outbox's default —
+        // exactly the case where the nil stamp's usual fallback (claimed
+        // account, else the sole provider) cannot resolve anything.
+        let router = MailProviderRouter()
+        let p1 = FakeMailProvider(accountID: "a1")
+        let p2 = FakeMailProvider(accountID: "a2")
+        router.attach(p1, accountID: "a1")
+        router.attach(p2, accountID: "a2")
+        let outbox = Outbox(documents: documents, router: router)
+
+        // Held for review rather than silently stranded in `pending()`
+        // forever, and rather than being guessed onto either mailbox.
+        #expect(outbox.pending().isEmpty)
+        #expect(outbox.needsReview().map(\.id) == [legacy.id])
+        #expect(outbox.needsReview().first?.lastError?.isEmpty == false)
+
+        await outbox.drain()
+        #expect(p1.sentMessages.isEmpty, "a legacy unattributed entry must never be guessed onto a1")
+        #expect(p2.sentMessages.isEmpty, "a legacy unattributed entry must never be guessed onto a2")
+    }
+
+    @Test("a legacy entry with no accountID drains normally while it still resolves to a sole account")
+    func legacyEntryWithNoAccountIDResolvesToSoleAccount() async throws {
+        let documents = InMemoryDocumentStore()
+        let legacy = OutboxEntry(operation: .send(aMessage()))
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        documents.setData(try encoder.encode([legacy]), forKey: DocumentKeys.outbox)
+
+        let provider = FakeMailProvider()
+        let outbox = Outbox(documents: documents, provider: provider)
+
+        // Exactly one account is connected, so the existing nil-stamp
+        // fallback (the sole attached provider) is unambiguous — this must
+        // NOT be redirected into needsReview.
+        #expect(outbox.needsReview().isEmpty)
+        await outbox.drain()
+        #expect(provider.sentMessages.count == 1)
+        #expect(outbox.pending().isEmpty)
+    }
 }
