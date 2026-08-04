@@ -24,4 +24,11 @@ public enum MailError: Error, Equatable {
     /// than left to the provider itself, so every caller gets the same
     /// refusal regardless of which read-only backend is attached.
     case readOnlyAccount(String)
+    /// The stored account names a provider kind this build cannot construct —
+    /// either `MailAccount.ProviderKind.unsupported` (a kind written by a
+    /// newer build) or a kind whose backend is not wired up yet. Thrown by
+    /// `ProviderFactory`, never by a provider: the account row itself stays
+    /// readable and every OTHER account stays attached, which is the whole
+    /// reason the kind decodes leniently in the first place.
+    case unsupportedProvider(kind: String, accountID: String)
 }

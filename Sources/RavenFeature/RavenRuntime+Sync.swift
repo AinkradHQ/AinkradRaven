@@ -210,17 +210,23 @@ extension RavenRuntime {
         model.reload()
     }
 
-    /// Test-only seam: attaches an arbitrary `MailProvider` (e.g.
-    /// `FakeMailProvider`) directly to the proxy, bypassing `attach(provider:
-    /// accountID:)`'s `GmailProvider`-specific signature. `RavenAgentBridgeTests`
-    /// already swaps `syncEngine` directly for the same reason (exercising a
-    /// real `RavenRuntime` without a live network); this lets `searchArchive`
-    /// be exercised the same way, without widening the public surface.
+    /// Test-only seam: attaches an arbitrary `MailProvider` to the router
+    /// WITHOUT building a `SyncEngine` for it — the difference from
+    /// `attach(provider:accountID:)` below, which is why it survived that
+    /// method losing its `GmailProvider`-specific signature.
+    /// `RavenAgentBridgeTests` already swaps `syncEngine` directly for the same
+    /// reason (exercising a real `RavenRuntime` without a live network); this
+    /// lets `searchArchive` be exercised the same way, without widening the
+    /// public surface.
     func attachTestProvider(_ provider: MailProvider, accountID: String) {
         providers.attach(provider, accountID: accountID)
     }
 
-    func attach(provider: GmailProvider, accountID: String) {
+    /// Attaches any `MailProvider` — no longer only Gmail's. `SyncEngine`
+    /// itself is provider-agnostic (it only calls `MailProvider`), so a
+    /// read-only backend attaches and backfills through exactly this path; its
+    /// mutations are refused later, at `MailProviderRouter.writableProvider`.
+    func attach(provider: MailProvider, accountID: String) {
         providers.attach(provider, accountID: accountID)
         let engine = SyncEngine(store: store, provider: provider, accountID: accountID)
         engine.onChange = { [weak self] in self?.mirrorSyncEngineState(accountID: accountID) }
@@ -229,19 +235,25 @@ extension RavenRuntime {
     }
 
     /// Attaches a provider for EVERY account already in the store — one per
-    /// account, so a relaunch restores every connected mailbox rather than the
-    /// arbitrary first one. Each account's refresh token is looked up by
-    /// `GmailAuth` under that account's id, so one `auth` serves them all.
+    /// account, whatever its kind, so a relaunch restores every connected
+    /// mailbox rather than the arbitrary first one.
     ///
-    /// Takes the `GmailAuth` as an argument rather than reading the runtime's
-    /// own `auth` property, which is what lets that property stay `private` to
-    /// `RavenRuntime.swift` — the credential path is not widened for the sake
-    /// of this file split. Both callers (`init` and `saveCredentials`) already
-    /// hold the value.
-    func attachStoredAccounts(auth: GmailAuth) {
+    /// Each account is built independently through `ProviderFactory`, and a
+    /// failure is logged and SKIPPED rather than thrown: one account naming a
+    /// kind this build cannot construct (a row written by a newer build, an
+    /// Apple Mail folder that no longer resolves) must not stop the accounts
+    /// after it from attaching. Nothing here logs an address or a token — only
+    /// the account id and the `String(describing:)` of the error, matching
+    /// `signOut`'s convention.
+    func attachStoredAccounts() {
         for account in store.accounts() {
-            attach(provider: GmailProvider(accountID: account.id, auth: auth),
-                   accountID: account.id)
+            do {
+                attach(provider: try providerFactory.makeProvider(for: account),
+                       accountID: account.id)
+            } catch {
+                host.log.error("Raven: account \(account.id) could not be attached: " +
+                               "\(String(describing: error))")
+            }
         }
     }
 }

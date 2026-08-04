@@ -31,8 +31,9 @@ import AinkradAppKit
 /// dictionaries below keep their `private(set)`: the extensions mutate them
 /// only through the named mutators in "State mutation" at the bottom of this
 /// file, so there is exactly one place to look to find every write to sync
-/// state. `auth` and the credential keys are the one thing that did NOT move
-/// and are still `private` to this file.
+/// state. The credential path no longer lives here at all: `ProviderFactory`
+/// owns it, along with every `MailProvider` construction, so this file names no
+/// provider and no auth type.
 @MainActor @Observable public final class RavenRuntime {
     public let store: DocumentMailStore
     public let outbox: Outbox
@@ -60,10 +61,14 @@ import AinkradAppKit
     /// documentation reads `host.documents`/`host.log` through it. Still
     /// invisible outside `RavenFeature`.
     let host: HostServices
-    /// Stays `private` — this is the credential path. Nothing outside this file
-    /// may read or replace it, which is why `attachStoredAccounts(auth:)` takes
-    /// the value as an argument instead of reading this property.
-    private var auth: GmailAuth?
+    /// The only construction site for any `MailProvider`, and the credential
+    /// path with it — see `ProviderFactory`. Replaces M0's single
+    /// `auth: GmailAuth?`, which made the runtime a Gmail-specific object.
+    /// Internal rather than private so `attachStoredAccounts()` in
+    /// `RavenRuntime+Sync.swift` can build providers through it; the factory
+    /// exposes no token and no secret getter, so this is narrower than the
+    /// `GmailAuth` it replaces despite the wider visibility.
+    let providerFactory: ProviderFactory
     /// One engine per connected account. Not `private` — see `syncEngine`
     /// below for the test seam that writes here.
     var syncEngines: [String: SyncEngine] = [:]
@@ -110,15 +115,6 @@ import AinkradAppKit
     private var contextToken: PluginContextToken?
     private var actionTokens: [AgentActionToken] = []
 
-    /// Not a credential — the OAuth client id is only ever a lookup key
-    /// against Google, and the user needs to see what they typed to fix a
-    /// typo. Persisted as a document, unlike the secret below.
-    private static let clientIDKey = "gmail-client-id"
-    /// The client secret IS a credential (see `GmailAuth`'s own documentation
-    /// of the same point). It is read from and written to `host.secrets`
-    /// ONLY — never `host.documents`, never logged, never echoed back into
-    /// any field.
-    private static let clientSecretKey = "gmail-client-secret"
     /// Read by `holdWindow` in `RavenRuntime+Preferences.swift`, hence internal
     /// rather than private. Not a secret — a preference.
     static let holdWindowKey = "send-hold-window-seconds"
@@ -191,6 +187,9 @@ import AinkradAppKit
 
     public init(host: HostServices) {
         self.host = host
+        // Built before anything that captures `self` (the outbox wake below),
+        // because a `let` must be initialized before `self` may escape.
+        self.providerFactory = ProviderFactory(host: host)
         let store = DocumentMailStore(documents: host.documents)
         self.store = store
 
@@ -210,32 +209,14 @@ import AinkradAppKit
         // `Outbox.onWake`'s own documentation.
         outbox.onWake = { [weak self] in await self?.drainOutbox() }
 
-        // Baked credentials (see `BakedOAuthCredentials` / `isCredentialsBaked`)
-        // are preferred over anything the user typed in manually — that is
-        // the whole point of baking them in: the Accounts surface should
-        // need to show only a Connect button. `BakedOAuthCredentials.
-        // clientSecret` is read directly into `GmailAuth`'s init argument and
-        // never written to `host.secrets` or `host.documents` — that keeps
-        // the number of at-rest copies of the secret to the one already
-        // compiled into the binary, rather than adding a Keychain copy of a
-        // value the binary already carries. (The refresh TOKEN `GmailAuth`
-        // obtains once the user signs in is still persisted to
-        // `host.secrets` exactly as before — that is a real per-account
-        // credential, not a static baked-in client secret, and there is only
-        // one of it regardless.)
-        if let clientID = BakedOAuthCredentials.clientID, let clientSecret = BakedOAuthCredentials.clientSecret {
-            let auth = GmailAuth(secrets: host.secrets, clientID: clientID, clientSecret: clientSecret)
-            self.auth = auth
-            attachStoredAccounts(auth: auth)
-        } else if let idData = host.documents.data(forKey: Self.clientIDKey),
-           let clientID = String(data: idData, encoding: .utf8),
-           let clientSecret = host.secrets.secret(forKey: Self.clientSecretKey) {
-            // Fallback for a developer build with no Config/oauth-client.json:
-            // the manually-entered credentials saved via `saveCredentials`.
-            let auth = GmailAuth(secrets: host.secrets, clientID: clientID, clientSecret: clientSecret)
-            self.auth = auth
-            attachStoredAccounts(auth: auth)
-        }
+        // Credential resolution (baked-in vs. manually saved) and provider
+        // construction both live in `ProviderFactory` now (built at the top of
+        // this initializer), so this file names neither `GmailAuth` nor
+        // `GmailProvider`. Every stored account is attached through it,
+        // whatever its kind — an account whose kind this build cannot build is
+        // logged and skipped inside `attachStoredAccounts()`, leaving the
+        // others attached.
+        attachStoredAccounts()
         model.reload()
         refreshOutboxSnapshots()
         if let corrupt = store.lastCorruptDocumentKey {
@@ -279,21 +260,16 @@ import AinkradAppKit
     /// The client id currently saved, if any — safe to show back in the field
     /// the user typed it into. There is deliberately no equivalent getter for
     /// the secret; see `clientSecretKey`.
-    public var savedClientID: String? {
-        BakedOAuthCredentials.clientID
-            ?? host.documents.data(forKey: Self.clientIDKey).flatMap { String(data: $0, encoding: .utf8) }
-    }
+    public var savedClientID: String? { providerFactory.savedClientID }
 
-    public var hasCredentials: Bool { auth != nil }
+    public var hasCredentials: Bool { providerFactory.hasGmailCredentials }
 
     /// Whether `BakedOAuthCredentials` supplied both values at build time
     /// (see `scripts/generate-oauth-credentials.sh`). When true, the
     /// Accounts surface shows only the Connect button and the connected
     /// account — no manual client id/secret fields, since there is nothing
     /// for the user to enter.
-    public var isCredentialsBaked: Bool {
-        BakedOAuthCredentials.clientID != nil && BakedOAuthCredentials.clientSecret != nil
-    }
+    public var isCredentialsBaked: Bool { providerFactory.isCredentialsBaked }
 
     /// Whether Connect could possibly succeed: credentials are either baked
     /// into the app (the shipped case) or have been saved by the user.
@@ -308,13 +284,13 @@ import AinkradAppKit
     /// saved" is no longer a state Connect should accept.
     public var canConnectAccount: Bool { isCredentialsBaked || hasCredentials }
 
+    /// Unchanged semantics: the id is persisted as a document, the secret goes
+    /// to `host.secrets` only, and every stored account is re-attached with the
+    /// new client. Both halves now happen inside `ProviderFactory`, which is
+    /// the only thing that changed here.
     public func saveCredentials(clientID: String, clientSecret: String) {
-        guard let data = clientID.data(using: .utf8) else { return }
-        host.documents.setData(data, forKey: Self.clientIDKey)
-        host.secrets.setSecret(clientSecret, forKey: Self.clientSecretKey)
-        let auth = GmailAuth(secrets: host.secrets, clientID: clientID, clientSecret: clientSecret)
-        self.auth = auth
-        attachStoredAccounts(auth: auth)
+        providerFactory.saveGmailCredentials(clientID: clientID, clientSecret: clientSecret)
+        attachStoredAccounts()
     }
 
     // MARK: Accounts
@@ -356,12 +332,21 @@ import AinkradAppKit
     /// into `syncState`/`model` as it goes — see that method's documentation.
     /// `onAuthorizationURL` lets the caller present the URL if the browser
     /// doesn't visibly pop (see `GmailAuth.authorize`).
-    public func connectAccount(onAuthorizationURL: (@Sendable (URL) -> Void)? = nil) async throws {
-        guard let auth else { throw MailError.notAuthenticated(accountID: "") }
-        let (accountID, address) = try await auth.authorize(onAuthorizationURL: onAuthorizationURL)
-        try store.saveAccount(MailAccount(id: accountID, provider: .gmail, address: address,
-                                          displayName: address, state: .syncing))
-        attach(provider: GmailProvider(accountID: accountID, auth: auth), accountID: accountID)
+    ///
+    /// `kind` defaults to `.gmail`, which is the only kind with an interactive
+    /// flow today — the existing Connect button therefore behaves exactly as
+    /// before. Both the sign-in and the provider come from `ProviderFactory`,
+    /// so the account's kind is now recorded from the argument rather than
+    /// hardcoded, and a kind whose flow does not exist yet fails with
+    /// `MailError.unsupportedProvider` *before* anything is saved.
+    public func connectAccount(kind: MailAccount.ProviderKind = .gmail,
+                               onAuthorizationURL: (@Sendable (URL) -> Void)? = nil) async throws {
+        let (accountID, address) = try await providerFactory.authorize(
+            kind: kind, onAuthorizationURL: onAuthorizationURL)
+        let account = MailAccount(id: accountID, provider: kind, address: address,
+                                  displayName: address, state: .syncing)
+        try store.saveAccount(account)
+        attach(provider: try providerFactory.makeProvider(for: account), accountID: accountID)
         // Deliberately does NOT scope the Inbox to the account just added:
         // connecting a second mailbox must not hide the first one. The unified
         // list (`model.accountID == nil`) covers every account; a per-account
@@ -373,7 +358,9 @@ import AinkradAppKit
     /// Signing out must leave nothing of the account behind. Three things go,
     /// in this order:
     ///
-    /// 1. the refresh token (`auth.signOut`);
+    /// 1. every credential the factory holds for the account — the Gmail
+    ///    refresh token, and an Apple Mail import's directory bookmark
+    ///    (`providerFactory.signOut`);
     /// 2. every queued outbox entry for the account — otherwise, because the
     ///    outbox transmits through whatever provider is attached *now*, a send
     ///    queued for this account would go out from the next account someone
@@ -391,7 +378,7 @@ import AinkradAppKit
     /// method must not do — and no longer does — is tear down the shared
     /// provider/engine/backfill state, because that is now per account too.
     public func signOut(_ accountID: String) {
-        auth?.signOut(accountID: accountID)
+        providerFactory.signOut(accountID: accountID)
         outbox.purge(accountID: accountID)
         do {
             try store.purge(accountID: accountID)

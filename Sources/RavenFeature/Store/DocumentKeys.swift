@@ -36,4 +36,13 @@ public enum DocumentKeys {
     public static func thread(_ id: String) -> String { "thread-\(id)" }
     public static func body(_ messageID: String) -> String { "body-\(messageID)" }
     public static func labels(accountID: String) -> String { "labels-\(accountID)" }
+    /// The security-scoped bookmark (`MailDirectoryBookmark.data`) for an
+    /// imported Apple Mail account's on-disk folder. A *location*, not a
+    /// credential — nothing in it grants access to a remote mailbox — so a
+    /// document rather than `host.secrets`, like `gmail-client-id`. Read by
+    /// `ProviderFactory` to rebuild the `.appleMail` provider on relaunch and
+    /// removed by `ProviderFactory.signOut`.
+    public static func appleMailDirectory(accountID: String) -> String {
+        "applemail-directory-\(accountID)"
+    }
 }
