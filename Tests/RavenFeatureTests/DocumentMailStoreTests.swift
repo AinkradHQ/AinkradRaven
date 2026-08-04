@@ -9,6 +9,22 @@ import Foundation
         return (DocumentMailStore(documents: documents), documents)
     }
 
+    /// The store's own date strategy, so a hand-planted document decodes.
+    private var coder: (JSONEncoder, JSONDecoder) {
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        return (encoder, decoder)
+    }
+
+    /// Every month shard the account has ever written, read straight out of the
+    /// month registry — the only enumeration a key→Data store allows.
+    private func registeredMonths(_ documents: InMemoryDocumentStore,
+                                  accountID: String) throws -> [String] {
+        guard let data = documents.storage[DocumentKeys.indexMonths(accountID: accountID)]
+        else { return [] }
+        return try coder.1.decode([String].self, from: data)
+    }
+
     private func message(_ id: String, thread: String, date: Date,
                          read: Bool = false) -> MailMessage {
         MailMessage(id: id, threadID: thread, from: MailAddress(email: "b@x.com"),
@@ -110,6 +126,183 @@ import Foundation
         let februaryRows = store.summaries(accountID: "a1", months: [MonthShard.key(for: february)])
         #expect(januaryRows.isEmpty)
         #expect(februaryRows.map(\.id) == ["t1"])
+    }
+
+    // MARK: Thread merge (locally computed threading)
+
+    @Test("merging a thread away leaves no document and no index row anywhere")
+    func mergeRemovesLosingThread() throws {
+        let (store, documents) = makeStore()
+        let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01
+        let march = Date(timeIntervalSince1970: 1_772_323_200)    // 2026-03
+        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
+                                          messages: [message("m1", thread: "t1", date: january)]))
+        try store.upsertThread(MailThread(id: "t2", accountID: "a1",
+                                          messages: [message("m2", thread: "t2", date: march)]))
+
+        let winner = try #require(store.thread("t1"))
+        try store.mergeThreads(losingIDs: ["t2"], into: winner)
+
+        #expect(documents.storage["thread-t2"] == nil)
+        // Every month shard the account has ever written, not just the current one.
+        let months = try registeredMonths(documents, accountID: "a1")
+        #expect(months.count == 2)
+        for month in months {
+            let rows = store.summaries(accountID: "a1", months: [month])
+            #expect(rows.contains { $0.id == "t2" } == false,
+                    "t2 must not survive in the \(month) shard")
+        }
+        #expect(store.summaries(accountID: "a1", months: months).map(\.id) == ["t1"])
+    }
+
+    /// A thread can have occupied several month shards over its life. A merge
+    /// must clean all of them, not only the one its last message currently
+    /// lands in — otherwise the inbox shows a ghost row for a thread that no
+    /// longer exists.
+    @Test("a losing thread is cleaned out of every month it ever occupied")
+    func mergeCleansEveryMonthEverOccupied() throws {
+        let (store, documents) = makeStore()
+        let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01
+        let february = Date(timeIntervalSince1970: 1_770_000_000) // 2026-02
+        let march = Date(timeIntervalSince1970: 1_772_323_200)    // 2026-03
+
+        // t2 starts in January, then gains a February message: upsertThread's
+        // drift repair moves the row. Plant a stale January row by hand so the
+        // merge is proven to sweep a month it no longer claims to live in.
+        var losing = MailThread(id: "t2", accountID: "a1",
+                                messages: [message("m2", thread: "t2", date: january)])
+        try store.upsertThread(losing)
+        losing.messages.append(message("m3", thread: "t2", date: february))
+        try store.upsertThread(losing)
+        let januaryKey = DocumentKeys.index(accountID: "a1", month: MonthShard.key(for: january))
+        documents.setData(try coder.0.encode([losing.summary()]), forKey: januaryKey)
+
+        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
+                                          messages: [message("m1", thread: "t1", date: march)]))
+        let winner = try #require(store.thread("t1"))
+        try store.mergeThreads(losingIDs: ["t2"], into: winner)
+
+        for month in [january, february, march].map(MonthShard.key(for:)) {
+            let rows = store.summaries(accountID: "a1", months: [month])
+            #expect(rows.contains { $0.id == "t2" } == false,
+                    "t2 must be gone from the \(month) shard")
+        }
+    }
+
+    @Test("the merged thread holds the deduped union of both message lists, oldest first")
+    func mergeUnionsMessages() throws {
+        let (store, _) = makeStore()
+        let january = Date(timeIntervalSince1970: 1_767_225_600)
+        let february = Date(timeIntervalSince1970: 1_770_000_000)
+        let march = Date(timeIntervalSince1970: 1_772_323_200)
+        try store.upsertThread(MailThread(id: "t2", accountID: "a1", messages: [
+            message("m2", thread: "t2", date: february),
+            message("shared", thread: "t2", date: january, read: true),
+        ]))
+        try store.upsertThread(MailThread(id: "t1", accountID: "a1", messages: [
+            message("shared", thread: "t1", date: january, read: true),
+            message("m1", thread: "t1", date: march),
+        ]))
+
+        let winner = try #require(store.thread("t1"))
+        try store.mergeThreads(losingIDs: ["t2"], into: winner)
+
+        let merged = try #require(store.thread("t1"))
+        #expect(merged.messages.map(\.id) == ["shared", "m2", "m1"])
+        #expect(merged.messages.map(\.date) == [january, february, march])
+
+        let rows = store.summaries(accountID: "a1", months: [MonthShard.key(for: march)])
+        let row = try #require(rows.first { $0.id == "t1" })
+        #expect(row.messageCount == 3)
+        #expect(row.unreadCount == 2)
+        #expect(row.lastMessageDate == march)
+    }
+
+    /// `body-<messageID>` is keyed by MESSAGE, not by thread, so a change of
+    /// thread identity must leave every body exactly where it was.
+    @Test("a merge does not delete or rewrite any body")
+    func mergeLeavesBodiesReachable() throws {
+        let (store, documents) = makeStore()
+        let january = Date(timeIntervalSince1970: 1_767_225_600)
+        let march = Date(timeIntervalSince1970: 1_772_323_200)
+        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
+                                          messages: [message("m1", thread: "t1", date: january)]))
+        try store.upsertThread(MailThread(id: "t2", accountID: "a1",
+                                          messages: [message("m2", thread: "t2", date: march)]))
+        try store.saveBody(MessageBody(messageID: "m1", plainText: "one", html: nil),
+                           accountID: "a1")
+        try store.saveBody(MessageBody(messageID: "m2", plainText: "two", html: nil),
+                           accountID: "a1")
+        let before = documents.storage["body-m2"]
+
+        let winner = try #require(store.thread("t1"))
+        try store.mergeThreads(losingIDs: ["t2"], into: winner)
+
+        #expect(store.body(messageID: "m1")?.plainText == "one")
+        #expect(store.body(messageID: "m2")?.plainText == "two")
+        #expect(documents.storage["body-m2"] == before, "a merge must not rewrite a body")
+    }
+
+    @Test("an unknown losing id is a no-op for that id, not a throw")
+    func mergeIgnoresUnknownLosingID() throws {
+        let (store, _) = makeStore()
+        let january = Date(timeIntervalSince1970: 1_767_225_600)
+        let march = Date(timeIntervalSince1970: 1_772_323_200)
+        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
+                                          messages: [message("m1", thread: "t1", date: january)]))
+        try store.upsertThread(MailThread(id: "t2", accountID: "a1",
+                                          messages: [message("m2", thread: "t2", date: march)]))
+
+        let winner = try #require(store.thread("t1"))
+        // Partial knowledge must not fail the whole merge: t2 still merges.
+        try store.mergeThreads(losingIDs: ["ghost", "t2"], into: winner)
+
+        let merged = try #require(store.thread("t1"))
+        #expect(merged.messages.map(\.id) == ["m1", "m2"])
+    }
+
+    @Test("a merge refuses to clobber a corrupt document")
+    func mergeRefusesCorruptDocuments() throws {
+        let january = Date(timeIntervalSince1970: 1_767_225_600)
+        let march = Date(timeIntervalSince1970: 1_772_323_200)
+
+        // A corrupt LOSING thread document: the merge must not delete it, and
+        // must not write the winner either.
+        do {
+            let (store, documents) = makeStore()
+            try store.upsertThread(MailThread(id: "t1", accountID: "a1",
+                                              messages: [message("m1", thread: "t1", date: january)]))
+            let winner = try #require(store.thread("t1"))
+            let garbage = Data("not JSON".utf8)
+            documents.setData(garbage, forKey: DocumentKeys.thread("t2"))
+
+            #expect(throws: MailError.documentCorrupt(key: DocumentKeys.thread("t2"))) {
+                try store.mergeThreads(losingIDs: ["t2"], into: winner)
+            }
+            #expect(documents.storage[DocumentKeys.thread("t2")] == garbage,
+                    "the damaged document must stay recoverable")
+            #expect(store.lastCorruptDocumentKey == DocumentKeys.thread("t2"))
+        }
+
+        // A corrupt month INDEX shard: the read-modify-write must refuse too.
+        do {
+            let (store, documents) = makeStore()
+            try store.upsertThread(MailThread(id: "t1", accountID: "a1",
+                                              messages: [message("m1", thread: "t1", date: march)]))
+            try store.upsertThread(MailThread(id: "t2", accountID: "a1",
+                                              messages: [message("m2", thread: "t2", date: january)]))
+            let winner = try #require(store.thread("t1"))
+            let key = DocumentKeys.index(accountID: "a1", month: MonthShard.key(for: january))
+            let garbage = Data("{{{".utf8)
+            documents.setData(garbage, forKey: key)
+
+            #expect(throws: MailError.documentCorrupt(key: key)) {
+                try store.mergeThreads(losingIDs: ["t2"], into: winner)
+            }
+            #expect(documents.storage[key] == garbage)
+            #expect(documents.storage[DocumentKeys.thread("t2")] != nil,
+                    "no write may land when any read-modify-write path had to refuse")
+        }
     }
 
     @Test("accounts round-trip and never carry a token field")

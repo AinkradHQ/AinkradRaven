@@ -115,6 +115,65 @@ import AinkradAppKit
         try save(rows, key)
     }
 
+    /// See `MailStore.mergeThreads`. Deliberately separate from `upsertThread`:
+    /// that path repairs one thread's month drift, this one retires whole thread
+    /// identities, and conflating them would put a destructive delete on the
+    /// ordinary sync path.
+    ///
+    /// Every strict read happens BEFORE the first write. A merge touches several
+    /// documents, so a corrupt one discovered halfway through would otherwise
+    /// leave the mailbox in a state neither before nor after the merge — and the
+    /// M0 rule is that a document which failed to decode is never clobbered.
+    public func mergeThreads(losingIDs: [String], into thread: MailThread) throws {
+        let retired = Set(losingIDs).subtracting([thread.id])
+        var losing: [MailThread] = []
+        for id in retired.sorted() {
+            // Strict: a losing thread we cannot decode must not be deleted, and
+            // its messages must not silently vanish from the merged thread.
+            guard let document = try loadStrict(MailThread.self, DocumentKeys.thread(id))
+            else { continue }   // unknown id — a no-op for this id, not a failure
+            losing.append(document)
+        }
+        let merged = MailThread(id: thread.id, accountID: thread.accountID,
+                                messages: Self.union(thread.messages, losing.flatMap(\.messages)))
+        let survivingMonth = MonthShard.key(for: merged.lastMessageDate)
+
+        // A thread can have occupied several month shards over its life, so the
+        // sweep covers every month the account ever registered — not just the
+        // one the losing thread's last message currently lands in.
+        var months = try loadStrict([String].self,
+                                    DocumentKeys.indexMonths(accountID: thread.accountID)) ?? []
+        if !months.contains(survivingMonth) { months.append(survivingMonth) }
+        var pending: [String: [ThreadSummary]] = [:]
+        for month in months {
+            let key = DocumentKeys.index(accountID: thread.accountID, month: month)
+            let rows = try loadStrict([ThreadSummary].self, key) ?? []
+            var updated = rows.filter { !retired.contains($0.id) && $0.id != thread.id }
+            if month == survivingMonth { updated.append(merged.summary()) }
+            if updated != rows { pending[key] = updated }
+        }
+
+        for (key, rows) in pending { try save(rows, key) }
+        try registerMonth(survivingMonth, accountID: thread.accountID)
+        for document in losing {
+            documents.setData(nil, forKey: DocumentKeys.thread(document.id))
+        }
+        try save(merged, DocumentKeys.thread(merged.id))
+    }
+
+    /// Union of two message lists, deduped by message id — the winning thread's
+    /// copy of a message wins — and ordered oldest-first, which is the order
+    /// `MailThread.messages` documents and `lastMessageDate` depends on. The
+    /// index tiebreak keeps the sort stable for messages sharing a timestamp.
+    private static func union(_ winning: [MailMessage],
+                             _ losing: [MailMessage]) -> [MailMessage] {
+        var seen = Set<String>()
+        let deduped = (winning + losing).filter { seen.insert($0.id).inserted }
+        return deduped.enumerated()
+            .sorted { ($0.element.date, $0.offset) < ($1.element.date, $1.offset) }
+            .map(\.element)
+    }
+
     public func thread(_ id: String) -> MailThread? {
         load(MailThread.self, DocumentKeys.thread(id))
     }

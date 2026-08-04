@@ -44,6 +44,19 @@ public struct MessageBody: Codable, Equatable, Sendable {
     func summaries(accountID: String, months: [String]) -> [ThreadSummary]
     func upsertThread(_ thread: MailThread) throws
     func thread(_ id: String) -> MailThread?
+    /// Replaces `losingIDs` with `thread`, whose id survives.
+    ///
+    /// `upsertThread` keys on a thread id the provider supplied and can only
+    /// repair MONTH drift. With locally computed threading (IMAP has no
+    /// server-side threads) a newly arrived message can link two previously
+    /// separate threads, so the thread IDENTITY changes: the losing ids' thread
+    /// documents and index rows have to go, or the inbox keeps ghost rows
+    /// pointing at threads that no longer exist.
+    ///
+    /// Bodies are keyed by message id, never by thread, so a merge leaves every
+    /// body exactly where it is. An unknown losing id is a no-op for that id:
+    /// partial knowledge must not fail the whole merge.
+    func mergeThreads(losingIDs: [String], into thread: MailThread) throws
     func removeThread(_ id: String, accountID: String, date: Date) throws
 
     func body(messageID: String) -> MessageBody?
