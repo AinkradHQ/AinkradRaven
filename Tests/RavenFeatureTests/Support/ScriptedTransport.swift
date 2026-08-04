@@ -47,11 +47,30 @@ actor ScriptedTransport: MailTransport {
         var isRepeatable: Bool
     }
 
+    /// What `read()` does when the script is empty.
+    enum IdleReadBehavior: Sendable, Equatable {
+        /// Throw `scriptExhausted` (the default): a wrong expectation fails the
+        /// test instead of hanging the suite.
+        case throwScriptExhausted
+        /// Suspend until bytes are scripted or the transport closes — what a real
+        /// socket does. Required by `Task 8`: a session's read loop legitimately
+        /// waits between commands, and a *suspended* read is the only way to
+        /// test that closing mid-flight fails every waiter instead of leaking a
+        /// continuation. Suspended reads are still bounded: `close()` fails all
+        /// of them with `.closed`, so nothing can hang past teardown.
+        case suspend
+    }
+
     private var chunkPlan: ChunkPlan
     private var pending: [Data] = []
     private var rules: [Rule] = []
     private var connected = false
     private var closed = false
+    private let idleReadBehavior: IdleReadBehavior
+    /// Reads suspended on an empty script. Resumed by `enqueue`/a matched rule,
+    /// or failed by `close()` — each continuation is removed from this array
+    /// before it is resumed, so it can never be resumed twice.
+    private var readWaiters: [CheckedContinuation<Data, any Error>] = []
 
     // MARK: Recording (assertions read these)
 
@@ -65,8 +84,10 @@ actor ScriptedTransport: MailTransport {
     /// Number of `send(_:)` calls before the first `startTLS()`.
     private(set) var upgradeSendIndex: Int?
 
-    init(chunkPlan: ChunkPlan = .whole) {
+    init(chunkPlan: ChunkPlan = .whole,
+         idleReads: IdleReadBehavior = .throwScriptExhausted) {
         self.chunkPlan = chunkPlan
+        self.idleReadBehavior = idleReads
     }
 
     // MARK: Scripting
@@ -75,6 +96,7 @@ actor ScriptedTransport: MailTransport {
     /// untagged response).
     func enqueue(_ data: Data, plan: ChunkPlan? = nil) {
         pending.append(contentsOf: Self.chunks(of: data, plan: plan ?? chunkPlan))
+        deliverToWaiters()
     }
 
     func enqueue(_ text: String, plan: ChunkPlan? = nil) {
@@ -129,18 +151,44 @@ actor ScriptedTransport: MailTransport {
             let rule = rules[index]
             if !rule.isRepeatable { rules.remove(at: index) }
             pending.append(contentsOf: Self.chunks(of: rule.response, plan: rule.plan))
+            deliverToWaiters()
             return
         }
     }
 
     func read() async throws -> Data {
         try requireOpen()
-        guard !pending.isEmpty else {
+        if !pending.isEmpty { return pending.removeFirst() }
+        switch idleReadBehavior {
+        case .throwScriptExhausted:
             throw MailTransportError.scriptExhausted(
                 "read() with an empty script; sent so far: \(sentText.debugDescription)")
+        case .suspend:
+            return try await withCheckedThrowingContinuation { continuation in
+                // No await since `requireOpen()`, so a close cannot have slipped
+                // in between the check and the registration.
+                if closed {
+                    continuation.resume(throwing: MailTransportError.closed)
+                } else if !pending.isEmpty {
+                    continuation.resume(returning: pending.removeFirst())
+                } else {
+                    readWaiters.append(continuation)
+                }
+            }
         }
-        return pending.removeFirst()
     }
+
+    /// Hands buffered chunks to suspended reads, oldest first.
+    private func deliverToWaiters() {
+        while !readWaiters.isEmpty, !pending.isEmpty {
+            let waiter = readWaiters.removeFirst()
+            waiter.resume(returning: pending.removeFirst())
+        }
+    }
+
+    /// Suspended reads waiting on an empty script. Assertable so a test can prove
+    /// a session's read loop really is parked before it closes the transport.
+    var suspendedReadCount: Int { readWaiters.count }
 
     func startTLS() async throws {
         try requireOpen()
@@ -155,6 +203,11 @@ actor ScriptedTransport: MailTransport {
         closed = true
         connected = false
         pending.removeAll()
+        // Fail every suspended read rather than leaving it hanging — the same
+        // contract `MailTransport.close()` states and `NetworkTransport` honours.
+        let waiters = readWaiters
+        readWaiters.removeAll()
+        for waiter in waiters { waiter.resume(throwing: MailTransportError.closed) }
     }
 
     private func requireOpen() throws {
