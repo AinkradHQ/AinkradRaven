@@ -110,16 +110,19 @@ import Observation
         // archive/star/label operations. Only enqueued when something was
         // actually unread, so re-selecting an already-read thread doesn't
         // queue a no-op mutation.
+        // Expressed canonically and rendered for the account's backend, so the
+        // stored label removed here is whatever that backend calls "unread".
+        let readMutation = ThreadAction.setRead(true).labelMutation(threadIDs: [threadID])
+        let unreadLabels = Set(readMutation.remove)
         for index in thread.messages.indices where !thread.messages[index].isRead {
             thread.messages[index].isRead = true
-            thread.messages[index].labelIDs.removeAll { $0 == "UNREAD" }
+            thread.messages[index].labelIDs.removeAll { unreadLabels.contains($0) }
         }
         try? store.upsertThread(thread)
         if wasUnread {
             // Stamped with the THREAD's account, not a default: the mutation
             // has to reach the mailbox the thread actually lives in.
-            try? outbox?.enqueue(.labels(LabelMutation(threadIDs: [threadID], remove: ["UNREAD"])),
-                                 accountID: thread.accountID)
+            try? outbox?.enqueue(.labels(readMutation), accountID: thread.accountID)
         }
         selectedThread = thread
         reload()
@@ -232,19 +235,36 @@ import Observation
     /// mailbox.
     private func apply(_ action: ThreadAction, ids: [String]) {
         guard !ids.isEmpty else { return }
-        let mutation = action.mutation(threadIDs: ids)
+        // Rendering happens INSIDE the per-account loop, and that placement is
+        // load-bearing rather than tidy: one rendered `LabelMutation` cannot
+        // serve two accounts on different backends, because the provider strings
+        // it contains are only meaningful to one of them. Rendering once for the
+        // whole selection was correct only while Gmail was the sole backend.
         let groups = ThreadAccountGrouping.group(ids, store: store, fallback: accountID)
-        ThreadMutationApplier.applyLocally(mutation, store: store)
-        reload()
         for id in ids { rowErrors.removeValue(forKey: id) }
         for (accountID, groupedIDs) in groups {
+            guard let vocabulary = LabelVocabularyResolver.vocabulary(forAccountID: accountID,
+                                                                     store: store) else {
+                // Refuse rather than guess. Falling back to Gmail's vocabulary
+                // here would enqueue Gmail label strings against a backend that
+                // does not use them — a corrupted mailbox instead of a visible
+                // error the user can act on.
+                let message = "This account's backend does not support that action yet."
+                for id in groupedIDs { rowErrors[id] = message }
+                continue
+            }
+            let mutation = action.labelMutation(threadIDs: groupedIDs, vocabulary: vocabulary)
+            // Local-first, per account: the store reflects the action before the
+            // queue write, so a failed enqueue leaves the UI correct and the
+            // sync pending — unchanged from before, only now scoped per group.
+            ThreadMutationApplier.applyLocally(mutation, store: store, vocabulary: vocabulary)
             do {
-                try outbox?.enqueue(.labels(action.mutation(threadIDs: groupedIDs)),
-                                    accountID: accountID)
+                try outbox?.enqueue(.labels(mutation), accountID: accountID)
             } catch {
                 let message = String(describing: error)
                 for id in groupedIDs { rowErrors[id] = message }
             }
         }
+        reload()
     }
 }

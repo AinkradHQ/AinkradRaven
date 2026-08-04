@@ -335,14 +335,28 @@ public enum RavenMCPOperations {
                         "are read-only (imported mail); \(operation) cannot be applied.")
         }
         let writableIDs = Set(writableGroups.flatMap(\.ids))
-        ThreadMutationApplier.applyLocally(action.mutation(threadIDs: Array(writableIDs)), store: store)
+        // Resolved and rendered per account, for the same reason `RavenViewModel`
+        // does it: the rendered strings belong to one backend. An unresolvable
+        // backend is refused here too, so the agent path and the human path
+        // cannot disagree about what is mutable.
+        var unsupported: [String] = []
         for group in writableGroups {
+            guard let vocabulary = LabelVocabularyResolver.vocabulary(forAccountID: group.accountID,
+                                                                     store: store) else {
+                unsupported.append(group.accountID ?? "unknown")
+                continue
+            }
+            let mutation = action.labelMutation(threadIDs: group.ids, vocabulary: vocabulary)
+            ThreadMutationApplier.applyLocally(mutation, store: store, vocabulary: vocabulary)
             do {
-                try outbox.enqueue(.labels(action.mutation(threadIDs: group.ids)),
-                                   accountID: group.accountID)
+                try outbox.enqueue(.labels(mutation), accountID: group.accountID)
             } catch {
                 return fail("Applied locally but could not queue: \(error)")
             }
+        }
+        guard unsupported.count < writableGroups.count else {
+            return fail("Account(s) \(unsupported.sorted().joined(separator: ", ")) use a backend " +
+                        "this build cannot apply \(operation) to.")
         }
         let skipped = readOnlyAccountIDs.isEmpty ? "" :
             " (skipped read-only account(s) \(readOnlyAccountIDs.sorted().joined(separator: ", ")))"

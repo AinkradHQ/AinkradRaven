@@ -17,16 +17,22 @@ import Foundation
 /// has left the inbox is still fully readable by id; only the *list/search*
 /// views that claim to represent "the inbox" apply this.
 public enum InboxFilter {
-    /// A thread counts as "in the inbox" when it carries the `INBOX` label
-    /// and carries neither `TRASH` nor `SPAM` — Gmail can (rarely) leave
-    /// `INBOX` on a message that was also moved to Trash/Spam, and a filter
-    /// that checked `INBOX` alone would still surface it.
-    public static func isInInbox(_ summary: ThreadSummary) -> Bool {
-        let labels = Set(summary.labelIDs)
-        return labels.contains("INBOX") && !labels.contains("TRASH") && !labels.contains("SPAM")
+    /// A thread counts as "in the inbox" when its stored labels canonically
+    /// mean `.inbox` and mean neither `.trash` nor `.spam` — a backend can
+    /// (rarely) leave the inbox marker on a message that was also moved to
+    /// Trash/Spam, and a filter that checked inbox alone would still surface it.
+    ///
+    /// The labels are read through a `LabelVocabulary` rather than compared to
+    /// Gmail's spelling, so the same filter is correct for a backend whose
+    /// inbox is a folder rather than a label.
+    public static func isInInbox(_ summary: ThreadSummary,
+                                vocabulary: LabelVocabulary = defaultLabelVocabulary) -> Bool {
+        let flags = vocabulary.flags(from: summary.labelIDs)
+        return flags.contains(.inbox) && !flags.contains(.trash) && !flags.contains(.spam)
     }
 
-    public static func apply(_ summaries: [ThreadSummary]) -> [ThreadSummary] {
-        summaries.filter(isInInbox)
+    public static func apply(_ summaries: [ThreadSummary],
+                            vocabulary: LabelVocabulary = defaultLabelVocabulary) -> [ThreadSummary] {
+        summaries.filter { isInInbox($0, vocabulary: vocabulary) }
     }
 }

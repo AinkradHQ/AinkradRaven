@@ -69,6 +69,13 @@ import AinkradAppKit
         let provider = FakeMailProvider()
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
         let now = Date()
+        // The account row is a real precondition, not scaffolding: `archive` is
+        // rendered through the vocabulary resolved from the thread's account, and
+        // an account this build cannot resolve is refused rather than mutated
+        // through another backend's label strings.
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "a1@example.test", displayName: "A1",
+                                          state: .ready))
         try store.upsertThread(MailThread(id: "t1", accountID: "a1", messages: [
             MailMessage(id: "m1", threadID: "t1", from: MailAddress(email: "b@x.com"),
                         subject: "Hi", date: now, labelIDs: ["INBOX"], snippet: "s")

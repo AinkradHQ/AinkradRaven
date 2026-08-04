@@ -9,8 +9,22 @@ import Foundation
 /// mutation path, never a provider call of its own.
 @Suite("RuleEngine")
 @MainActor struct RuleEngineTests {
+    /// Seeds the `a1` account row every thread below belongs to.
+    ///
+    /// Not incidental setup: mutations are rendered through the vocabulary
+    /// resolved from the thread's ACCOUNT, so a store holding threads but no
+    /// account row is a state where nothing can be safely rendered — and the
+    /// engine correctly skips rather than guessing at a backend. That state
+    /// cannot occur in production (`attachStoredAccounts()` reads
+    /// `store.accounts()` to build a provider, so the row necessarily exists
+    /// before any of its threads sync), so seeding it here makes these tests
+    /// match production rather than relaxing the engine.
     private func makeStore() -> DocumentMailStore {
-        DocumentMailStore(documents: InMemoryDocumentStore())
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        try? store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                           address: "a1@example.test", displayName: "A1",
+                                           state: .ready))
+        return store
     }
 
     private func thread(_ id: String, subject: String, from: String,

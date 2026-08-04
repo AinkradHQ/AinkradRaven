@@ -26,8 +26,16 @@ import AinkradAppKit
             let summary = thread.summary()
             for rule in ruleSet.rules {
                 guard rule.matches(summary) else { continue }
-                let mutation = rule.action.mutation(threadIDs: [threadID])
-                ThreadMutationApplier.applyLocally(mutation, store: store)
+                // Resolved from the thread's own account. A rule firing on a
+                // backend this build cannot render for is SKIPPED rather than
+                // applied through another backend's vocabulary — and skipped
+                // silently, because rules run on the delta-sync path where
+                // there is no surface to report to (same reason the enqueue
+                // failure below is swallowed).
+                guard let vocabulary = LabelVocabularyResolver.vocabulary(forAccountID: thread.accountID,
+                                                                        store: store) else { continue }
+                let mutation = rule.action.labelMutation(threadIDs: [threadID], vocabulary: vocabulary)
+                ThreadMutationApplier.applyLocally(mutation, store: store, vocabulary: vocabulary)
                 do {
                     try outbox.enqueue(.labels(mutation), accountID: thread.accountID)
                 } catch {

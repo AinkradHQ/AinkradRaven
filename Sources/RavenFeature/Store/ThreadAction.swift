@@ -15,24 +15,39 @@ public enum ThreadAction: Equatable, Hashable, Codable, Sendable {
     case setRead(Bool)
     case label(add: [String], remove: [String])
 
-    /// The `LabelMutation` this action becomes for the given thread ids —
-    /// byte-for-byte what `RavenMCPOperations.mutate` used to build inline
-    /// for each MCP operation string.
-    public func mutation(threadIDs: [String]) -> LabelMutation {
+    /// The canonical `FlagMutation` this action becomes for the given thread
+    /// ids. Provider-independent: it names *states*, not Gmail labels. Render
+    /// it through the account's `LabelVocabulary` to get the `LabelMutation`
+    /// the outbox stores and the provider applies —
+    /// `GmailVocabulary().render(_:)` reproduces byte-for-byte the strings this
+    /// method used to hardcode.
+    ///
+    /// `.label`'s explicit strings are provider labels supplied by a caller
+    /// (the MCP `label` tool, a `MailRule`), so they pass through as
+    /// `.user(_)` and render back unchanged.
+    public func mutation(threadIDs: [String]) -> FlagMutation {
         switch self {
         case .archive:
-            return LabelMutation(threadIDs: threadIDs, remove: ["INBOX"])
+            return FlagMutation(threadIDs: threadIDs, remove: [.inbox])
         case .trash:
-            return LabelMutation(threadIDs: threadIDs, add: ["TRASH"], remove: ["INBOX"])
+            return FlagMutation(threadIDs: threadIDs, add: [.trash], remove: [.inbox])
         case .star(let starred):
-            return starred ? LabelMutation(threadIDs: threadIDs, add: ["STARRED"])
-                           : LabelMutation(threadIDs: threadIDs, remove: ["STARRED"])
+            return starred ? FlagMutation(threadIDs: threadIDs, add: [.starred])
+                           : FlagMutation(threadIDs: threadIDs, remove: [.starred])
         case .setRead(let read):
-            return read ? LabelMutation(threadIDs: threadIDs, remove: ["UNREAD"])
-                        : LabelMutation(threadIDs: threadIDs, add: ["UNREAD"])
+            return read ? FlagMutation(threadIDs: threadIDs, remove: [.unread])
+                        : FlagMutation(threadIDs: threadIDs, add: [.unread])
         case .label(let add, let remove):
-            return LabelMutation(threadIDs: threadIDs, add: add, remove: remove)
+            return FlagMutation(threadIDs: threadIDs,
+                                add: add.map { MailFlag.user($0) },
+                                remove: remove.map { MailFlag.user($0) })
         }
+    }
+
+    /// Convenience: the canonical mutation already rendered for one backend.
+    public func labelMutation(threadIDs: [String],
+                             vocabulary: LabelVocabulary = defaultLabelVocabulary) -> LabelMutation {
+        vocabulary.render(mutation(threadIDs: threadIDs))
     }
 }
 
@@ -68,8 +83,13 @@ public enum ThreadAccountGrouping {
 /// Local-first: call this BEFORE `outbox.enqueue`, never after, so the row
 /// updates on the same frame regardless of network state.
 public enum ThreadMutationApplier {
+    /// Labels stay STORED as the provider's own strings — no document format
+    /// change — and read/starred state is derived by asking `vocabulary` what
+    /// those strings mean canonically, instead of comparing them against one
+    /// provider's unread label.
     @MainActor
-    public static func applyLocally(_ mutation: LabelMutation, store: MailStore) {
+    public static func applyLocally(_ mutation: LabelMutation, store: MailStore,
+                                   vocabulary: LabelVocabulary = defaultLabelVocabulary) {
         for id in mutation.threadIDs {
             guard var thread = store.thread(id) else { continue }
             for index in thread.messages.indices {
@@ -77,8 +97,9 @@ public enum ThreadMutationApplier {
                 labels.formUnion(mutation.add)
                 labels.subtract(mutation.remove)
                 thread.messages[index].labelIDs = Array(labels).sorted()
-                thread.messages[index].isRead = !labels.contains("UNREAD")
-                thread.messages[index].isStarred = labels.contains("STARRED")
+                let flags = vocabulary.flags(from: labels)
+                thread.messages[index].isRead = !flags.contains(.unread)
+                thread.messages[index].isStarred = flags.contains(.starred)
             }
             try? store.upsertThread(thread)
         }

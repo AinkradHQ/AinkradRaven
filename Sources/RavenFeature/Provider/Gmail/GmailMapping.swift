@@ -3,6 +3,11 @@ import Foundation
 /// Pure wire-to-domain mapping. No networking, so every path here is
 /// unit-tested directly against recorded fixtures.
 public enum GmailMapping {
+    /// Gmail's canonical-flag translation. The identity mapping, so reading
+    /// through it is behaviour-identical to the label-literal comparisons this
+    /// mapper used to do inline.
+    static let vocabulary = GmailVocabulary()
+
     /// `dto.messages` arrives in whatever order Gmail's API happens to
     /// return (observed: not reliably oldest-first), and `MailThread.messages`
     /// is documented as oldest-first — every consumer (subject-from-first,
@@ -38,8 +43,11 @@ public enum GmailMapping {
             cc: addresses("Cc"),
             subject: header("Subject") ?? "(no subject)",
             date: Date(timeIntervalSince1970: milliseconds / 1000),
-            isRead: !labels.contains("UNREAD"),
-            isStarred: labels.contains("STARRED"),
+            // Read through Gmail's own vocabulary — the identity mapping — so
+            // the literals live in exactly one place. Labels are still STORED
+            // below as Gmail's strings; nothing about the document changes.
+            isRead: !vocabulary.flags(from: labels).contains(.unread),
+            isStarred: vocabulary.flags(from: labels).contains(.starred),
             labelIDs: labels,
             hasAttachments: hasAttachment(dto.payload),
             snippet: dto.snippet ?? "",
