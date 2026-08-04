@@ -1,0 +1,10 @@
+* 1 FETCH (BODY[TEXT] {26}
+Line 1)
+"x" {9}
+Line 2
+)
+* 2 FETCH (BODY[TEXT] {0}
+)
+* OK {3}
+abc
+a002 OK FETCH completed
