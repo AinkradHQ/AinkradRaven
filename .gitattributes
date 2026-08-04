@@ -1,0 +1,11 @@
+# IMAP and SMTP fixtures are wire captures, not text files.
+#
+# Their CRLF framing is the thing under test: `IMAPLexer` deliberately REJECTS
+# a bare LF, because accepting half of CRLF would let a newline inside a literal
+# forge a line boundary. Git's default text handling normalised these to LF on
+# commit, which produced the worst possible failure shape — the working tree
+# kept its CRLF so the suite passed locally, while the committed blob had none,
+# so a fresh clone would fail tests that had never been touched.
+#
+# `-text` disables all end-of-line conversion in both directions.
+Tests/RavenFeatureTests/Fixtures/** -text
