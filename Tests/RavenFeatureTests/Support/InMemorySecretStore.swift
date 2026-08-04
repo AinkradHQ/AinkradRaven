@@ -14,4 +14,10 @@ final class InMemorySecretStore: PluginSecretStore {
             storage.removeValue(forKey: key)
         }
     }
+
+    /// Everything held, so a test can assert the store's contents EXHAUSTIVELY
+    /// rather than key by key. Checking known keys can only prove what is
+    /// present; the interesting question for a credential store is what else
+    /// got written next to it.
+    func allSecrets() -> [String: String] { storage }
 }

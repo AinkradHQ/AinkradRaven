@@ -1,22 +1,40 @@
 import Foundation
 import Network
 
-// This file was split out of `GmailAuth.swift`, which had grown to 678 lines by
-// carrying four independent top-level types. What moved here is the loopback
-// redirect capture: the request parser, the listener, its `Coordinator`, and the
-// `OneShotResumeGuard` the coordinator resumes through.
+// This file was moved here verbatim from the provider-specific loopback-callback
+// file it used to live in (see git history for the move). Nothing in the loopback
+// redirect capture is provider-specific: the request parser, the listener, its
+// `Coordinator`, and the `OneShotResumeGuard` the coordinator resumes through
+// all speak plain OAuth 2.0 §4.1 over a loopback HTTP redirect, so all three
+// consumers (a provider's REST API flow, that same provider's XOAUTH2 flow, and
+// Azure) share this one implementation rather than each growing their own.
 //
-// The cut is along type boundaries, so no access control changed and no body was
-// edited — these were already separate `internal` types that only ever spoke to
-// each other and to `GmailAuth` through their own public-to-the-module API.
-// `GmailAuth` keeps the credential path (PKCE, the token exchange, the refresh
-// token in the Keychain) and calls `LoopbackCallbackListener.run(...)` exactly as
-// before.
+// The move is a MOVE: no body was edited, no access control changed, and the
+// only textual change is that the user-facing callback page no longer names one
+// specific provider (it cannot: it is now served for every provider). The
+// listener contains zero provider strings by design — the authorization URL and
+// the `state` are handed in by the caller.
 //
-// The resume-exactly-once discipline is deliberately NOT split: `Coordinator`,
-// its `selfRetain`, the timeout work item and `OneShotResumeGuard` are all still
-// in one file, because that invariant is the thing they collectively enforce and
-// it is only reviewable if they can be read together.
+// FOUR historical bugs are encoded in the code below and each one is invisible
+// to a passing test suite. They must survive any future edit:
+//   1. A loopback redirect cannot be captured by `ASWebAuthenticationSession`
+//      (with a nil callback scheme it captures nothing at all) — hence this
+//      `NWListener` plus `NSWorkspace`-opened browser.
+//   2. The timeout is scheduled with `DispatchQueue.main.asyncAfter`, on the
+//      same queue as every Network callback. An unstructured `Task` runs on the
+//      concurrent executor and races those callbacks.
+//   3. The `Coordinator` retains itself (`selfRetain`) because nothing else
+//      does, and every callback captures `[weak self]`; without it every resume
+//      path is a silent no-op and the continuation leaks. `deinit` fires the
+//      guard with `.abandoned` as a hard backstop.
+//   4. (Token-exchange side, see `OAuthTokenClient`.) The client secret is
+//      required on BOTH the authorization-code exchange and every refresh.
+//
+// The resume-exactly-once discipline is deliberately NOT split across files:
+// `Coordinator`, its `selfRetain`, the timeout work item and
+// `OneShotResumeGuard` are all still in one file, because that invariant is the
+// thing they collectively enforce and it is only reviewable if they can be read
+// together.
 
 // MARK: - Loopback callback capture
 
@@ -55,10 +73,11 @@ enum CallbackRequestParser {
 /// down exactly once on every path (success, denial, malformed request, or
 /// timeout).
 ///
-/// This type has never been exercised against real Google traffic — see the
-/// task report. Its socket-handling is deliberately not unit-tested (that
-/// would require real networking); the parsing it depends on
-/// (`CallbackRequestParser`) is pure and is tested directly instead.
+/// This type has never been exercised against real provider traffic — see the
+/// task report. Its socket-handling is deliberately not unit-tested beyond the
+/// bind/timeout lifetime cover (a real callback would require a real browser);
+/// the parsing it depends on (`CallbackRequestParser`) is pure and is tested
+/// directly instead.
 enum LoopbackCallbackListener {
     enum ListenerError: Error, Equatable {
         case portUnavailable
@@ -107,11 +126,15 @@ enum LoopbackCallbackListener {
     /// webfont or image would simply fail to load. No interpolation of
     /// request data either — every value here is a compile-time constant,
     /// which is what keeps a crafted callback out of the response body.
+    ///
+    /// The copy names no provider: this page is served for every account kind
+    /// that signs in through this listener, and the listener is not told which
+    /// one it is running for.
     static func callbackPage(success: Bool) -> String {
         let accent = success ? "#7c5cff" : "#ff5c7c"
         let title = success ? "Signed in" : "Sign-in failed"
         let body = success
-            ? "Raven is connected to your Gmail account. You can close this tab — your inbox is already syncing."
+            ? "Raven is connected to your mail account. You can close this tab — your inbox is already syncing."
             : "Raven could not complete the sign-in. You can close this tab and try connecting again from Raven's settings."
         let mark = success
             ? #"<path d="M20 32 L28 40 L44 24" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>"#
@@ -396,8 +419,8 @@ private extension Duration {
 /// actor confinement its caller may or may not have. Backed by a lock rather
 /// than by "everything happens to run on the same queue," so the exactly-
 /// once property holds regardless of how callers are scheduled. Stress-tested
-/// in `GmailAuthTests.swift` by firing from many concurrent tasks and
-/// asserting the completion runs exactly once.
+/// in `LoopbackCallbackListenerTests.swift` by firing from many concurrent
+/// tasks and asserting the completion runs exactly once.
 final class OneShotResumeGuard<T>: @unchecked Sendable {
     private let lock = NSLock()
     private var hasFired = false
