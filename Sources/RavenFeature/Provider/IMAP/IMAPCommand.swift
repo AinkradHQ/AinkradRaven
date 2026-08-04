@@ -14,10 +14,57 @@ struct IMAPCommand: Sendable, Equatable {
     /// The command word, e.g. `CAPABILITY`, `SELECT`, `UID FETCH`. Sent verbatim.
     let name: String
     let arguments: [Argument]
+    /// Raw lines (CRLF included) written **reactively** — one per `+ `
+    /// continuation request this command actually receives, in order — and never
+    /// speculatively.
+    ///
+    /// Literals cannot express these. A SASL exchange (`AUTHENTICATE`, Task 9)
+    /// answers a continuation request with a bare base64 line, no `{n}` octet
+    /// count in front of it, and must also be able to answer a *failure*
+    /// challenge with an empty line so the server will then send its tagged `NO`.
+    ///
+    /// ## Why "reactive" is a load-bearing word, and why this is not a wire chunk
+    ///
+    /// A literal's continuation request is *certain*: the client wrote `{n}` and
+    /// the server must answer `+ `. That certainty is what lets
+    /// `IMAPSession.continuationOrder` be an EXACT FIFO of tags awaiting a `+ `,
+    /// which is the only attribution available since a continuation request
+    /// carries no tag.
+    ///
+    /// A SASL ack is *conditional*: on the common success path the server sends
+    /// the tagged completion and no `+ ` at all. An earlier version of this
+    /// property put these lines in `WirePlan.chunks`, which registered the tag in
+    /// `continuationOrder` for a continuation that never came — turning an exact
+    /// FIFO into an over-approximation. A pipelined `LOGIN … {14}` then had its
+    /// `+ ready for literal` consumed by the AUTHENTICATE's speculative CRLF; the
+    /// literal payload was never written and the server read that CRLF as the
+    /// first two of fourteen literal octets. The connection was desynchronised
+    /// with no way back. `IMAPChannelExclusivityTests` reproduces exactly that.
+    ///
+    /// So these lines are deliberately NOT chunks: they never enter
+    /// `continuationOrder`, and the session writes one only when a `+ ` genuinely
+    /// arrives for this command. `isExclusive` is what makes "for this command"
+    /// unambiguous.
+    let reactiveContinuationLines: [Data]
 
-    init(_ name: String, _ arguments: [Argument] = []) {
+    /// The command must own the channel: the session refuses to start it while
+    /// anything else is in flight, and refuses to admit anything else while it is.
+    ///
+    /// Required by, and only by, `reactiveContinuationLines`. A reactive `+ ` is
+    /// attributed to "the single in-flight command", and exclusivity is what makes
+    /// that a fact rather than a guess. This is not a convention or a doc comment
+    /// asking callers to behave — `IMAPSession.execute` enforces it and throws
+    /// `IMAPSessionError.channelReserved`.
+    let isExclusive: Bool
+
+    init(_ name: String, _ arguments: [Argument] = [],
+         reactiveContinuationLines: [Data] = [], isExclusive: Bool = false) {
+        precondition(reactiveContinuationLines.isEmpty || isExclusive,
+                     "a command with reactive continuation lines must be exclusive")
         self.name = name
         self.arguments = arguments
+        self.reactiveContinuationLines = reactiveContinuationLines
+        self.isExclusive = isExclusive
     }
 
     enum Argument: Sendable, Equatable {
@@ -31,6 +78,17 @@ struct IMAPCommand: Sendable, Equatable {
         case literal(Data)
         /// A parenthesised list; elements are rendered by the same rules.
         case list([Argument])
+        /// Wire-identical to the argument it wraps, but `description` renders
+        /// `<redacted>` instead of the value.
+        ///
+        /// Every credential-bearing argument uses this: a password as a quoted
+        /// string, and a SASL initial response as an atom (RFC 4959 requires a
+        /// base64 atom there — a literal is not permitted, so "make it a literal
+        /// and let the byte-count rendering hide it" is not available). Without
+        /// this case, `CustomStringConvertible` would render the credential
+        /// verbatim, and that string is exactly what a log line or a
+        /// `String(describing:)` in an error would carry.
+        indirect case redacted(Argument)
 
         /// The safe default for arbitrary text (a mailbox name, a search term, a
         /// credential): a quoted string when RFC 3501 permits one, a literal
@@ -73,6 +131,9 @@ struct IMAPCommand: Sendable, Equatable {
         }
         current.append(contentsOf: Self.crlf)
         chunks.append(current)
+        // `reactiveContinuationLines` are deliberately absent: a chunk means "a
+        // continuation request is CERTAIN to be requested for this", and a SASL
+        // ack is not. See the property's documentation.
         return WirePlan(chunks: chunks)
     }
 
@@ -108,6 +169,9 @@ struct IMAPCommand: Sendable, Equatable {
                        allowNonSynchronizingLiterals: allowNonSynchronizingLiterals)
             }
             current.append(0x29) // )
+        case .redacted(let inner):
+            append(inner, to: &current, chunks: &chunks,
+                   allowNonSynchronizingLiterals: allowNonSynchronizingLiterals)
         }
     }
 
@@ -127,9 +191,11 @@ struct IMAPCommand: Sendable, Equatable {
 }
 
 extension IMAPCommand: CustomStringConvertible {
-    /// Literal payloads are shown as a byte count, never as bytes: `LOGIN` and
-    /// `AUTHENTICATE` carry credentials in literals and this string is what a
-    /// log line or an error would contain.
+    /// Literal payloads are shown as a byte count, never as bytes, and
+    /// `.redacted` arguments as `<redacted>`: `LOGIN` and `AUTHENTICATE` carry
+    /// credentials and this string is what a log line or an error would contain.
+    /// `reactiveContinuationLines` are deliberately absent — they carry SASL
+    /// responses.
     var description: String {
         ([name] + arguments.map(Self.describe)).joined(separator: " ")
     }
@@ -140,6 +206,7 @@ extension IMAPCommand: CustomStringConvertible {
         case .quoted(let value): return quote(value)
         case .literal(let payload): return "{\(payload.count) bytes}"
         case .list(let elements): return "(" + elements.map(describe).joined(separator: " ") + ")"
+        case .redacted: return "<redacted>"
         }
     }
 }

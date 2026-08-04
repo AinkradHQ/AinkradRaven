@@ -1,29 +1,5 @@
 import Foundation
 
-/// Why a command, or the whole connection, failed.
-enum IMAPSessionError: Error, Equatable {
-    /// A command was issued before `connect()`, or after the session was closed
-    /// or failed. Never a suspended call: a dead session refuses immediately.
-    case notConnected
-    /// The session (or the transport under it) was closed while this command was
-    /// in flight. Every waiter gets this rather than staying suspended.
-    case closed
-    /// A `NO` or `BAD` tagged completion. Carries the tag so a log can be
-    /// correlated with the recorded wire bytes.
-    case commandFailed(tag: String, status: IMAPCommandStatus, text: String)
-    /// The server's greeting was not `* OK`, `* PREAUTH` or `* BYE`.
-    case malformedGreeting(String)
-    /// The server said `* BYE` instead of greeting us.
-    case greetingRejected(String)
-    /// The stream is no longer interpretable as IMAP: an unknown tag, a
-    /// continuation request nobody asked for, an unknown completion status. There
-    /// is no framing to re-synchronise to, so this always tears the connection
-    /// down — see `IMAPLexer`'s note on why re-syncing is not possible.
-    case protocolError(String)
-    case malformedResponse(IMAPLexerError)
-    case transportFailure(MailTransportError)
-}
-
 /// The IMAP command channel: one actor owning one transport, issuing tagged
 /// commands, and routing every response line to whoever is waiting for it.
 ///
@@ -72,17 +48,32 @@ actor IMAPSession {
     private struct Record {
         let tag: String
         let command: IMAPCommand
-        /// Chunks not yet written; each is written on one `+ ` request.
+        /// Chunks not yet written; each is written on one `+ ` request that this
+        /// command's own literals GUARANTEED. Mirrored by `continuationOrder`.
         var remainingChunks: [Data]
+        /// Written only if a `+ ` actually arrives. Never mirrored in
+        /// `continuationOrder`, so that FIFO stays exact; attributable because a
+        /// command carrying these is exclusive on the channel.
+        var reactiveLines: [Data]
         var untagged: [IMAPUntaggedResponse] = []
         var waiter: CheckedContinuation<IMAPTaggedResponse, any Error>?
     }
 
+    /// `private`, and it must stay that way. Every byte this actor writes goes
+    /// through `execute` (and therefore `requireChannelAdmits` and a tag), and
+    /// that is only structurally true while nothing outside this file can reach
+    /// `transport.send`. An earlier version of the file split made this internal
+    /// for `startTLS`'s benefit, which quietly turned "the one place every command
+    /// passes through" back into a convention: any code in the module could do
+    /// `await session.transport` and write raw untagged bytes. `performTLSHandshake`
+    /// exposes the one operation the split genuinely needs instead.
     private let transport: any MailTransport
     private var state: State = .idle
-    private var lexer = IMAPLexer()
+    /// Not `private`: reset by `startTLS` in `IMAPSessionCapabilities.swift`.
+    var lexer = IMAPLexer()
     /// Tokens of the response line being accumulated, minus its CRLF.
-    private var lineTokens: [IMAPToken] = []
+    /// Not `private`: reset by `startTLS` in `IMAPSessionCapabilities.swift`.
+    var lineTokens: [IMAPToken] = []
     private var tagCounter = 0
     private var inFlight: [String: Record] = [:]
     /// Tags awaiting a `+ ` continuation request, in the order they were sent.
@@ -91,7 +82,12 @@ actor IMAPSession {
     private var continuationOrder: [String] = []
     /// Results that arrived before their `execute` suspended. See rule 2 above.
     private var settledResults: [String: Result<IMAPTaggedResponse, any Error>] = [:]
-    private var capabilityCache: Set<String>?
+    /// Tags whose caller was cancelled; the server still answers them. Cleared on
+    /// `close()`/`teardown` — after either, nothing can arrive for them. See
+    /// `abandon(tag:)`.
+    private var abandonedTags: Set<String> = []
+    /// Not `private`: owned by `IMAPSessionCapabilities.swift`.
+    var capabilityCache: Set<String>?
     private var greetingResult: Result<IMAPGreeting, any Error>?
     private var greetingWaiter: CheckedContinuation<IMAPGreeting, any Error>?
     private var readLoop: Task<Void, Never>?
@@ -123,6 +119,10 @@ actor IMAPSession {
     /// Must be 0 after `close()`.
     var inFlightCount: Int { inFlight.count }
     var pendingContinuationTags: [String] { continuationOrder }
+    /// Cancelled tags still awaiting the server's (now ignored) completion. Must be
+    /// 0 after `close()`: nothing can arrive for them once the transport is gone,
+    /// so a non-zero count there is a leak that grows with the session's lifetime.
+    var abandonedTagCount: Int { abandonedTags.count }
     /// The cached capability list, or nil when none has been learned yet. Nil is
     /// distinct from empty: it means "must ask", not "server supports nothing".
     var cachedCapabilities: Set<String>? { capabilityCache }
@@ -153,6 +153,10 @@ actor IMAPSession {
         }
         state = .closed
         failAllWaiters(.closed)
+        // Nothing can arrive for an abandoned tag after this, so the set is dead
+        // weight. It only ever drains when the server answers, and a server that
+        // never answers would otherwise leave entries for the session's lifetime.
+        abandonedTags.removeAll()
         readLoop?.cancel()
         readLoop = nil
         await transport.close()
@@ -195,13 +199,15 @@ actor IMAPSession {
     @discardableResult
     func execute(_ command: IMAPCommand) async throws -> IMAPTaggedResponse {
         try requireRunning()
+        try requireChannelAdmits(command)
         let tag = nextTag()
         let plan = command.wirePlan(
             tag: tag,
             allowNonSynchronizingLiterals: hasCapability("LITERAL+"))
         var remaining = plan.chunks
         let first = remaining.removeFirst()
-        inFlight[tag] = Record(tag: tag, command: command, remainingChunks: remaining)
+        inFlight[tag] = Record(tag: tag, command: command, remainingChunks: remaining,
+                               reactiveLines: command.reactiveContinuationLines)
         if !remaining.isEmpty { continuationOrder.append(tag) }
         do {
             try await transport.send(first)
@@ -210,7 +216,7 @@ actor IMAPSession {
             // no response can be routed to a caller that already threw, and
             // discard a result that raced in during the send.
             discardRecord(tag)
-            throw Self.mapped(error)
+            throw IMAPSessionError.classifying(error)
         }
         if let parked = settledResults.removeValue(forKey: tag) {
             return try parked.get()
@@ -221,20 +227,72 @@ actor IMAPSession {
             if case .closed = state { throw IMAPSessionError.closed }
             throw IMAPSessionError.closed
         }
-        return try await withCheckedThrowingContinuation { continuation in
-            if let parked = settledResults.removeValue(forKey: tag) {
-                continuation.resume(with: parked)
-            } else if inFlight[tag] == nil {
-                continuation.resume(throwing: IMAPSessionError.closed)
-            } else {
-                inFlight[tag]?.waiter = continuation
+        // Cancellation is the ONE path that is not a teardown, so it needs its own
+        // handler: a cancelled caller would otherwise leave its record in
+        // `inFlight` forever, and since `requireChannelAdmits` reads `inFlight`, a
+        // stranded EXCLUSIVE record refuses every later command. See `abandon`.
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if let parked = settledResults.removeValue(forKey: tag) {
+                    continuation.resume(with: parked)
+                } else if inFlight[tag] == nil {
+                    continuation.resume(throwing: IMAPSessionError.closed)
+                } else {
+                    inFlight[tag]?.waiter = continuation
+                }
             }
+        } onCancel: {
+            // Not actor-isolated, so it hops. Correct in either order relative to
+            // the continuation's registration: `settle` parks a result when no
+            // waiter exists yet, and `execute` claims a parked result first.
+            Task { await self.abandon(tag: tag) }
         }
+    }
+
+    /// Fails a cancelled command's waiter, drops its record (which is what frees
+    /// an exclusive command's reservation) and remembers the tag.
+    ///
+    /// The tag must be remembered: IMAP cannot withdraw an issued command, so the
+    /// server still answers it, and `handleTagged` treats a completion for an
+    /// unknown tag as unrecoverable. Swallowing exactly what we abandoned is what
+    /// stops one cancelled caller killing a shared connection.
+    private func abandon(tag: String) async {
+        guard inFlight[tag] != nil else { return }
+        // An unwritten synchronising literal is the one case that cannot be clean:
+        // the server awaits octets nobody will write and the `{n}` cannot be
+        // withdrawn, so the stream is desynchronised whatever we do. Say so.
+        if continuationOrder.contains(tag) {
+            await teardown(.protocolError(
+                "command \(tag) cancelled with an unwritten literal; the stream cannot be resynchronised"))
+            return
+        }
+        settle(tag: tag, result: .failure(CancellationError()))
+        abandonedTags.insert(tag)
+    }
+
+    /// The single transport operation reachable from outside this file: the TLS
+    /// handshake, which `startTLS` in `IMAPSessionCapabilities.swift` performs
+    /// after the protocol-level negotiation it owns. Deliberately not a getter for
+    /// `transport` — see that property.
+    func performTLSHandshake() async throws {
+        try await transport.startTLS()
     }
 
     private func nextTag() -> String {
         tagCounter += 1
         return String(format: "A%04d", tagCounter)
+    }
+
+    /// Enforces `IMAPCommand.isExclusive` where every command passes through, so it
+    /// is a property of the channel, not a rule callers must remember.
+    private func requireChannelAdmits(_ command: IMAPCommand) throws {
+        if command.isExclusive {
+            guard inFlight.isEmpty else {
+                throw IMAPSessionError.channelReserved(exclusiveTag: nil)
+            }
+        } else if let held = inFlight.values.first(where: { $0.command.isExclusive }) {
+            throw IMAPSessionError.channelReserved(exclusiveTag: held.tag)
+        }
     }
 
     private func requireRunning() throws {
@@ -272,25 +330,18 @@ actor IMAPSession {
         // suspends after the park is checked.
     }
 
-    private func teardown(_ error: IMAPSessionError) async {
+    /// Not `private`: `startTLS` in `IMAPSessionCapabilities.swift` tears down on a
+    /// failed handshake. Still actor isolated.
+    func teardown(_ error: IMAPSessionError) async {
         switch state {
         case .closed: return
         default: break
         }
         state = .failed(error)
         failAllWaiters(error)
+        abandonedTags.removeAll()
         await transport.close()
         untaggedContinuation.finish()
-    }
-
-    private static func mapped(_ error: any Error) -> IMAPSessionError {
-        switch error {
-        case let error as IMAPSessionError: return error
-        case let error as MailTransportError:
-            return error == .closed ? .closed : .transportFailure(error)
-        case let error as IMAPLexerError: return .malformedResponse(error)
-        default: return .protocolError(String(describing: error))
-        }
     }
 
     // MARK: - Read loop
@@ -316,7 +367,7 @@ actor IMAPSession {
                 }
             }
         } catch {
-            await teardown(Self.mapped(error))
+            await teardown(IMAPSessionError.classifying(error))
         }
     }
 
@@ -351,8 +402,22 @@ actor IMAPSession {
         }
     }
 
+    /// Answers a `+ `. Two attribution mechanisms, in priority order, neither
+    /// guessing: (1) `continuationOrder`, the EXACT FIFO of tags that wrote a `{n}`
+    /// and are GUARANTEED a `+ ` — nothing speculative is ever put there, which is
+    /// what keeps it exact; (2) a reactive line from the single in-flight exclusive
+    /// command — a SASL ack, sent only sometimes, so pre-registering it would make
+    /// that FIFO an over-approximation. Anything else is a continuation nobody can
+    /// own, with no framing to recover from, so it tears the connection down.
     private func handleContinuationRequest(_ tokens: [IMAPToken]) async throws {
         guard !continuationOrder.isEmpty else {
+            if let tag = soleReactiveTag(), var record = inFlight[tag],
+               !record.reactiveLines.isEmpty {
+                let line = record.reactiveLines.removeFirst()
+                inFlight[tag] = record
+                try await transport.send(line)
+                return
+            }
             throw IMAPSessionError.protocolError(
                 "continuation request with no command awaiting one: \(IMAPResponseText.render(tokens))")
         }
@@ -368,8 +433,26 @@ actor IMAPSession {
         try await transport.send(chunk)
     }
 
+    /// The tag of the only command in flight, or nil when there is more than one.
+    ///
+    /// The falsifiable guard on the reactive path is the caller's
+    /// `!reactiveLines.isEmpty`. `count == 1` is NOT falsifiable — relaxing it
+    /// leaves the suite green, because only an exclusive command can carry reactive
+    /// lines (`IMAPCommand.init` precondition) and `requireChannelAdmits` keeps it
+    /// alone, so "has reactive lines" already implies "is sole". Verified by
+    /// mutation. An `isExclusive` re-check that sat beside it was equally
+    /// unfalsifiable *and* pure duplication, so it is gone; `count == 1` stays as
+    /// belt-and-braces — explicitly not a tested guarantee — because it is what
+    /// makes "sole" true here rather than an inference about two other files.
+    private func soleReactiveTag() -> String? {
+        guard inFlight.count == 1 else { return nil }
+        return inFlight.keys.first
+    }
+
     private func handleTagged(tag: String, rest: [IMAPToken]) throws {
         guard inFlight[tag] != nil else {
+            // A cancelled command's completion: expected, swallowed exactly once.
+            if abandonedTags.remove(tag) != nil { return }
             throw IMAPSessionError.protocolError("completion for unknown tag \(tag)")
         }
         guard let statusWord = rest.first?.stringValue,
@@ -393,77 +476,6 @@ actor IMAPSession {
             settle(tag: tag, result: .failure(IMAPSessionError.commandFailed(
                 tag: tag, status: status, text: response.text)))
         }
-    }
-
-    // MARK: - CAPABILITY
-
-    /// The advertised capability list, asking the server only if it is unknown.
-    func capabilities() async throws -> Set<String> {
-        if let capabilityCache { return capabilityCache }
-        return try await reloadCapabilities()
-    }
-
-    /// Discards the cache and issues `CAPABILITY`.
-    @discardableResult
-    func reloadCapabilities() async throws -> Set<String> {
-        capabilityCache = nil
-        let response = try await execute(IMAPCommand("CAPABILITY"))
-        if let capabilityCache { return capabilityCache }
-        // Some servers answer only with a `[CAPABILITY …]` code on the tagged OK.
-        if let coded = IMAPCapabilityList.code(in: response.tokens) {
-            capabilityCache = coded
-            return coded
-        }
-        throw IMAPSessionError.protocolError("CAPABILITY completed without a capability list")
-    }
-
-    func hasCapability(_ name: String) -> Bool {
-        capabilityCache?.contains(name.uppercased()) ?? false
-    }
-
-    /// Negotiates `STARTTLS`, performs the handshake, then re-reads CAPABILITY.
-    ///
-    /// The re-read is mandatory, not an optimisation: RFC 3501 requires the
-    /// client to discard the pre-TLS list (a man in the middle could have
-    /// authored it) and servers legitimately advertise different capabilities —
-    /// `LOGINDISABLED` disappears, `AUTH=` mechanisms appear — once TLS is up.
-    /// Task 9's `LOGINDISABLED` check would be reading a stripped list otherwise.
-    func startTLS() async throws {
-        try await execute(IMAPCommand("STARTTLS"))
-        do {
-            try await transport.startTLS()
-        } catch let error as MailTransportError {
-            let mapped = IMAPSessionError.transportFailure(error)
-            await teardown(mapped)
-            throw mapped
-        }
-        // The pre-TLS byte stream is finished; nothing buffered from it may be
-        // interpreted as part of the encrypted one.
-        lexer = IMAPLexer()
-        lineTokens = []
-        try await reloadCapabilities()
-    }
-
-    /// Call after any successful authentication. Servers routinely change the
-    /// list at that point (`AUTH=` mechanisms go away, `IDLE`/`QUOTA`/namespace
-    /// capabilities appear), and Task 11/12 branch on those.
-    @discardableResult
-    func capabilitiesAfterAuthentication() async throws -> Set<String> {
-        try await reloadCapabilities()
-    }
-
-    /// Learns capabilities from `* CAPABILITY …` and from a `[CAPABILITY …]`
-    /// response code, wherever either appears.
-    private func absorbCapabilities(from tokens: [IMAPToken]) {
-        if let advertised = IMAPCapabilityList.untagged(tokens) {
-            capabilityCache = advertised
-            return
-        }
-        absorbCapabilities(fromResponseCodeIn: tokens)
-    }
-
-    private func absorbCapabilities(fromResponseCodeIn tokens: [IMAPToken]) {
-        if let coded = IMAPCapabilityList.code(in: tokens) { capabilityCache = coded }
     }
 
 }
