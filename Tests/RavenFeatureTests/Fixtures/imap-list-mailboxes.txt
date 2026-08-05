@@ -1,0 +1,13 @@
+* LIST (\HasNoChildren) NIL "INBOX"
+* LIST (\HasNoChildren \Trash) "/" "Folder A"
+* LIST (\HasNoChildren) "/" "Folder A/Trash"
+* LIST (\HasNoChildren \Archive) "/" "Trash"
+* LIST (\HasNoChildren) "/" "Sent Items"
+* LIST (\HasNoChildren \sent) "/" "Folder B"
+* LIST (\Noselect \HasChildren) "/" "Folder C"
+* LIST () "NIL" "NIL"
+* LIST (\HasNoChildren \Archive) "/" {12}
+Folder A (x)
+* LIST (\HasNoChildren) "/" "Drafts"
+* LIST (\HasNoChildren \Junk) "/" "Folder E"
+* OK Completed
