@@ -189,6 +189,24 @@ struct IMAPBodyPart: Equatable, Sendable {
         }
     }
 
+    /// Whether the message should show a paperclip — deliberately a LOOSER test
+    /// than `attachments`, and matching `GmailMapping.hasAttachment` exactly: any
+    /// part that is neither `text/*` nor `multipart/*`.
+    ///
+    /// The two must differ. `attachments` requires a filename because the UI cannot
+    /// offer to save a file it has no name for, but Gmail's paperclip does not:
+    /// an unnamed inline `image/png` (which every HTML newsletter carries, and
+    /// which `Content-Disposition: inline` with no `filename` is the normal
+    /// spelling of) makes Gmail answer true. Deriving `hasAttachments` from
+    /// `!attachments.isEmpty` therefore made the SAME message show a paperclip in a
+    /// Gmail account and none in an IMAP account — a divergence with no defensible
+    /// reading, since the flag means "there is more here than text".
+    var carriesAttachment: Bool {
+        preOrder.contains { part in
+            !part.mimeType.hasPrefix("text/") && !part.mimeType.hasPrefix("multipart/")
+        }
+    }
+
     /// Attachment *metadata* for every named leaf part.
     ///
     /// "Named" is the test, matching `GmailMapping.attachments`, which requires a
@@ -197,6 +215,8 @@ struct IMAPBodyPart: Equatable, Sendable {
     /// the server marked `attachment` with no filename at all is not something
     /// the UI can offer to save. `attachmentID` is the part number, which is the
     /// on-demand fetch handle.
+    ///
+    /// Not the same question as `carriesAttachment` — see that property.
     var attachments: [MailAttachment] {
         preOrder.compactMap { part in
             guard !part.isMultipart, let number = part.partNumber,

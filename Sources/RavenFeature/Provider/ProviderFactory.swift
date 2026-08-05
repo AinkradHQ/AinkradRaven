@@ -144,10 +144,12 @@ import AinkradAppKit
             return GmailProvider(accountID: account.id, auth: gmailAuth)
         case .appleMail:
             return try makeAppleMailProvider(for: account)
-        case .imap, .graph:
-            // The backends themselves are later tasks. Refusing by name here
-            // (rather than being absent from the switch) is what lets an
-            // `accounts` document that already names one of them load.
+        case .imap:
+            return try makeIMAPProvider(for: account)
+        case .graph:
+            // The backend itself is a later task. Refusing by name here (rather
+            // than being absent from the switch) is what lets an `accounts`
+            // document that already names it load.
             throw MailError.unsupportedProvider(kind: account.provider.identifier,
                                                 accountID: account.id)
         case .unsupported(let raw):
@@ -194,6 +196,43 @@ import AinkradAppKit
             // reported by id like any other unbuildable account.
             throw MailError.unsupportedProvider(kind: account.provider.identifier,
                                                 accountID: account.id)
+        }
+    }
+
+    /// Rebuilds an `IMAPProvider` from the server settings saved when the account
+    /// was added, plus the app password held in `host.secrets`.
+    ///
+    /// The connection is established **lazily**, inside the closure the provider
+    /// calls per operation, and not here: `makeProvider` is synchronous and is
+    /// re-run for every account by `attachStoredAccounts()` on every credential
+    /// change, so opening a socket here would connect to every IMAP server the user
+    /// has just to render the Accounts list.
+    ///
+    /// The lease caches nothing on purpose either — see `IMAPProvider.acquire`. A
+    /// cached session would have to answer "is this socket still alive", and the honest
+    /// answer at this layer is a fresh connect; Task 14's IDLE work is where a
+    /// long-lived session gets an owner that can tell. Note that caching and *closing*
+    /// are separate questions: whatever Task 14 does about reuse, the lease's `release`
+    /// is what returns the connection slot, and it runs after every operation.
+    private func makeIMAPProvider(for account: MailAccount) throws -> MailProvider {
+        guard let data = host.documents.data(forKey: DocumentKeys.imapSettings(accountID: account.id)),
+              let settings = try? JSONDecoder().decode(IMAPAccountSettings.self, from: data),
+              let credential = IMAPAppPasswordStore.credential(
+                accountID: account.id, username: settings.username, secrets: host.secrets)
+        else {
+            // No settings row, or no stored password: this ONE account cannot be
+            // built, reported by id like every other unbuildable account.
+            throw MailError.unsupportedProvider(kind: account.provider.identifier,
+                                                accountID: account.id)
+        }
+        return IMAPProvider(accountID: account.id) {
+            let working = try await IMAPProvider.openSession(settings: settings,
+                                                             credential: credential)
+            // The release is bound to THIS session, so `withSession` cannot log out of
+            // somebody else's, and every acquire here has exactly one.
+            return IMAPSessionLease(working: working) {
+                await IMAPProvider.closeSession(working)
+            }
         }
     }
 

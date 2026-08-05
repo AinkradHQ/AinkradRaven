@@ -56,9 +56,11 @@ enum IMAPDeltaHarness {
 
     /// The one resolver both paths get. Nothing here knows which walk is running.
     static func identity(
+        mailbox: String = IMAPDeltaHarness.mailbox,
         sequenceNumbers: [UInt64: UInt32] = [:]
     ) -> IMAPDeltaIdentity {
         IMAPDeltaIdentity(
+            mailbox: mailbox,
             knownUIDs: { Set(storedThreadIDs.keys) },
             knownFlags: { storedFlags[$0] },
             threadID: { storedThreadIDs[$0] },
@@ -132,12 +134,14 @@ enum IMAPDeltaHarness {
     /// leaked-continuation shape, and a hung suite reports as an infrastructure
     /// timeout rather than as the bug it is.
     static func pass(_ strategy: IMAPDeltaStrategy, from cursor: IMAPSyncCursor,
-                     mailbox: String = IMAPDeltaHarness.mailbox,
                      sourceLocation: SourceLocation = #_sourceLocation) async
         -> Result<PassResult, any Error>? {
         await boundedOutcome(sourceLocation: sourceLocation) {
             var working = cursor
-            let delta = try await strategy.delta(mailbox: mailbox, cursor: &working)
+            // The mailbox is not passed: it travels inside the identity, so a
+            // suite cannot pair one mailbox's UID table with another's walk.
+            // See `IMAPDeltaIdentity.mailbox`.
+            let delta = try await strategy.delta(cursor: &working)
             return PassResult(delta: delta, cursor: working)
         }
     }
@@ -157,21 +161,20 @@ enum IMAPDeltaHarness {
         /// variable it was handed. A strategy that advanced the cursor before
         /// failing is therefore visible here rather than hidden by the rethrow —
         /// which is the whole point of the hold-vs-advance assertion.
-        func run(_ strategy: IMAPDeltaStrategy, mailbox: String) async throws -> MailDelta {
+        func run(_ strategy: IMAPDeltaStrategy) async throws -> MailDelta {
             var working = cursor
             // An actor's own property cannot be passed `inout` to an `async` call,
             // so the copy is forced by the language, not chosen.
             defer { cursor = working }
-            return try await strategy.delta(mailbox: mailbox, cursor: &working)
+            return try await strategy.delta(cursor: &working)
         }
     }
 
     /// Asserts a pass succeeded within the deadline.
     static func expectPass(_ strategy: IMAPDeltaStrategy, from cursor: IMAPSyncCursor,
-                           mailbox: String = IMAPDeltaHarness.mailbox,
                            sourceLocation: SourceLocation = #_sourceLocation) async
         -> PassResult? {
-        guard let outcome = await pass(strategy, from: cursor, mailbox: mailbox,
+        guard let outcome = await pass(strategy, from: cursor,
                                        sourceLocation: sourceLocation) else { return nil }
         switch outcome {
         case .success(let result): return result

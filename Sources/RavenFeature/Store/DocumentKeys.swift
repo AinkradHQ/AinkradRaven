@@ -45,4 +45,19 @@ public enum DocumentKeys {
     public static func appleMailDirectory(accountID: String) -> String {
         "applemail-directory-\(accountID)"
     }
+
+    /// An `.imap` account's server settings (`IMAPAccountSettings`): host, port and
+    /// username. A *location plus a login name*, not a credential — the password
+    /// lives under `IMAPAppPasswordStore.key(accountID:)` in `host.secrets` and never
+    /// here — so a document, exactly like `gmail-client-id`. Read by
+    /// `ProviderFactory` to rebuild the `.imap` provider on relaunch.
+    ///
+    /// Unlike `appleMailDirectory`, this is **not** removed by
+    /// `ProviderFactory.signOut` yet, and neither is the app password
+    /// (`IMAPAppPasswordStore.clear` has no production caller). Both belong with the
+    /// account-setup work that writes them; stated here rather than left to be
+    /// inferred from the absence of a line.
+    public static func imapSettings(accountID: String) -> String {
+        "imap-settings-\(accountID)"
+    }
 }

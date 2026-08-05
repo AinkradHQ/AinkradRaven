@@ -296,7 +296,7 @@ struct IMAPDeltaStrategyTests {
         let strategy = Self.strategy(session)
         let box = IMAPDeltaHarness.CursorBox(before)
         let outcome = await boundedOutcome {
-            try await box.run(strategy, mailbox: IMAPDeltaHarness.mailbox)
+            try await box.run(strategy)
         }
         guard let outcome else { return }
         if case .success(let delta) = outcome {

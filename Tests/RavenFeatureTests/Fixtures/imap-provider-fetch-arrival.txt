@@ -1,0 +1,5 @@
+* 3 FETCH (UID 20 FLAGS () INTERNALDATE "03-Aug-2026 09:00:00 +0000" ENVELOPE ("Mon, 03 Aug 2026 09:00:00 +0000" "Subject 3" (("Name C" NIL "c" "example.test")) NIL NIL (("Name Z" NIL "z" "example.test")) NIL NIL NIL "<m3@example.test>") BODYSTRUCTURE (("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 10 1)("IMAGE" "PNG" NIL NIL NIL "BASE64" 24 NIL ("INLINE" NIL) NIL) "MIXED") BODY[HEADER.FIELDS (MESSAGE-ID REFERENCES IN-REPLY-TO)] {82}
+Message-ID: <m3@example.test>
+References: <m1@example.test> <m2@example.test>
+
+)

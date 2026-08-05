@@ -36,6 +36,21 @@ enum IMAPDeltaError: Error, Equatable {
 /// paths are handed the identical resolver, so any difference in the delta is a
 /// difference in the walk and nothing else.
 struct IMAPDeltaIdentity: Sendable {
+    /// The mailbox every closure below answers for, and the mailbox the pass will
+    /// walk — `IMAPDeltaStrategy.delta(cursor:)` reads it from here rather than
+    /// taking it as a separate argument.
+    ///
+    /// It lives in the identity, not in the call, because pairing one mailbox's
+    /// UID table with another mailbox's walk is the one mistake this file cannot
+    /// survive: `insertSetDifferenceRemovals` treats "known, in range, absent from
+    /// the re-scan" as proof of deletion, so an account-wide (or simply
+    /// mismatched) `knownUIDs` makes `Folder A`'s re-scan report every message of
+    /// `Folder B` as removed. That is silent mail loss with no error anywhere, and
+    /// making it unexpressible is worth one field. `IMAPMessageIndex.identity(for:)`
+    /// is the only production construction site and snapshots exactly this
+    /// mailbox.
+    let mailbox: String
+
     /// Every UID this client already holds for the mailbox. The fallback's
     /// removal detection is exactly "known, in range, and absent from the
     /// re-scan".
@@ -153,7 +168,11 @@ struct IMAPDeltaStrategy: Sendable {
 
     // MARK: - The pass
 
-    /// Walks `mailbox` and returns what changed since `cursor`.
+    /// Walks `identity.mailbox` and returns what changed since `cursor`.
+    ///
+    /// The mailbox is **not** a parameter: it is read from `identity`, so the UID
+    /// table the removal detection trusts and the mailbox being walked cannot
+    /// disagree. See `IMAPDeltaIdentity.mailbox`.
     ///
     /// `cursor` is `inout` and is assigned **once, on the last line**. That is
     /// the whole of the hold-vs-advance mechanism: a transient failure anywhere
@@ -164,7 +183,8 @@ struct IMAPDeltaStrategy: Sendable {
     /// A `UIDVALIDITY` change is the one condition that re-walks, and it does so
     /// through `IMAPSyncCursor.reconcile`, which resets this mailbox's position
     /// and no other's.
-    func delta(mailbox: String, cursor: inout IMAPSyncCursor) async throws -> MailDelta {
+    func delta(cursor: inout IMAPSyncCursor) async throws -> MailDelta {
+        let mailbox = identity.mailbox
         var working = cursor
         let stored = working.mailboxes[mailbox]
         let capabilities = try await session.capabilities()

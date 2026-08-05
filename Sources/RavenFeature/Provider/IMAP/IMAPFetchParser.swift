@@ -329,7 +329,10 @@ enum IMAPFetchParser {
             isRead: !response.flags.contains(.unread),
             isStarred: response.flags.contains(.starred),
             labelIDs: [],
-            hasAttachments: !attachments.isEmpty,
+            // NOT `!attachments.isEmpty` — see `IMAPBodyPart.carriesAttachment` for
+            // why the paperclip and the saveable-file list are different questions,
+            // and for the Gmail divergence that answering them the same way caused.
+            hasAttachments: response.bodyStructure?.carriesAttachment ?? false,
             snippet: "",
             attachments: attachments)
     }

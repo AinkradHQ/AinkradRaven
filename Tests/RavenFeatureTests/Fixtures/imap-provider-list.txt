@@ -1,0 +1,4 @@
+* LIST (\HasNoChildren) "/" "INBOX"
+* LIST (\HasNoChildren \Archive) "/" "Folder B"
+* LIST (\HasNoChildren \Trash) "/" "Folder C"
+* LIST (\Noselect \HasChildren) "/" "Folder D"
