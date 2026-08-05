@@ -171,6 +171,13 @@ struct RavenAccountsPane: View {
             if let lastError = runtime.lastSyncError(for: account.id) ?? account.lastError {
                 AinkradBanner(message: lastError, status: .danger)
             }
+            // `.warning`, not `.danger`: near-push being unavailable is a
+            // degradation, not a failure — the 120-second poll still runs, so mail
+            // arrives, just later. Separate from the error banner above because
+            // `syncErrors` is cleared on every successful pass and this must not be.
+            if let pushStatus = runtime.pushStatus(for: account.id) {
+                AinkradBanner(message: pushStatus, status: .warning)
+            }
             if runtime.lastBackfillTruncated(for: account.id) {
                 AinkradBanner(message: "The last backfill stopped early (page limit reached). " +
                               "Some older mail in the sync window may be missing.",

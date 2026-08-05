@@ -1,6 +1,45 @@
 import Foundation
 import AinkradAppKit
 
+/// Whether an IMAP account has a live near-push (`IDLE`) connection, and if not,
+/// why not.
+///
+/// Only IMAP accounts have one at all, so `RavenRuntime.pushStates` simply has no
+/// entry for a Gmail or Apple Mail account — absence means "this kind never idles",
+/// which is different from "it tried and could not".
+///
+/// `message` is `nil` for the healthy case: an account that is idling normally has
+/// nothing to tell the user, and a banner reading "near-push is working" is noise
+/// on a surface whose other banners are all failures.
+/// Deliberately NOT `RawRepresentable`: nothing reads a raw value — the log line
+/// interpolates the watcher's `Outcome` and the surface reads `message` — and a raw
+/// value with no reader invites the next person to assume it is persisted. It is
+/// in-memory status, rebuilt from scratch on every launch.
+public enum RavenPushState: Equatable, Sendable {
+    /// An IDLE connection is running (or reconnecting on its backoff).
+    case idling
+    /// The server never advertised `IDLE`. Terminal.
+    case notAdvertised
+    /// The account has no mailbox that can be `SELECT`ed. Terminal.
+    case noSelectableMailbox
+
+    /// What the Accounts surface shows, or `nil` when there is nothing to say.
+    /// Both sentences name the fallback explicitly, because the honest message is
+    /// "mail still arrives, just later" rather than "something is broken".
+    public var message: String? {
+        switch self {
+        case .idling:
+            return nil
+        case .notAdvertised:
+            return "This server does not support IMAP IDLE, so new mail is picked " +
+                   "up by the two-minute check rather than as it arrives."
+        case .noSelectableMailbox:
+            return "No mailbox on this account can be opened for new-mail " +
+                   "notifications, so the two-minute check is the only trigger."
+        }
+    }
+}
+
 /// Sync orchestration: the one poll loop, the per-account delta syncs, the
 /// detached backfills, and the engine/provider attachment that wires them up.
 ///
@@ -232,6 +271,114 @@ extension RavenRuntime {
         engine.onChange = { [weak self] in self?.mirrorSyncEngineState(accountID: accountID) }
         engine.onNewThreads = { [weak self] threadIDs in self?.applyRules(threadIDs: threadIDs) }
         syncEngines[accountID] = engine
+        // Additive: the poll loop above is untouched and keeps ticking for this
+        // account whether or not an IDLE connection is established. See
+        // `startIdleWatcher`.
+        startIdleWatcher(provider: provider, accountID: accountID)
+    }
+
+    // MARK: Near-push (IDLE)
+
+    /// Starts one IDLE watcher for an IMAP account, if it does not already have
+    /// one. A no-op for every other provider kind.
+    ///
+    /// **Alongside `startSyncTimer`, never instead of it.** The 120-second poll is
+    /// what covers the interval an IDLE connection cannot: a server that never
+    /// advertised `IDLE`, a mailbox that cannot be selected, a connection down for
+    /// the length of a backoff, and every non-IMAP account. So this method only ever
+    /// ADDS a trigger, and the one thing it must never do is give any caller a
+    /// reason to skip the timer.
+    ///
+    /// `onNotification` is `syncNow(accountID:)` — the same per-account entry point
+    /// the timer's `syncOnce` reaches through `syncAccount`, so an IDLE-triggered
+    /// pass and a polled pass are literally the same pass with the same
+    /// hold-don't-advance cursor discipline. Nothing about the cursor is special
+    /// cased for arrivals, which is what stops near-push becoming a second,
+    /// less-tested sync path.
+    ///
+    /// `[weak self]`: the watcher outlives nothing, but it is retained by the task
+    /// running it, and a strong `self` there would keep a torn-down runtime alive
+    /// for as long as the IDLE connection lasted.
+    func startIdleWatcher(provider: MailProvider, accountID: String) {
+        // Not `capabilities`-driven: IDLE is a property of the IMAP protocol
+        // implementation, not of the read/write capability set, and Graph (Task 20)
+        // will be `.readWrite` too without having an IMAP session to idle on.
+        guard let imap = provider as? IMAPProvider else { return }
+        // Idempotent — see `idleWatchers`. Deliberately keeps the EXISTING watcher
+        // rather than replacing it: a re-`attach` for the same account produces an
+        // equivalent provider over the same settings, and stopping a live IDLE
+        // connection to swap in an identical one would drop the near-push window
+        // for the length of a `DONE`/reconnect for no gain. A watcher that has
+        // already terminated is also kept, so `.notAdvertised` is not silently
+        // retried on every re-attach — it is terminal by design.
+        guard idleWatchers[accountID] == nil else { return }
+        let watcher = IMAPIdleWatcher(
+            provider: imap,
+            clock: idleClockOverride ?? IMAPIdleSystemClock()) { [weak self] in
+                await self?.syncNow(accountID: accountID)
+            }
+        idleWatchers[accountID] = watcher
+        setPushState(.idling, for: accountID)
+        idleTasks[accountID] = Task { [weak self] in
+            let outcome = await watcher.run()
+            self?.finishIdleWatcher(accountID: accountID, outcome: outcome)
+        }
+    }
+
+    /// Records why an IDLE run ended, so a near-push feature that is not running
+    /// says so instead of being invisible.
+    ///
+    /// `.notAdvertised` and `.noSelectableMailbox` are terminal by design (see
+    /// `IMAPIdleWatcher.run`), and a terminal condition nobody can observe is the
+    /// same class of defect as the cycle-two hang: the account keeps working on the
+    /// poll and nothing ever says why mail takes up to two minutes. Only the
+    /// account id and the outcome are logged — never an address, a mailbox name or
+    /// a credential — matching `attachStoredAccounts`'s convention.
+    private func finishIdleWatcher(accountID: String, outcome: IMAPIdleWatcher.Outcome) {
+        // Signed out, or torn down, while the run was finishing: the entry is
+        // already gone and re-adding a status for an account that no longer exists
+        // is exactly the stale-state leak `signOut` exists to prevent.
+        guard idleWatchers[accountID] != nil else { return }
+        switch outcome {
+        case .notAdvertised:
+            setPushState(.notAdvertised, for: accountID)
+        case .noSelectableMailbox:
+            setPushState(.noSelectableMailbox, for: accountID)
+        case .stopped:
+            // Only `stop()` or cancellation produces this, and both go through
+            // `stopIdleWatcher`, which deregisters first — so the guard above has
+            // already returned. Reachable only if a future caller stops a watcher
+            // without deregistering it; clearing the status is the honest answer.
+            setPushState(nil, for: accountID)
+        }
+        host.log.info("Raven: IDLE for \(accountID) ended: \(outcome).")
+    }
+
+    /// Stops `accountID`'s IDLE watcher and forgets it. Idempotent.
+    ///
+    /// Deregisters BEFORE stopping, so the run task's `finishIdleWatcher` cannot
+    /// write a status back for an account that is being signed out. `stop()` is the
+    /// graceful path — the `DONE` still goes out and `withSession` still releases
+    /// the lease — so the server is told rather than left to notice a dropped
+    /// socket by timeout. The returned task completes when the connection is
+    /// actually gone; production ignores it, and a test awaits it to assert the
+    /// lease came back.
+    @discardableResult
+    func stopIdleWatcher(accountID: String) -> Task<Void, Never>? {
+        guard let watcher = idleWatchers.removeValue(forKey: accountID) else { return nil }
+        let run = idleTasks.removeValue(forKey: accountID)
+        setPushState(nil, for: accountID)
+        return Task {
+            await watcher.stop()
+            await run?.value
+        }
+    }
+
+    /// Stops every watcher. `teardown()`'s counterpart to cancelling `syncTask`.
+    func stopAllIdleWatchers() {
+        for accountID in idleWatchers.keys.sorted() {
+            stopIdleWatcher(accountID: accountID)
+        }
     }
 
     /// Attaches a provider for EVERY account already in the store — one per

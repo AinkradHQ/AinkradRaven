@@ -57,14 +57,41 @@ struct IMAPCommand: Sendable, Equatable {
     /// `IMAPSessionError.channelReserved`.
     let isExclusive: Bool
 
+    /// `IDLE`, and nothing else: the server answers `+ idling` and then the client
+    /// writes NOTHING until it wants to stop, at which point it writes a bare,
+    /// untagged `DONE` (RFC 2177).
+    ///
+    /// Two things in `IMAPSession` need to know that, and neither can infer it:
+    ///
+    /// 1. A `+ ` for this command is the *acknowledgement itself*. Every other
+    ///    continuation request is answered with bytes — a literal chunk or a
+    ///    reactive SASL line — so `handleContinuationRequest` treats "a `+ ` nobody
+    ///    can answer" as an unrecoverable desynchronisation. For `IDLE` that same
+    ///    `+ ` is correct and must be absorbed silently.
+    /// 2. `DONE` is a *deferred* write, minutes after the command was issued, and
+    ///    it carries no tag, so it cannot go through `execute` at all.
+    ///    `IMAPSession.sendIdleDone()` is the one exception to "every byte goes
+    ///    through `execute`", and this flag is what makes the exception checkable
+    ///    rather than a convention: it refuses to write `DONE` unless the sole
+    ///    in-flight command actually is one that holds the channel open.
+    ///
+    /// Implies `isExclusive`, by precondition: a command that occupies the channel
+    /// for up to 29 minutes while every untagged line is attributed to it cannot
+    /// share the channel with anything.
+    let holdsChannelOpen: Bool
+
     init(_ name: String, _ arguments: [Argument] = [],
-         reactiveContinuationLines: [Data] = [], isExclusive: Bool = false) {
+         reactiveContinuationLines: [Data] = [], isExclusive: Bool = false,
+         holdsChannelOpen: Bool = false) {
         precondition(reactiveContinuationLines.isEmpty || isExclusive,
                      "a command with reactive continuation lines must be exclusive")
+        precondition(!holdsChannelOpen || isExclusive,
+                     "a command that holds the channel open must be exclusive")
         self.name = name
         self.arguments = arguments
         self.reactiveContinuationLines = reactiveContinuationLines
         self.isExclusive = isExclusive
+        self.holdsChannelOpen = holdsChannelOpen
     }
 
     enum Argument: Sendable, Equatable {

@@ -112,6 +112,24 @@ import AinkradAppKit
     /// account's shards is exactly what must never happen. Different accounts
     /// write to different shards, so they may backfill concurrently.
     var backfillingAccounts: Set<String> = []
+    /// One `IMAPIdleWatcher` per IMAP account, and the task running it. No entry at
+    /// all for Gmail or Apple Mail — see `startIdleWatcher`.
+    ///
+    /// The presence of a key is what makes starting one IDEMPOTENT, and that is
+    /// load-bearing rather than defensive: `attach(provider:accountID:)` genuinely
+    /// runs more than once for the same account within one runtime
+    /// (`attachStoredAccounts()` from `init` and again from `saveCredentials`,
+    /// plus `connectAccount`'s direct call), and a second watcher would mean two
+    /// IDLE connections and two leases for one mailbox — the same unbalanced-acquire
+    /// shape as the `startAccessing` bug Task 1 fixed.
+    var idleWatchers: [String: IMAPIdleWatcher] = [:]
+    var idleTasks: [String: Task<Void, Never>] = [:]
+    /// Test-only seam: the clock every IDLE watcher this runtime starts is given;
+    /// `nil` means the production `IMAPIdleSystemClock`. The same kind of seam as
+    /// `attachTestProvider` — internal, never `public`, read at one place
+    /// (`startIdleWatcher`) — and it exists because proving a notification reaches
+    /// `syncNow` would otherwise mean sleeping out the one-second coalesce window.
+    var idleClockOverride: (any IMAPIdleClock)?
     private var contextToken: PluginContextToken?
     private var actionTokens: [AgentActionToken] = []
 
@@ -127,44 +145,19 @@ import AinkradAppKit
     public private(set) var syncErrors: [String: String] = [:]
     /// The accounts whose most recent backfill stopped early.
     public private(set) var truncatedBackfills: Set<String> = []
+    /// Per-IMAP-account near-push status; absent for the kinds that never idle.
+    ///
+    /// NOT merged into `syncErrors`, for two reasons: `IDLE` being unavailable is a
+    /// degradation rather than a failure (the poll still runs), and `syncAccount`
+    /// CLEARS `syncErrors` on every successful pass — so a terminal IDLE outcome
+    /// written there would be erased by the next tick and never seen.
+    public private(set) var pushStates: [String: RavenPushState] = [:]
 
-    public func syncState(for accountID: String) -> SyncState {
-        syncStates[accountID] ?? .idle
-    }
-    public func lastSyncError(for accountID: String) -> String? {
-        syncErrors[accountID]
-    }
-    public func lastBackfillTruncated(for accountID: String) -> Bool {
-        truncatedBackfills.contains(accountID)
-    }
+    // The read side of these four mirrors — the per-account accessors and the
+    // app-wide `syncState`/`lastBackfillTruncated` roll-ups — lives in
+    // `RavenRuntime+Status.swift`. The WRITE side stays in this file, under
+    // "State mutation", because `private(set)` is file-scoped; see that section.
 
-    /// App-wide roll-up of `syncStates`, for the places that legitimately show
-    /// one status for everything (the Settings panel's change trigger). A
-    /// failure anywhere wins, because "some account is broken" must not be
-    /// hidden by another account being idle; otherwise an in-progress backfill
-    /// wins, with the thread counts summed.
-    public var syncState: SyncState {
-        if let failure = syncStates.values.compactMap({ state -> String? in
-            if case .failed(let message) = state { return message }
-            return nil
-        }).sorted().first {
-            return .failed(failure)
-        }
-        let backfilling = syncStates.values.compactMap { state -> Int? in
-            if case .backfilling(let count) = state { return count }
-            return nil
-        }
-        if !backfilling.isEmpty { return .backfilling(threadsSynced: backfilling.reduce(0, +)) }
-        if syncStates.values.contains(.delta) { return .delta }
-        return .idle
-    }
-
-    /// Surfaced separately from `syncState` on purpose — see `SyncEngine`'s
-    /// own documentation of `lastBackfillTruncated`: it is a plain flag, not
-    /// a `SyncState` case, so a view that renders only `syncState` would
-    /// silently miss it. True when it happened on ANY account; per-account
-    /// truth is `lastBackfillTruncated(for:)`.
-    public var lastBackfillTruncated: Bool { !truncatedBackfills.isEmpty }
     /// The most recently recorded failure across all accounts, kept for the
     /// surfaces (and the Inbox empty state) that show one line. Per-account
     /// truth is `lastSyncError(for:)`.
@@ -245,6 +238,12 @@ import AinkradAppKit
         for task in backfillTasks.values { task.cancel() }
         backfillTasks = [:]
         backfillingAccounts = []
+        // Every IDLE connection goes too. A watcher left running holds a lease and
+        // an authenticated socket for a runtime that has otherwise stopped — the
+        // same "a per-instance runtime that never tears down is a leak, not a
+        // cache" reasoning as `syncTask`, except an IDLE socket also occupies one
+        // of the server's per-user connection slots for up to 29 minutes.
+        stopAllIdleWatchers()
         if let contextToken {
             host.context.remove(contextToken)
             self.contextToken = nil
@@ -355,7 +354,7 @@ import AinkradAppKit
         startBackfill(accountID: accountID)
     }
 
-    /// Signing out must leave nothing of the account behind. Three things go,
+    /// Signing out must leave nothing of the account behind. Four things go,
     /// in this order:
     ///
     /// 1. every credential the factory holds for the account — the Gmail
@@ -368,7 +367,9 @@ import AinkradAppKit
     ///    somehow missed; the purge is what stops it lingering at all;
     /// 3. every local document — threads, bodies, index shards, labels, and
     ///    the account row. Leaving the mail readable on disk after the user
-    ///    has disconnected the account is not a cache.
+    ///    has disconnected the account is not a cache;
+    /// 4. the account's IDLE connection, if it is an IMAP account with one — see
+    ///    `stopIdleWatcher`.
     ///
     /// Every step is scoped to exactly ONE account: with several connected,
     /// signing out of A must leave B's mail, labels, bodies and queued sends
@@ -395,6 +396,11 @@ import AinkradAppKit
         backfillTasks[accountID]?.cancel()
         backfillTasks[accountID] = nil
         backfillingAccounts.remove(accountID)
+        // 4. the account's IDLE connection. An unstopped watcher holds a lease and
+        //    an authenticated socket for an account whose mail, credential and row
+        //    have just been deleted, and its next notification would call `syncNow`
+        //    for an account with no provider.
+        stopIdleWatcher(accountID: accountID)
         providers.detach(accountID: accountID)
         syncEngines[accountID] = nil
         syncStates[accountID] = nil
@@ -454,6 +460,12 @@ import AinkradAppKit
     /// another's.
     func setSyncError(_ message: String?, for accountID: String) {
         syncErrors[accountID] = message
+    }
+
+    /// Records (or clears, with `nil`) `accountID`'s near-push status. Called only
+    /// from the IDLE lifecycle in `RavenRuntime+Sync.swift`.
+    func setPushState(_ state: RavenPushState?, for accountID: String) {
+        pushStates[accountID] = state
     }
 
     /// Records whether `accountID`'s most recent backfill stopped early.

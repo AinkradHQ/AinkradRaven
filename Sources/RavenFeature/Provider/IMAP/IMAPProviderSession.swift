@@ -70,8 +70,13 @@ extension IMAPProvider {
     /// half-authenticated connection behind for the next one to trip over — the
     /// production release closes the connection outright rather than returning it to
     /// a pool.
+    /// `sending`, not `@Sendable`: an actor-isolated caller — `IMAPIdleWatcher`, which
+    /// holds one session for up to 29 minutes — necessarily closes over its own
+    /// isolation, and a `@Sendable` closure could not touch it at all. `sending`
+    /// transfers the closure once, which is exactly the lifetime it has here: it is
+    /// called and awaited before `withSession` returns, and never stored.
     func withSession<T: Sendable>(
-        _ body: (IMAPWorkingSession) async throws -> T) async throws -> T {
+        _ body: sending (IMAPWorkingSession) async throws -> T) async throws -> T {
         let lease = try await acquire()
         do {
             let value = try await body(lease.working)

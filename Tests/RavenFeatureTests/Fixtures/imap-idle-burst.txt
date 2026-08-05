@@ -1,0 +1,10 @@
+* 4 EXISTS
+* 4 FETCH (FLAGS (\Seen))
+* 5 EXISTS
+* 5 FETCH (FLAGS (\Recent))
+* 6 EXISTS
+* 6 FETCH (FLAGS ())
+* 7 EXISTS
+* 4 EXPUNGE
+* 8 EXISTS
+* 8 FETCH (FLAGS (\Seen))

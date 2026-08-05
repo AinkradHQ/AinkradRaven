@@ -88,8 +88,16 @@ actor IMAPSession {
     private var abandonedTags: Set<String> = []
     /// Not `private`: owned by `IMAPSessionCapabilities.swift`.
     var capabilityCache: Set<String>?
-    private var greetingResult: Result<IMAPGreeting, any Error>?
-    private var greetingWaiter: CheckedContinuation<IMAPGreeting, any Error>?
+    /// Untagged lines yielded to `untaggedResponses` so far. `IMAPIdleWatcher` reads
+    /// it after its `SELECT` and skips that many stream elements, so the `* n EXISTS`
+    /// a `SELECT` itself reports is never mistaken for an arrival notification.
+    /// Incremented in the same isolated step as the yield, so the count and the
+    /// stream cannot disagree.
+    private(set) var untaggedYieldCount = 0
+    /// Not `private`: owned by `IMAPSessionGreeting.swift`.
+    var greetingResult: Result<IMAPGreeting, any Error>?
+    /// Not `private`: owned by `IMAPSessionGreeting.swift`.
+    var greetingWaiter: CheckedContinuation<IMAPGreeting, any Error>?
     private var readLoop: Task<Void, Never>?
     private let untaggedContinuation: AsyncStream<IMAPUntaggedResponse>.Continuation
 
@@ -161,28 +169,6 @@ actor IMAPSession {
         readLoop = nil
         await transport.close()
         untaggedContinuation.finish()
-    }
-
-    private func waitForGreeting() async throws -> IMAPGreeting {
-        if let greetingResult { return try greetingResult.get() }
-        return try await withCheckedThrowingContinuation { continuation in
-            // No await between the check above and here, so no result can slip
-            // in unobserved.
-            if let greetingResult {
-                continuation.resume(with: greetingResult)
-            } else {
-                greetingWaiter = continuation
-            }
-        }
-    }
-
-    private func settleGreeting(_ result: Result<IMAPGreeting, any Error>) {
-        guard greetingResult == nil else { return }
-        greetingResult = result
-        if let waiter = greetingWaiter {
-            greetingWaiter = nil
-            waiter.resume(with: result)
-        }
     }
 
     // MARK: - Issuing commands
@@ -276,6 +262,18 @@ actor IMAPSession {
     /// `transport` — see that property.
     func performTLSHandshake() async throws {
         try await transport.startTLS()
+    }
+
+    /// Writes IDLE's bare, untagged `DONE` — the one byte sequence in the protocol
+    /// that cannot go through `execute`, because RFC 2177 gives it no tag and it is
+    /// written minutes after the command it terminates. Refuses unless the sole
+    /// in-flight command actually holds the channel open, so it can never
+    /// desynchronise an ordinary command's stream.
+    func sendIdleDone() async throws {
+        guard let tag = soleReactiveTag(), inFlight[tag]?.command.holdsChannelOpen == true else {
+            throw IMAPSessionError.protocolError("DONE with no IDLE in flight")
+        }
+        try await transport.send(Data("DONE\r\n".utf8))
     }
 
     private func nextTag() -> String {
@@ -396,6 +394,7 @@ actor IMAPSession {
             return
         }
         untaggedContinuation.yield(response)
+        untaggedYieldCount += 1
         // Attribution is only unambiguous with exactly one command in flight.
         if inFlight.count == 1, let onlyTag = inFlight.keys.first {
             inFlight[onlyTag]?.untagged.append(response)
@@ -411,12 +410,17 @@ actor IMAPSession {
     /// own, with no framing to recover from, so it tears the connection down.
     private func handleContinuationRequest(_ tokens: [IMAPToken]) async throws {
         guard !continuationOrder.isEmpty else {
-            if let tag = soleReactiveTag(), var record = inFlight[tag],
-               !record.reactiveLines.isEmpty {
-                let line = record.reactiveLines.removeFirst()
-                inFlight[tag] = record
-                try await transport.send(line)
-                return
+            if let tag = soleReactiveTag(), var record = inFlight[tag] {
+                // IDLE: the `+ idling` IS the answer. Nothing is written until
+                // `sendIdleDone()`, so absorbing it is correct rather than a
+                // desynchronisation. See `IMAPCommand.holdsChannelOpen`.
+                if record.command.holdsChannelOpen { return }
+                if !record.reactiveLines.isEmpty {
+                    let line = record.reactiveLines.removeFirst()
+                    inFlight[tag] = record
+                    try await transport.send(line)
+                    return
+                }
             }
             throw IMAPSessionError.protocolError(
                 "continuation request with no command awaiting one: \(IMAPResponseText.render(tokens))")
@@ -444,6 +448,11 @@ actor IMAPSession {
     /// unfalsifiable *and* pure duplication, so it is gone; `count == 1` stays as
     /// belt-and-braces — explicitly not a tested guarantee — because it is what
     /// makes "sole" true here rather than an inference about two other files.
+    ///
+    /// It has a second caller now — `sendIdleDone` and the `holdsChannelOpen`
+    /// branch above — and there `count == 1` IS load-bearing: "the sole in-flight
+    /// command is an IDLE" is exactly the condition under which a bare `DONE` is
+    /// attributable to something.
     private func soleReactiveTag() -> String? {
         guard inFlight.count == 1 else { return nil }
         return inFlight.keys.first
