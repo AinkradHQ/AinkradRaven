@@ -1,0 +1,3 @@
+* 3 EXISTS
+* OK [UIDVALIDITY 1] generation
+* OK [UIDNEXT 21] predicted

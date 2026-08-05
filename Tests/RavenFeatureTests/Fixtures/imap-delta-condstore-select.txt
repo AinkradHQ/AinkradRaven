@@ -1,0 +1,5 @@
+* 3 EXISTS
+* OK [UIDVALIDITY 1] generation
+* OK [UIDNEXT 21] predicted
+* OK [HIGHESTMODSEQ 102] highest
+* VANISHED (EARLIER) 12
