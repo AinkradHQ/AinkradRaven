@@ -46,7 +46,16 @@ struct RFC822Message {
     }
     var date: Date? {
         guard let raw = header("Date") else { return nil }
-        return Self.rfc822DateFormatters.lazy.compactMap { $0.date(from: raw) }.first
+        return Self.date(rfc822: raw)
+    }
+
+    /// The tolerant RFC 822 date reading, exposed so other decoders of the same
+    /// header syntax reuse these formatters instead of growing a second list
+    /// that accepts a different set of real-world spellings. `IMAPFetchParser`
+    /// uses it for `ENVELOPE`'s date field, which is an RFC 2822 date-time
+    /// string exactly like the `Date:` header it is copied from.
+    static func date(rfc822 raw: String) -> Date? {
+        rfc822DateFormatters.lazy.compactMap { $0.date(from: raw) }.first
     }
 
     private static let rfc822DateFormatters: [DateFormatter] = [
@@ -176,7 +185,11 @@ struct RFC822Message {
         }
     }
 
-    private static func decodeTransferEncoding(_ data: Data, encoding: String?) -> Data {
+    /// Internal rather than private so `IMAPFetchParser` decodes a fetched MIME
+    /// part's `Content-Transfer-Encoding` through this exact implementation. The
+    /// alternative was a second quoted-printable decoder, which is precisely the
+    /// kind of duplication that drifts.
+    static func decodeTransferEncoding(_ data: Data, encoding: String?) -> Data {
         switch encoding?.lowercased() {
         case "base64":
             let ascii = String(data: data, encoding: .ascii) ?? ""

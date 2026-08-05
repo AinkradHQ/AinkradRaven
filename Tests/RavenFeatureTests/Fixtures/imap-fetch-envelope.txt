@@ -1,0 +1,4 @@
+* 1 FETCH (UID 101 FLAGS (\Seen) INTERNALDATE "05-Jan-2026 09:15:00 +0000" RFC822.SIZE 512 ENVELOPE ("Mon, 5 Jan 2026 09:15:00 +0000" "Subject 1" (("Sender One" NIL "a" "example.test")) (("Sender One" NIL "a" "example.test")) (("Sender One" NIL "a" "example.test")) (("Recipient Two" NIL "b" "example.test")) (("Copy Three" NIL "c" "example.test")) (("Blind Four" NIL "d" "example.test")) NIL "<m1@example.test>"))
+* 2 FETCH (UID 102 FLAGS (\Flagged \Deleted \Draft \Answered $Keyword1) ENVELOPE ("not-a-date" {24}
+=?UTF-8?B?U3ViamVjdCAy?= (("Sender One" NIL "a" "example.test")) NIL NIL (("Recipient Two" NIL "b" "example.test")) NIL NIL "<m0@example.test>" "<m2@example.test>") INTERNALDATE "06-Jan-2026 10:00:00 +0000")
+* 3 FETCH (UID 103 FLAGS () ENVELOPE (NIL "" (("Sender One" NIL "a" "example.test")) NIL NIL NIL NIL NIL NIL "<m3@example.test>"))
