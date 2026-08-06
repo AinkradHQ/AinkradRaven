@@ -73,4 +73,27 @@ public enum DocumentKeys {
     public static func imapMailboxes(accountID: String) -> String {
         "imap-mailboxes-\(accountID)"
     }
+
+    /// One month's `label_with_reason` records for an account (see
+    /// `LabelReason`). Sharded by month exactly like `index(accountID:month:)`,
+    /// and for the same reason: the window is 90 days, so a read never has to
+    /// load more than four documents and expiry is a shard the purge drops.
+    ///
+    /// Local-only audit data — it is deliberately not part of any
+    /// `LabelMutation` and never reaches a provider. Removed by
+    /// `DocumentMailStore.purge(accountID:)`, alongside `imapSettings` and
+    /// `imapMailboxes`.
+    public static func labelReasons(accountID: String, month: String) -> String {
+        "label-reasons-\(accountID)-\(month)"
+    }
+
+    /// The month shards a reason log has written, for the same reason
+    /// `indexMonths` exists: the host's document store cannot enumerate keys, so
+    /// without this registry a sign-out purge has no way to find the reason
+    /// shards it must delete — and `applemail-directory-<id>`,
+    /// `imap-settings-<id>` and the IMAP app password all shipped unpurged
+    /// before this rule was written down.
+    public static func labelReasonMonths(accountID: String) -> String {
+        "label-reason-months-\(accountID)"
+    }
 }

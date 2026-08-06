@@ -56,6 +56,20 @@ public enum RavenMCPServer {
              schemaJSON: schema([("account_id", "string",
                                   "One account. Omit to cover every connected account.")]),
              destructive: false, readOnly: true),
+        Tool(name: "bundle_by_sender", operation: "bundle_by_sender",
+             summary: "Group the synced window's inbox threads by sender, most threads first, "
+                    + "across EVERY connected account unless account_id names one. Addresses "
+                    + "are matched case-insensitively with display names stripped, so "
+                    + "\"Bea <b@example.test>\" and \"b@example.test\" are one sender; threads "
+                    + "whose sender is unrecorded are counted under \"(unknown sender)\" rather "
+                    + "than dropped. Each bundle states its thread count, unread count, newest "
+                    + "date, per-account counts and thread ids. Never touches the network.",
+             schemaJSON: schema([("account_id", "string",
+                                  "One account. Omit to cover every connected account."),
+                                 ("limit", "integer",
+                                  "Max senders returned, default 25, capped at 200. Must be "
+                                  + "a positive integer.")]),
+             destructive: false, readOnly: true),
         Tool(name: "read_thread", operation: "read_thread",
              summary: "Full text of one thread, with quoted trailers removed. Works for a "
                     + "thread in any connected account and reports which account it belongs "
@@ -94,6 +108,20 @@ public enum RavenMCPServer {
                                  ("add", "array", "Label ids to add."),
                                  ("remove", "array", "Label ids to remove.")],
                                 required: ["thread_ids"]),
+             destructive: false, readOnly: false),
+        Tool(name: "label_with_reason", operation: "label_with_reason",
+             summary: "Exactly the label tool, plus a short note recording WHY, stored on this "
+                    + "machine and shown beside the thread. The reason is never sent to the mail "
+                    + "provider and never leaves this machine; it is kept for 90 days, the same "
+                    + "window as synced mail. Reasons are capped at 500 characters and a blank "
+                    + "one is refused. If any thread id is unknown, nothing is applied to any of "
+                    + "them.",
+             schemaJSON: schema([("thread_ids", "array", "Thread ids."),
+                                 ("add", "array", "Label ids to add."),
+                                 ("remove", "array", "Label ids to remove."),
+                                 ("reason", "string",
+                                  "Why, in at most 500 characters. Stored locally only.")],
+                                required: ["thread_ids", "reason"]),
              destructive: false, readOnly: false),
         Tool(name: "create_draft", operation: "create_draft",
              summary: "Create a draft visible in Compose. Does NOT send. The draft is bound to "

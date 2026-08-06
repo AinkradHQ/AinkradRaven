@@ -24,7 +24,8 @@ import AinkradAppKit
     func readOnlyFlags() {
         let readOnly = Set(RavenMCPServer.tools.filter(\.readOnly).map(\.name))
         #expect(readOnly.isSuperset(of: ["list_accounts", "search_mail", "read_thread",
-                                         "list_labels", "unread_summary"]))
+                                         "list_labels", "unread_summary",
+                                         "bundle_by_sender"]))
     }
 
     @Test("every schema is parseable JSON")
@@ -52,6 +53,109 @@ import AinkradAppKit
                                                  store: store, outbox: outbox)
         #expect(result.isError == false)
         #expect(result.text.contains("t1"))
+        // The by-sender breakdown now comes from `SenderBundles`, so the sender
+        // key is the NORMALISED address rather than the raw one.
+        #expect(result.text.contains("b@x.com: 1"))
+    }
+
+    /// The by-sender breakdown used to group on the raw `participants.first?.
+    /// email` and sort by count alone, which made it both wrong (one
+    /// correspondent counted as three) and non-reproducible (every count tie
+    /// resolved by per-process `Dictionary` iteration order). It now goes
+    /// through `SenderBundles`, so it agrees with `bundle_by_sender` by
+    /// construction.
+    @Test("unread_summary folds sender spellings and orders the breakdown deterministically")
+    func unreadSummaryBreakdownIsFoldedAndTotallyOrdered() async throws {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "me@example.test", displayName: "Me",
+                                          state: .ready))
+        let now = Date()
+        func unreadThread(_ id: String, _ from: MailAddress, _ minutesAgo: Double) throws {
+            try store.upsertThread(MailThread(id: id, accountID: "a1", messages: [
+                MailMessage(id: "m-\(id)", threadID: id, from: from, subject: "Subject \(id)",
+                            date: now.addingTimeInterval(-60 * minutesAgo), isRead: false,
+                            labelIDs: ["INBOX"], snippet: "s")
+            ]))
+        }
+        // b@example.test written three ways — two threads and one more under a
+        // different spelling — so a raw-string grouping yields three lines of
+        // "1" instead of one line of "3".
+        try unreadThread("t-b1", MailAddress(email: "b@example.test", name: "Bea"), 30)
+        try unreadThread("t-b2", MailAddress(email: "B@Example.Test", name: "Beatrice"), 20)
+        try unreadThread("t-b3", MailAddress(email: "Bea <b@example.test>"), 10)
+        // Two senders tied at one thread each, with the SAME timestamp, so only
+        // the address tie-break can decide their order. `z` is inserted first,
+        // so insertion order is the wrong answer.
+        try unreadThread("t-z", MailAddress(email: "z@example.test"), 5)
+        try unreadThread("t-a", MailAddress(email: "a@example.test"), 5)
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
+        #expect(store.summaries(accountID: "a1", months: UnifiedInbox.recentMonths()).count == 5)
+
+        let result = await RavenMCPOperations.run("unread_summary", arguments: "{}",
+                                                 store: store, outbox: outbox)
+
+        #expect(result.isError == false)
+        #expect(result.text.contains("5 unread threads."))
+        // One folded line for b@example.test, then the two tied senders in
+        // address order. Anchored on both ends — `By sender:` before and the
+        // blank line plus `Threads:` after — so this is the WHOLE breakdown: a
+        // fourth sender line, or a different order, cannot satisfy it.
+        #expect(result.text.contains("""
+        By sender:
+        b@example.test: 3
+        a@example.test: 1
+        z@example.test: 1
+
+        Threads:
+        """))
+        // The un-normalised spelling is not a sender key. It can still appear
+        // further down in the per-thread lines, where `describe` prints
+        // `participants.first?.displayLabel` verbatim — that listing is not this
+        // task's contract and is deliberately unchanged.
+        #expect(result.text.contains("B@Example.Test: ") == false)
+        #expect(result.text.contains("Bea <b@example.test>: ") == false)
+    }
+
+    @Test("unread_summary's breakdown agrees with bundle_by_sender's by construction")
+    func unreadSummaryAgreesWithBundleBySender() async throws {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "me@example.test", displayName: "Me",
+                                          state: .ready))
+        let now = Date()
+        for (index, raw) in ["b@example.test", "B@Example.Test", "Bea <b@example.test>",
+                             "c@example.test"].enumerated() {
+            try store.upsertThread(MailThread(id: "t\(index)", accountID: "a1", messages: [
+                MailMessage(id: "m\(index)", threadID: "t\(index)",
+                            from: MailAddress(email: raw), subject: "Subject \(index)",
+                            date: now.addingTimeInterval(-60 * Double(index + 1)),
+                            isRead: false, labelIDs: ["INBOX"], snippet: "s")
+            ]))
+        }
+        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
+        #expect(store.summaries(accountID: "a1", months: UnifiedInbox.recentMonths()).count == 4)
+
+        let summary = await RavenMCPOperations.run("unread_summary", arguments: "{}",
+                                                  store: store, outbox: outbox)
+        let bundled = await RavenMCPOperations.run("bundle_by_sender", arguments: "{}",
+                                                  store: store, outbox: outbox)
+        #expect(summary.isError == false)
+        #expect(bundled.isError == false)
+        // Same senders, same counts, same order, from two different tools.
+        #expect(summary.text.contains("b@example.test: 3"))
+        #expect(summary.text.contains("c@example.test: 1"))
+        #expect(bundled.text.contains("b@example.test · 3 thread(s), 3 unread"))
+        #expect(bundled.text.contains("c@example.test · 1 thread(s), 1 unread"))
+        // `#require` rather than an `#expect` plus a force unwrap: an `#expect`
+        // does not halt the test, so a missing range would trap the process and
+        // relaunch the runner instead of failing this one test.
+        let bundledB = try #require(bundled.text.range(of: "b@example.test · "))
+        let bundledC = try #require(bundled.text.range(of: "c@example.test · "))
+        let summaryB = try #require(summary.text.range(of: "b@example.test: "))
+        let summaryC = try #require(summary.text.range(of: "c@example.test: "))
+        #expect(bundledB.lowerBound < bundledC.lowerBound)
+        #expect(summaryB.lowerBound < summaryC.lowerBound)
     }
 
     @Test("read_thread on a missing id is an error result, not a crash")
@@ -309,6 +413,24 @@ import AinkradAppKit
         #expect(outbox.deadLettered().isEmpty == false)
         #expect(provider.sentMessages.isEmpty)
         DraftBox.shared.remove(id)
+    }
+
+    // MARK: label_with_reason
+    //
+    // The tool table entry lives here, with the rest of the registration
+    // contract; its behaviour is in `RavenMCPLabelWithReasonTests`, for the same
+    // reason `bundle_by_sender` has its own suite — this file is already the
+    // largest MCP suite and a tool's behaviour is a subject of its own.
+
+    @Test("label_with_reason is registered as a non-destructive write and requires a reason")
+    func labelWithReasonRegistration() throws {
+        let tool = try #require(RavenMCPServer.tools.first { $0.name == "label_with_reason" })
+        #expect(tool.destructive == false)
+        #expect(tool.readOnly == false)
+        let schema = try #require(JSONSerialization
+            .jsonObject(with: Data(tool.schemaJSON.utf8)) as? [String: Any])
+        let required = try #require(schema["required"] as? [String])
+        #expect(Set(required) == ["thread_ids", "reason"])
     }
 
     @Test("send_draft after a transient failure reports queued, not sent, and keeps the draft")

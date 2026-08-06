@@ -82,4 +82,18 @@ public struct MessageBody: Codable, Equatable, Sendable {
     /// Records the mailbox set a `LIST` returned for `accountID`.
     func saveIMAPMailboxDirectory(_ directory: IMAPMailboxDirectory,
                                   accountID: String) throws
+
+    /// The `label_with_reason` records this account holds inside the 90-day
+    /// window, newest first; `threadID` narrows them to one thread.
+    ///
+    /// On the protocol rather than only on `DocumentMailStore` for
+    /// `imapMailboxDirectory`'s reason: `RavenMCPOperations` is handed a
+    /// `MailStore`, and reaching the log by downcasting would make whether an
+    /// agent's reason is recorded at all depend on which store type the caller
+    /// happened to pass.
+    func labelReasons(accountID: String, threadID: String?) -> [LabelReason]
+
+    /// Appends one reason record. Local-only: nothing here is ever attached to
+    /// a `LabelMutation` or handed to a provider.
+    func recordLabelReason(_ reason: LabelReason, accountID: String) throws
 }

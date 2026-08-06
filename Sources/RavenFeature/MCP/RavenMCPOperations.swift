@@ -1,27 +1,28 @@
 import Foundation
 import AinkradAppKit
 
-/// Every tool body. Takes a store and an outbox — deliberately no provider, so
-/// a tool physically cannot reach the network ahead of the store.
+/// Every WRITE tool body, plus the shared argument decoding and result shapes.
+/// Takes a store and an outbox — deliberately no provider, so a tool
+/// physically cannot reach the network ahead of the store.
+///
+/// The read tools live in `RavenMCPReadOperations`, which takes no outbox at
+/// all; see that file for why the split falls there.
 public enum RavenMCPOperations {
     private static func decode(_ arguments: String) -> [String: Any] {
         (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
     }
 
-    private static func ok(_ text: String) -> AgentActionResult {
+    /// Internal rather than private so `RavenMCPReadOperations` produces
+    /// byte-identical result shapes: two copies of `AgentActionResult(text:
+    /// isError:)` is exactly how a read tool ends up reporting an error as a
+    /// success.
+    static func ok(_ text: String) -> AgentActionResult {
         AgentActionResult(text: text, isError: false)
     }
 
-    private static func fail(_ text: String) -> AgentActionResult {
+    static func fail(_ text: String) -> AgentActionResult {
         AgentActionResult(text: text, isError: true)
     }
-
-    /// The month keys covering the synced window, shared with the Inbox list
-    /// through `UnifiedInbox.recentMonths` — a tool that searched a different
-    /// span than the UI would silently disagree with it, and a magic "4 months"
-    /// would drift from `SyncEngine.windowDays` the moment either changed.
-    @MainActor
-    private static func recentMonths() -> [String] { UnifiedInbox.recentMonths() }
 
     /// The accounts a read covers: the one named by `account_id`, or EVERY
     /// account when it is omitted.
@@ -31,8 +32,30 @@ public enum RavenMCPOperations {
     /// quietly ignored the rest. `nil` here means all accounts, which is what
     /// the caller actually asked for; `UnifiedInbox` does the merge so the
     /// answer matches the Inbox exactly.
-    private static func scope(_ args: [String: Any]) -> [String]? {
+    static func scope(_ args: [String: Any]) -> [String]? {
         (args["account_id"] as? String).map { [$0] }
+    }
+
+    /// The most bundles `bundle_by_sender` will return, and the cap an
+    /// oversized `limit` is clamped to. A tool response is text a model reads,
+    /// so an unbounded `limit` is a way to spend a context window rather than a
+    /// feature; 200 is well past any triage session and far short of a problem.
+    static let maxLimit = 200
+
+    /// `limit` validated at the boundary: absent means the default, a
+    /// non-positive or non-integer value is REFUSED rather than silently
+    /// coerced (asking for 0 or -1 senders is a caller bug, and answering it
+    /// with 25 hides that), and an oversized one is clamped to `maxLimit`.
+    /// `nil` means "reject the call".
+    ///
+    /// Internal rather than private so a test can observe the CLAMP directly:
+    /// through the tool it is invisible unless a fixture holds more than
+    /// `maxLimit` senders, and an assertion that only checks the oversized call
+    /// succeeds would pass just as well with no clamp at all.
+    static func boundedLimit(_ args: [String: Any], default fallback: Int = 25) -> Int? {
+        guard let raw = args["limit"] else { return fallback }
+        guard let value = raw as? Int, value > 0 else { return nil }
+        return min(value, maxLimit)
     }
 
     /// `providers` is optional and used ONLY by `search_mail`'s
@@ -46,142 +69,21 @@ public enum RavenMCPOperations {
                            providers: MailProviderRouter? = nil) async -> AgentActionResult {
         let args = decode(arguments)
 
+        // The read half first. It answers `nil` for anything that is not one of
+        // its tools, so there is still exactly one place an unknown operation
+        // is reported.
+        if let read = await RavenMCPReadOperations.run(operation, args: args, store: store,
+                                                      providers: providers) {
+            return read
+        }
+
         switch operation {
-        case "list_accounts":
-            let lines = store.accounts().map { "\($0.id) — \($0.address) [\($0.state.rawValue)]" }
-            return ok(lines.isEmpty ? "No accounts configured." : lines.joined(separator: "\n"))
-
-        case "list_labels":
-            let ids = scope(args) ?? store.accounts().map(\.id)
-            guard !ids.isEmpty else { return fail("No accounts configured.") }
-            // Every account's labels, each line attributed — label ids are
-            // per-account (Gmail mints its own), so a merged list that dropped
-            // the account would hand back ids the caller cannot act on.
-            let lines = ids.flatMap { accountID in
-                store.labels(accountID: accountID).map { "\(accountID) · \($0.id) — \($0.name)" }
-            }
-            return ok(lines.isEmpty ? "No labels synced yet." : lines.joined(separator: "\n"))
-
-        case "search_mail":
-            let accountIDs = scope(args)
-            let query = args["query"] as? String ?? ""
-            let limit = args["limit"] as? Int ?? 25
-            let includeArchive = args["include_archive"] as? Bool ?? false
-
-            if includeArchive {
-                // Reaches the full mailbox via the provider's server-side
-                // search — the ONE place this tool set is allowed to touch
-                // the network ahead of the store, and only because the
-                // caller explicitly asked for `include_archive`. Every hit is
-                // cached locally (`upsertThread`) exactly as `RavenRuntime.
-                // searchArchive` does, so it becomes a normal store row
-                // reachable via `read_thread`/`archive`/etc. afterward.
-                guard let providers else {
-                    return fail("No provider attached; cannot search the archive.")
-                }
-                let targets = accountIDs ?? providers.attachedAccountIDs
-                guard !targets.isEmpty else {
-                    return fail("No provider attached; cannot search the archive.")
-                }
-                var groups: [[ThreadSummary]] = []
-                var failure: String?
-                var succeeded = false
-                for target in targets {
-                    guard let provider = providers.provider(for: target) else {
-                        failure = failure ?? "no provider attached for \(target)."
-                        continue
-                    }
-                    do {
-                        let hits = try await provider.searchThreads(query: query, limit: limit)
-                        for hit in hits { try? store.upsertThread(hit) }
-                        groups.append(hits.map { $0.summary() })
-                        succeeded = true
-                    } catch let error as MailError {
-                        // Reuses `MailError`'s existing cases rather than
-                        // `String(describing:)`-ing the raw error — a Gmail
-                        // error body must never reach a tool response any more
-                        // than it may reach `MailAccount.lastError` (see
-                        // `GmailProvider.perform`'s documentation).
-                        failure = failure ?? archiveErrorMessage(error)
-                    } catch {
-                        failure = failure ?? "provider error."
-                    }
-                }
-                // Only a total failure is reported as one: if one account
-                // answered, its hits are real and must not be thrown away
-                // because another account was rate-limited.
-                if !succeeded {
-                    return fail("Archive search failed: \(failure ?? "provider error.")")
-                }
-                let hits = Array(UnifiedInbox.merge(groups).prefix(limit))
-                if hits.isEmpty {
-                    return ok("No matching threads in the full archive search either.")
-                }
-                return ok(hits.map(describe).joined(separator: "\n"))
-            }
-
-            // Filtered to the same "in the inbox" set the Inbox list and
-            // `unread_summary` use — see `InboxFilter`'s documentation for
-            // why these three must never disagree. A thread that left the
-            // inbox is still readable via `read_thread`; it just doesn't
-            // show up as an inbox search hit. This is the DEFAULT path —
-            // synced-window only, exactly as the tool description promises —
-            // and never touches `provider`.
-            let hits = ThreadSearch.match(UnifiedInbox.inbox(store: store, accountIDs: accountIDs,
-                                                            months: recentMonths()),
-                                          query: query).prefix(limit)
-            if hits.isEmpty {
-                return ok("No matching threads in the synced window (last 90 days). " +
-                          "This does not mean no such mail exists — only that it hasn't " +
-                          "synced this far back, or at all. Call again with " +
-                          "\"include_archive\": true to search the full mailbox.")
-            }
-            return ok(hits.map(describe).joined(separator: "\n"))
-
-        case "unread_summary":
-            let unread = UnifiedInbox.inbox(store: store, accountIDs: scope(args),
-                                            months: recentMonths())
-                .filter { $0.unreadCount > 0 }
-            if unread.isEmpty {
-                return ok("No unread threads in the synced window (last 90 days).")
-            }
-            let bySender = Dictionary(grouping: unread) {
-                $0.participants.first?.email ?? "unknown"
-            }
-            let breakdown = bySender
-                .sorted { $0.value.count > $1.value.count }
-                .map { "\($0.key): \($0.value.count)" }
-                .joined(separator: "\n")
-            return ok("""
-            \(unread.count) unread threads.
-
-            By sender:
-            \(breakdown)
-
-            Threads:
-            \(unread.map(describe).joined(separator: "\n"))
-            """)
-
-        case "read_thread":
-            guard let id = args["thread_id"] as? String else { return fail("thread_id required.") }
-            guard let thread = store.thread(id) else { return fail("No thread \(id) in the store.") }
-            let rendered = thread.messages.map { message -> String in
-                let body = store.body(messageID: message.id)?.plainText ?? "(body not synced)"
-                let visible = QuoteTrimmer.split(body).visible
-                return """
-                From: \(message.from?.displayLabel ?? "unknown")
-                Date: \(message.date.formatted(.iso8601))
-                \(visible)
-                """
-            }
-            // States the account: a reply has to go out from the mailbox that
-            // received the thread, and the agent cannot know which that is
-            // from the thread id alone.
-            return ok("Subject: \(thread.subject)\nAccount: \(thread.accountID)\n\n"
-                      + rendered.joined(separator: "\n---\n"))
-
         case "archive", "trash", "set_read", "star", "label":
             return await mutate(operation, args: args, store: store, outbox: outbox, providers: providers)
+
+        case "label_with_reason":
+            return await labelWithReason(args: args, store: store, outbox: outbox,
+                                         providers: providers)
 
         case "create_draft":
             guard let to = (args["to"] as? [String])?.compactMap({ MailAddress(rfc5322: $0) }),
@@ -288,6 +190,74 @@ public enum RavenMCPOperations {
         }
     }
 
+    /// `label`, plus a locally recorded why.
+    ///
+    /// Deliberately NOT a second mutation path: everything after the two
+    /// validations delegates to `mutate("label", …)`, so the rendered
+    /// `LabelMutation`, the local application and the queued outbox entry are
+    /// produced by the same code the plain `label` tool and the human UI use.
+    /// A divergence here would be invisible in the tool's own response and
+    /// visible only in the mailbox, which is why
+    /// `RavenMCPLabelWithReasonTests` asserts the two tools' queued mutations
+    /// are equal rather than asserting this one's shape.
+    ///
+    /// The reason is recorded AFTER the store write and the enqueue, and before
+    /// returning. That order matters in one direction only: the mutation is the
+    /// user-visible effect and must not wait on a log write, while a reason
+    /// recorded for a mutation that was refused would be a lie about what
+    /// happened.
+    @MainActor
+    private static func labelWithReason(args: [String: Any], store: MailStore, outbox: Outbox,
+                                        providers: MailProviderRouter?) async -> AgentActionResult {
+        // Validated at the boundary, before any thread is touched: an
+        // over-long or blank reason is a caller bug, and applying the label
+        // anyway would leave a labelled thread with no auditable why — the
+        // whole point of this tool over `label`.
+        guard let rawReason = args["reason"] as? String else {
+            return fail("reason required — use the plain label tool if there is nothing to record.")
+        }
+        guard let reason = LabelReason.validated(rawReason) else {
+            return fail("reason must be non-blank and at most " +
+                        "\(LabelReason.maxReasonLength) characters; nothing was applied.")
+        }
+        guard let ids = args["thread_ids"] as? [String], !ids.isEmpty else {
+            return fail("thread_ids required.")
+        }
+        // Every id is resolved BEFORE the first write. `mutate` alone would
+        // file an unknown id under the `nil` account and still apply the label
+        // to the ids it did know, which for a reasoned label is a partial
+        // application the caller was told nothing about.
+        let unknown = ids.filter { store.thread($0) == nil }
+        guard unknown.isEmpty else {
+            return fail("No thread(s) \(unknown.sorted().joined(separator: ", ")) in the store; " +
+                        "nothing was applied and no reason was recorded.")
+        }
+        let add = args["add"] as? [String] ?? []
+        let remove = args["remove"] as? [String] ?? []
+        let applied = await mutate("label", args: ["thread_ids": ids, "add": add, "remove": remove],
+                                   store: store, outbox: outbox, providers: providers)
+        guard !applied.isError else { return applied }
+
+        let recordedAt = Date()
+        for id in ids {
+            guard let accountID = store.thread(id)?.accountID else { continue }
+            do {
+                try store.recordLabelReason(
+                    LabelReason(threadID: id, add: add, remove: remove,
+                                reason: reason, recordedAt: recordedAt),
+                    accountID: accountID)
+            } catch {
+                // The label IS applied and queued; saying otherwise would be
+                // the worse lie. Reported as an error so the caller knows the
+                // audit trail it asked for does not exist.
+                return fail("label applied and queued, but the reason could not be " +
+                            "recorded: \(error)")
+            }
+        }
+        return ok(applied.text + "\nReason recorded locally for \(ids.count) thread(s); it is " +
+                  "never attached to a provider mutation and never leaves this machine.")
+    }
+
     @MainActor
     private static func mutate(_ operation: String, args: [String: Any],
                                store: MailStore, outbox: Outbox,
@@ -362,33 +332,5 @@ public enum RavenMCPOperations {
             " (skipped read-only account(s) \(readOnlyAccountIDs.sorted().joined(separator: ", ")))"
         return ok("\(operation) applied to \(writableIDs.count) thread(s) across " +
                   "\(writableGroups.count) account(s); queued for sync.\(skipped)")
-    }
-
-    /// Short, user-safe text for an archive-search failure — mirrors
-    /// `RavenRuntime.archiveSearchFailureMessage`'s cases so the tool and the
-    /// UI agree on what "rate-limited" vs "failed" mean, without either one
-    /// echoing a raw provider error body.
-    private static func archiveErrorMessage(_ error: MailError) -> String {
-        switch error {
-        case .notAuthenticated:
-            return "no account connected."
-        case .rateLimited(let retryAfter):
-            return "rate-limited by Gmail; try again in \(Int(retryAfter))s."
-        case .providerFailed(let status, _):
-            return "provider request failed (status \(status))."
-        case .decodingFailed:
-            return "could not decode the provider's response."
-        default:
-            return "provider error."
-        }
-    }
-
-    /// Includes the account id: a merged multi-account list in which the rows
-    /// don't say which mailbox they came from is not usable — the agent cannot
-    /// reply from the right address or name the account in its answer.
-    private static func describe(_ summary: ThreadSummary) -> String {
-        let sender = summary.participants.first?.displayLabel ?? "unknown"
-        let unread = summary.unreadCount > 0 ? " [unread]" : ""
-        return "\(summary.id) · \(summary.accountID) · \(sender) · \(summary.subject)\(unread)"
     }
 }

@@ -263,7 +263,84 @@ import AinkradAppKit
         documents.setData(nil, forKey: DocumentKeys.appleMailDirectory(accountID: accountID))
         documents.setData(nil, forKey: DocumentKeys.imapSettings(accountID: accountID))
         documents.setData(nil, forKey: DocumentKeys.imapMailboxes(accountID: accountID))
+        // The `label_with_reason` audit log. A new per-account document family,
+        // wired into the purge in the same commit that introduced it —
+        // `applemail-directory-<id>`, `imap-settings-<id>` and the IMAP app
+        // password each shipped unpurged and had to be chased down later, and a
+        // reason log is a record of what the user's mail said and why it was
+        // filed, which is not something to leave behind after a sign-out.
+        //
+        // Every shard is found through the log's own month registry, then the
+        // registry itself goes — the identical shape as `indexMonths`, because
+        // the host store still cannot enumerate keys.
+        let reasonMonthsKey = DocumentKeys.labelReasonMonths(accountID: accountID)
+        for month in load([String].self, reasonMonthsKey) ?? [] {
+            documents.setData(nil, forKey: DocumentKeys.labelReasons(accountID: accountID,
+                                                                     month: month))
+        }
+        documents.setData(nil, forKey: reasonMonthsKey)
         try removeAccount(accountID)
+    }
+
+    // MARK: Label reasons
+
+    /// How many stored reason records this build could not decode, summed over
+    /// every `labelReasons` read since launch.
+    ///
+    /// Observable rather than swallowed, exactly as
+    /// `Outbox.unreadableEntryCount` is: per-entry leniency keeps the rest of
+    /// the log readable, but a silently shorter audit trail is indistinguishable
+    /// from one that legitimately had fewer records, and that is precisely the
+    /// state an audit trail may not be in.
+    public private(set) var unreadableLabelReasonCount = 0
+
+    /// The key of the most recent reason shard that was present but did not
+    /// parse as a list of records at all — the document-level counterpart of
+    /// the count above, and the same distinction `OutboxQueueCodec.Load`
+    /// draws between "one row I cannot read" and "no queue at all".
+    public private(set) var unreadableLabelReasonKey: String?
+
+    public func labelReasons(accountID: String, threadID: String? = nil) -> [LabelReason] {
+        let months = load([String].self, DocumentKeys.labelReasonMonths(accountID: accountID)) ?? []
+        var found: [LabelReason] = []
+        let now = Date()
+        for month in months {
+            let key = DocumentKeys.labelReasons(accountID: accountID, month: month)
+            let loaded = LabelReasonLog.load(documents.data(forKey: key),
+                                             decoder: decoder, now: now)
+            unreadableLabelReasonCount += loaded.unreadableEntryCount
+            if loaded.documentUnreadable { unreadableLabelReasonKey = key }
+            found.append(contentsOf: loaded.entries)
+        }
+        if let threadID { found = found.filter { $0.threadID == threadID } }
+        return found.sorted { $0.recordedAt > $1.recordedAt }
+    }
+
+    /// Appends to the month shard the record's own timestamp lands in.
+    ///
+    /// Throws — leaving the shard's bytes exactly as they were — when the
+    /// existing document does not parse; see `LabelReasonLog`'s decode rule for
+    /// why a write is strict where a read is lenient.
+    public func recordLabelReason(_ reason: LabelReason, accountID: String) throws {
+        let month = MonthShard.key(for: reason.recordedAt)
+        let key = DocumentKeys.labelReasons(accountID: accountID, month: month)
+        let updated = try LabelReasonLog.appended(reason, to: documents.data(forKey: key),
+                                                  key: key, encoder: encoder,
+                                                  decoder: decoder, now: reason.recordedAt)
+        documents.setData(updated, forKey: key)
+        try registerLabelReasonMonth(month, accountID: accountID)
+    }
+
+    /// The reason log's own month registry. Separate from `registerMonth`'s
+    /// because a reason can be recorded for a thread whose month shard the
+    /// account never registered (an archive-search hit six months back), and a
+    /// purge that looked only at `indexMonths` would then miss the reason shard.
+    private func registerLabelReasonMonth(_ month: String, accountID: String) throws {
+        let key = DocumentKeys.labelReasonMonths(accountID: accountID)
+        var months = try loadStrict([String].self, key) ?? []
+        guard !months.contains(month) else { return }
+        months.append(month)
+        try save(months, key)
     }
 
     // MARK: IMAP mailbox directory

@@ -131,6 +131,12 @@ enum IMAPProviderHarness {
         func saveLabels(_ labels: [MailLabel], accountID: String) throws {
             try inner.saveLabels(labels, accountID: accountID)
         }
+        func labelReasons(accountID: String, threadID: String?) -> [LabelReason] {
+            inner.labelReasons(accountID: accountID, threadID: threadID)
+        }
+        func recordLabelReason(_ reason: LabelReason, accountID: String) throws {
+            try inner.recordLabelReason(reason, accountID: accountID)
+        }
         func imapMailboxDirectory(accountID: String) -> IMAPMailboxDirectory? {
             inner.imapMailboxDirectory(accountID: accountID)
         }
