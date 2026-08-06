@@ -31,18 +31,23 @@ import Foundation
 /// means "operate on `\Seen` with the opposite sign", and
 /// `IMAPVocabularyTests` pins both halves.
 ///
-/// ## Why `LabelVocabularyResolver` still answers `nil` for `.imap`
+/// ## How `LabelVocabularyResolver` reaches this type, and when it still refuses
 ///
-/// Deliberately unchanged by this task, and it is not an oversight. Every string
-/// this type can produce for `.inbox`/`.archive`/`.trash`/`.sent`/`.spam` comes
-/// from the account's mailbox directory, which only a live, `LIST`ed session has.
-/// The static resolver has no session, and the seemingly harmless fallback — an
-/// empty directory — is the dangerous one: `ThreadAction.archive` renders to
-/// `remove: [.inbox]`, an empty directory drops it, and the user gets an empty
-/// mutation that the UI reports as a successful archive while nothing moves. A
-/// refusal is recoverable; a silent no-op that looks like success is not. Wiring
-/// the resolver needs the mailbox list persisted per account, which is Task 16's
-/// account-setup work.
+/// Every string this type can produce for `.inbox`/`.archive`/`.trash`/`.sent`/
+/// `.spam` comes from the account's mailbox directory, so the resolver needs one.
+/// Task 16 persists it per account (`DocumentKeys.imapMailboxes`) at setup, and
+/// `LabelVocabularyResolver.vocabulary(forAccountID:store:)` — the overload every
+/// mutation site uses — reads it back and builds this type on it.
+///
+/// The kind-only `vocabulary(for: .imap)` still answers `nil`, because a bare
+/// `ProviderKind` names no account and so has no directory. So does the
+/// account-keyed overload when the stored directory is **absent or empty**, and
+/// that second refusal is the load-bearing one: an empty directory is not a
+/// harmless default. `ThreadAction.archive` renders to `remove: [.inbox]`, an empty
+/// directory drops it, and the user gets an empty mutation that the UI reports as a
+/// successful archive while nothing moves — which is exactly what
+/// `IMAPVocabularyTests.emptyDirectoryRefusesFolders` pins. A refusal is
+/// recoverable; a silent no-op that looks like success is not.
 struct IMAPVocabulary: LabelVocabulary {
     let directory: IMAPMailboxDirectory
 

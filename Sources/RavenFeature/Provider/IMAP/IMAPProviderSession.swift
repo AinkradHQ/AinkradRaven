@@ -38,15 +38,81 @@ struct IMAPSessionLease: Sendable {
     let release: @Sendable () async -> Void
 }
 
+/// Where an account's *submission* server lives. Separate from the IMAP half
+/// because they are genuinely different servers on genuinely different ports —
+/// `imap.gmail.com:993` and `smtp.gmail.com:465` — and defaulting one from the
+/// other would aim a submission at a host that does not speak SMTP.
+struct SMTPAccountSettings: Codable, Equatable, Sendable {
+    let host: String
+    let port: UInt16
+    let tls: MailTransportTLS
+}
+
 /// Where an IMAP account's server lives. Not a credential: the app password/OAuth
 /// token is an `IMAPCredential` and reaches `host.secrets` only.
+///
+/// ## Decoding is lenient in BOTH directions, and that is load-bearing
+///
+/// `tls` and `smtp` arrived with Task 16, so a document written before it has
+/// neither — but the harder case is the other direction. `MailTransportTLS`'s
+/// synthesised decode is **strict**: an unrecognised raw string (`"requireTLS13"`
+/// from some later build, a hand-edited document) *throws*, and `decodeIfPresent`
+/// does not soften that — it returns `nil` only for a missing or null key. A throw
+/// here is not a local failure: `ProviderFactory.makeIMAPProvider` decodes with
+/// `try?`, so the whole settings document reads as absent, the account cannot be
+/// built, and the user is left looking at a mailbox row that will not connect and
+/// says nothing about why. That is the one-bad-value-strands-the-account shape
+/// `ProviderKind.unsupported` and `MailAccount.State` were each already fixed for.
+///
+/// So both fields are read with `try?` and fall back, and the two fallbacks are
+/// deliberately asymmetric:
+///
+/// - `tls` falls back to `.implicit` — for an absent key because that is exactly
+///   what `openSession` hardcoded before the field existed, and for an
+///   *unrecognised* one because implicit is the conservative direction: TLS from
+///   the first byte. Falling back to `.explicit` would turn an unreadable value
+///   into a plaintext connect followed by an upgrade, and `.implicit` cannot become
+///   a downgrade no matter what the unknown value meant.
+/// - `smtp` falls back to **`nil`**, not to the IMAP host with a guessed port.
+///   There is no derivation that is right in general (`imap.` is not `smtp.`, 993
+///   is not 465), so an absent — or unreadable — submission server is refused by
+///   `IMAPProvider.send` rather than turned into a connection to a host that never
+///   agreed to relay mail. Reading still works either way, which is the point:
+///   the account is never stranded, only its send path is refused, by name.
 struct IMAPAccountSettings: Codable, Equatable, Sendable {
     let host: String
     let port: UInt16
     let username: String
+    let tls: MailTransportTLS
+    /// `nil` when this account has no configured submission server — see above.
+    let smtp: SMTPAccountSettings?
 
-    init(host: String, port: UInt16 = 993, username: String) {
+    init(host: String, port: UInt16 = 993, username: String,
+         tls: MailTransportTLS = .implicit, smtp: SMTPAccountSettings? = nil) {
         self.host = host; self.port = port; self.username = username
+        self.tls = tls; self.smtp = smtp
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        host = try container.decode(String.self, forKey: .host)
+        port = try container.decode(UInt16.self, forKey: .port)
+        username = try container.decode(String.self, forKey: .username)
+        // `try?`, not `decodeIfPresent`: the difference is an unrecognised raw
+        // value, which `decodeIfPresent` throws on. See this type's documentation.
+        tls = (try? container.decode(MailTransportTLS.self, forKey: .tls)) ?? .implicit
+        smtp = try? container.decode(SMTPAccountSettings.self, forKey: .smtp)
+    }
+
+    /// The transport endpoint for the IMAP half.
+    var endpoint: MailTransportEndpoint {
+        MailTransportEndpoint(host: host, port: port, tls: tls)
+    }
+
+    /// The transport endpoint for the submission half, or `nil` when none is
+    /// configured.
+    var smtpEndpoint: MailTransportEndpoint? {
+        smtp.map { MailTransportEndpoint(host: $0.host, port: $0.port, tls: $0.tls) }
     }
 }
 
@@ -105,19 +171,23 @@ extension IMAPProvider {
 
     /// Connects, authenticates, and `LIST`s — the production acquire.
     ///
-    /// Implicit TLS only, which is not a shortcut: `IMAPAuthenticator.authenticate`
-    /// refuses anything else outright, so a credential can never be written on a
-    /// connection that was not encrypted from its first byte. The `LIST "" "*"`
-    /// happens here, once per session, because every later call is written in
-    /// mailbox names and a directory fetched per operation would cost a round trip
-    /// on each of them.
+    /// The TLS mode is **the user's**, taken from `settings.tls`, since Task 16 —
+    /// this was hardcoded `.implicit` while Task 15b's `STARTTLSFramer` did not
+    /// exist and `NetworkTransport.startTLS()` could only throw. It is not a
+    /// weakening: `.explicit` routes through `IMAPAuthenticator.authenticate`,
+    /// whose first act is the `STARTTLS` upgrade, and which refuses outright if the
+    /// server never advertised it or the handshake fails. There is no branch on
+    /// either mode that writes a credential in the clear.
+    ///
+    /// The `LIST "" "*"` happens here, once per session, because every later call is
+    /// written in mailbox names and a directory fetched per operation would cost a
+    /// round trip on each of them.
     static func openSession(settings: IMAPAccountSettings,
                            credential: IMAPCredential) async throws -> IMAPWorkingSession {
-        let transport = NetworkTransport(endpoint: MailTransportEndpoint(
-            host: settings.host, port: settings.port, tls: .implicit))
+        let transport = NetworkTransport(endpoint: settings.endpoint)
         let session = IMAPSession(transport: transport)
         let greeting = try await session.connect()
-        try await IMAPAuthenticator(session: session, security: .implicit)
+        try await IMAPAuthenticator(session: session, security: settings.tls)
             .authenticate(credential, greeting: greeting)
         let listed = try await session.execute(
             IMAPCommand("LIST", [.quoted(""), .quoted("*")], isExclusive: true))

@@ -131,6 +131,13 @@ enum IMAPProviderHarness {
         func saveLabels(_ labels: [MailLabel], accountID: String) throws {
             try inner.saveLabels(labels, accountID: accountID)
         }
+        func imapMailboxDirectory(accountID: String) -> IMAPMailboxDirectory? {
+            inner.imapMailboxDirectory(accountID: accountID)
+        }
+        func saveIMAPMailboxDirectory(_ directory: IMAPMailboxDirectory,
+                                      accountID: String) throws {
+            try inner.saveIMAPMailboxDirectory(directory, accountID: accountID)
+        }
     }
 
     /// Collects one provider call's outcome **with a deadline**, so an unanswered

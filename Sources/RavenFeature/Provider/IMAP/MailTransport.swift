@@ -33,7 +33,15 @@ protocol MailTransport: AnyObject, Sendable {
 
 /// How TLS is applied to a connection. Named for the two shapes mail servers
 /// actually offer (993/465 vs 143/587) rather than for the transport's mechanics.
-enum MailTransportTLS: Sendable, Equatable {
+/// `String`-backed since Task 16, because the user's choice is now persisted in
+/// `IMAPAccountSettings`. The raw values are the case names and are part of the
+/// on-disk format: renaming one orphans every stored account's TLS mode.
+///
+/// **The synthesised decode is strict** — an unrecognised raw string throws, it does
+/// not return `nil` — so nothing may decode this type with `decodeIfPresent` and
+/// assume a missing case degrades to a default. `IMAPAccountSettings.init(from:)`
+/// wraps it in `try?` for exactly that reason, and says why there.
+enum MailTransportTLS: String, Sendable, Equatable, Codable {
     /// TLS from the first byte — the handshake is part of `connect()`.
     case implicit
     /// Connect in plaintext; the caller negotiates an upgrade and then calls
