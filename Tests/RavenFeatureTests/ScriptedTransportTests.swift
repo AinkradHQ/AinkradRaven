@@ -221,11 +221,18 @@ struct ScriptedTransportTests {
         await #expect(throws: MailTransportError.notConnected) { try await transport.read() }
     }
 
-    @Test("NetworkTransport refuses an in-place TLS upgrade with a typed error")
-    func networkTransportRefusesUpgrade() async throws {
+    /// Was "refuses an in-place TLS upgrade with a typed error" until Task 15b,
+    /// when `STARTTLSFramer` made the upgrade real and the blanket refusal wrong.
+    /// The property worth keeping from it is the one that has nothing to do with
+    /// TLS: `startTLS()` on an unconnected transport refuses immediately rather
+    /// than suspending on a framer that will never start. The surviving
+    /// `tlsUpgradeUnsupported` case is pinned by
+    /// `STARTTLSFramerTests.implicitEndpointRefusesAnUpgrade`.
+    @Test("NetworkTransport refuses an upgrade before connect rather than hanging")
+    func networkTransportRefusesUpgradeBeforeConnect() async throws {
         let transport = NetworkTransport(
             endpoint: MailTransportEndpoint(host: "imap.invalid.test", port: 143, tls: .explicit))
-        await #expect(throws: MailTransportError.tlsUpgradeUnsupported) {
+        await #expect(throws: MailTransportError.notConnected) {
             try await transport.startTLS()
         }
     }

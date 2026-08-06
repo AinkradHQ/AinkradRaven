@@ -65,9 +65,11 @@ enum MailTransportError: Error, Equatable {
     /// `connect()` or `read()` exceeded its deadline. A hung read must surface
     /// as an error: the sync engine has no other way out of it.
     case timedOut
-    /// The transport cannot perform an in-place TLS upgrade. See
-    /// `NetworkTransport.startTLS()` for why `NWConnection` cannot, and for
-    /// what an explicit-TLS mail port needs instead.
+    /// The transport cannot perform an in-place TLS upgrade. Since Task 15b
+    /// `NetworkTransport` can, via `STARTTLSFramer`; this remains for an endpoint
+    /// that was not built for one (an implicit-TLS endpoint has no framer to
+    /// release) and for any other conformer that genuinely cannot. It is never a
+    /// policy refusal, and it is never followed by a plaintext continuation.
     case tlsUpgradeUnsupported
     /// Scripted-double only: the test script had no more bytes to hand back.
     /// A deterministic error rather than a suspended read, so a wrong

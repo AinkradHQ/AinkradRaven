@@ -13,20 +13,18 @@ import Foundation
 /// bug to defend against: every `await` here is a call this actor's own caller is
 /// suspended on.
 ///
-/// ## The two TLS modes, and the one that cannot reach a real server yet
+/// ## The two TLS modes
 ///
 /// - **Implicit (465).** TLS is part of `connect()`; the transport is encrypted
 ///   from the first byte and `isEncrypted` is true before the greeting.
 /// - **Explicit (587).** Connect in plaintext, `EHLO`, `STARTTLS`, upgrade, then
-///   `EHLO` again. Fully implemented and driven end-to-end in
-///   `SMTPSessionTests` against `ScriptedTransport`, which genuinely upgrades.
-///   **It cannot reach a real server today**, because `NetworkTransport.startTLS()`
-///   throws `MailTransportError.tlsUpgradeUnsupported`: `NWConnection` fixes TLS
-///   in `NWParameters` at creation and cannot upgrade in place. Whether to add an
-///   `NWProtocolFramer` prelude for that is a separate, still-open decision; this
-///   file does not fake it. `upgradeToTLS()` surfaces the transport's refusal as
-///   `SMTPSessionError.tlsUpgradeUnsupported` — a typed, specific failure, never a
-///   silent fallback to plaintext.
+///   `EHLO` again. Driven end-to-end in `SMTPSessionTests` against
+///   `ScriptedTransport`, and on a real socket by `STARTTLSFramer` (Task 15b),
+///   which holds TLS inert below the plaintext prelude and releases it here.
+///   Nothing in this file changed for that: `upgradeToTLS()` asks the transport
+///   and believes its answer. `SMTPSessionError.tlsUpgradeUnsupported` remains for
+///   a transport that genuinely cannot upgrade — a typed, specific failure, never
+///   a silent fallback to plaintext.
 ///
 /// ## What is never written
 ///

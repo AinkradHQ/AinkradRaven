@@ -9,16 +9,19 @@ import Foundation
 /// resulting strings.
 enum IMAPAuthError: Error, Equatable {
     /// The connection was made in plaintext expecting an in-place `STARTTLS`
-    /// upgrade, which this transport stack cannot perform (see
-    /// `NetworkTransport.startTLS()` and `MailTransportError.tlsUpgradeUnsupported`).
+    /// upgrade, and the transport under this session cannot perform one.
     ///
-    /// Refused *before the first byte of the command*, not after a failed
-    /// upgrade: the alternative — attempt, fail, and let a caller retry — has a
-    /// version where the retry lands on the plaintext socket, and no error
-    /// message prevents that as reliably as never having sent anything. Raven's
-    /// IMAP support is implicit-TLS-only (993/465) and this is where that
-    /// decision is enforced.
+    /// Since Task 15b `NetworkTransport` *can* (see `STARTTLSFramer`), so this is
+    /// reached only by a transport that genuinely cannot — never as a policy
+    /// decision, and never with a credential already on the wire: the upgrade is
+    /// attempted upstream of `CAPABILITY`'s mechanism choice and of every write
+    /// that carries one.
     case explicitTLSUnsupported
+    /// The connection is plaintext and needs an upgrade, but the server never
+    /// advertised `STARTTLS`. Refused before the command is sent rather than
+    /// after: a server with no `STARTTLS` has no encrypted state to reach, so the
+    /// only alternative to refusing is logging in in the clear.
+    case startTLSUnadvertised
     /// `LOGINDISABLED` was advertised and no SASL mechanism we can use was. The
     /// server has told us a plaintext `LOGIN` will be rejected; sending it anyway
     /// would put the password on the wire for nothing.
@@ -53,7 +56,8 @@ enum IMAPAuthError: Error, Equatable {
 /// than an observed one.
 struct IMAPAuthenticator: Sendable {
     private let session: IMAPSession
-    /// How the connection was established. `.explicit` is refused outright.
+    /// How the connection was established. `.explicit` means the `STARTTLS`
+    /// upgrade is this type's first act, before any mechanism choice.
     private let security: MailTransportTLS
 
     init(session: IMAPSession, security: MailTransportTLS) {
@@ -65,8 +69,13 @@ struct IMAPAuthenticator: Sendable {
     ///
     /// The order of the steps is load-bearing and is asserted by tests:
     ///
-    /// 1. **TLS posture first.** Nothing — not `CAPABILITY`, certainly not the
-    ///    credential — is written on a connection that is not already encrypted.
+    /// 1. **TLS posture first.** On an implicit connection TLS is up before the
+    ///    first byte. On an explicit one the `STARTTLS` upgrade happens *here*,
+    ///    upstream of the mechanism choice and of every write that could carry a
+    ///    credential — so the only bytes that can precede it are `CAPABILITY` and
+    ///    `STARTTLS` themselves, which is what `IMAPAuthWireTests` pins against
+    ///    `ScriptedTransport.bytesSentBeforeUpgrade`. If the upgrade fails, this
+    ///    throws; there is no branch that proceeds in the clear.
     /// 2. **`PREAUTH` short-circuits.** A pre-authenticated greeting means the
     ///    server has already decided who we are; sending a credential would leak
     ///    it for no benefit and some servers answer `BAD`.
@@ -78,7 +87,7 @@ struct IMAPAuthenticator: Sendable {
     @discardableResult
     func authenticate(_ credential: IMAPCredential,
                       greeting: IMAPGreeting) async throws -> Set<String> {
-        guard security == .implicit else { throw IMAPAuthError.explicitTLSUnsupported }
+        if security == .explicit { try await upgrade() }
         if greeting.kind == .preauth { return try await session.capabilities() }
         let capabilities = try await session.capabilities()
         let command = try Self.command(for: credential, capabilities: capabilities)
@@ -89,6 +98,27 @@ struct IMAPAuthenticator: Sendable {
             throw error
         }
         return try await session.capabilitiesAfterAuthentication()
+    }
+
+    /// Negotiates `STARTTLS` on a plaintext connection.
+    ///
+    /// `session.startTLS()` owns the command, the handshake and the mandatory
+    /// `CAPABILITY` re-read; this only decides *whether* to attempt it, from the
+    /// pre-TLS list. Reading that list is safe in a way acting on it is not — a
+    /// forged `STARTTLS` line only makes us try to encrypt, and a forged list with
+    /// `STARTTLS` removed makes us refuse. Both are failures, neither is a
+    /// plaintext login, which is why the post-upgrade re-read is what the
+    /// mechanism choice is made from.
+    private func upgrade() async throws {
+        let plaintextCapabilities = try await session.capabilities()
+        guard plaintextCapabilities.contains("STARTTLS") else {
+            throw IMAPAuthError.startTLSUnadvertised
+        }
+        do {
+            try await session.startTLS()
+        } catch IMAPSessionError.transportFailure(.tlsUpgradeUnsupported) {
+            throw IMAPAuthError.explicitTLSUnsupported
+        }
     }
 
     // MARK: - Mechanism selection
