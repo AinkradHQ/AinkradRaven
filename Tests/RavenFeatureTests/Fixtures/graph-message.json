@@ -1,0 +1,12 @@
+{
+  "id": "m1",
+  "conversationId": "conv-1",
+  "body": {
+    "contentType": "html",
+    "content": "<html><head><style>p { color: red }</style></head><body><p>Reply 1</p><script>alert('x')</script><blockquote><p>Quoted history 1</p></blockquote></body></html>"
+  },
+  "uniqueBody": {
+    "contentType": "html",
+    "content": "<div><p>Reply 1</p><script>alert('x')</script></div>"
+  }
+}

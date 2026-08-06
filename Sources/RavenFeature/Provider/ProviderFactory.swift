@@ -32,6 +32,17 @@ import AinkradAppKit
     /// looked up inside `GmailAuth` under that account's id.
     private var gmailAuth: GmailAuth?
 
+    /// Microsoft Graph's OAuth client, `nil` when no Azure app registration is
+    /// available (neither baked in at build time nor saved by the user). One
+    /// instance for every Graph account, exactly like `gmailAuth`.
+    ///
+    /// **`nil` is a supported state, not a failure.** It is what a build with
+    /// no Azure registration has — which is every build today — and it must
+    /// degrade to "Microsoft accounts are not configured" and NOTHING else:
+    /// the plugin loads, `attachStoredAccounts()` keeps attaching every Gmail,
+    /// IMAP and Apple Mail account, and only a `.graph` account fails, by id.
+    private var graphAuth: GraphAuth?
+
     /// Not a credential — the OAuth client id is only ever a lookup key
     /// against Google, and the user needs to see what they typed to fix a
     /// typo. Persisted as a document, unlike the secret below.
@@ -39,6 +50,17 @@ import AinkradAppKit
     /// The client secret IS a credential (see `GmailAuth`'s own documentation
     /// of the same point). Read from and written to `host.secrets` ONLY.
     static let clientSecretKey = "gmail-client-secret"
+
+    /// The Azure application (client) id. Not a credential — like Google's, it
+    /// is only a lookup key, so it is a document.
+    static let azureClientIDKey = "graph-client-id"
+    /// The Azure directory (tenant) id, or absent for the multi-tenant
+    /// `common` endpoint. Not a credential either.
+    static let azureTenantIDKey = "graph-tenant-id"
+    /// A confidential registration's secret IS a credential. `host.secrets`
+    /// ONLY. A public (desktop) registration has none, and that is the normal
+    /// case — see `GraphAuth.init`.
+    static let azureClientSecretKey = "graph-client-secret"
 
     /// Production always resolves Apple Mail bookmarks `.withSecurityScope`.
     /// Tests run outside an App Sandbox, where that option is documented to be
@@ -59,6 +81,7 @@ import AinkradAppKit
         self.host = host
         self.securityScopedBookmarks = securityScopedBookmarks
         gmailAuth = Self.makeGmailAuth(host: host)
+        graphAuth = Self.makeGraphAuth(host: host)
     }
 
     /// Baked credentials (see `BakedOAuthCredentials`) are preferred over
@@ -81,11 +104,44 @@ import AinkradAppKit
         return GmailAuth(secrets: host.secrets, clientID: clientID, clientSecret: clientSecret)
     }
 
+    /// Graph's counterpart to `makeGmailAuth`, and deliberately the same shape:
+    /// baked credentials first, then the manually-saved fallback.
+    ///
+    /// **The client id alone is sufficient**, unlike Gmail's, where an absent
+    /// secret means the Desktop client cannot exchange anything. An Azure
+    /// desktop registration is a public client with no secret at all, so
+    /// requiring one here would make the supported configuration look
+    /// unconfigured. The tenant is optional and defaults to `common`.
+    private static func makeGraphAuth(host: HostServices) -> GraphAuth? {
+        // The secret, when there is one, is passed straight through and never
+        // written to `host.documents` — same rule as Gmail's.
+        if let clientID = BakedOAuthCredentials.azureClientID {
+            return GraphAuth(secrets: host.secrets, clientID: clientID,
+                             clientSecret: BakedOAuthCredentials.azureClientSecret,
+                             tenantID: BakedOAuthCredentials.azureTenantID
+                                ?? GraphAuth.commonTenant)
+        }
+        guard let idData = host.documents.data(forKey: azureClientIDKey),
+              let clientID = String(data: idData, encoding: .utf8),
+              !clientID.isEmpty else { return nil }
+        let tenantID = host.documents.data(forKey: azureTenantIDKey)
+            .flatMap { String(data: $0, encoding: .utf8) }
+        return GraphAuth(secrets: host.secrets, clientID: clientID,
+                         clientSecret: host.secrets.secret(forKey: azureClientSecretKey),
+                         tenantID: (tenantID?.isEmpty == false) ? tenantID! : GraphAuth.commonTenant)
+    }
+
     // MARK: Credentials
 
     /// Whether a Gmail OAuth client exists, i.e. whether `authorize(kind:
     /// .gmail)` could possibly succeed.
     public var hasGmailCredentials: Bool { gmailAuth != nil }
+
+    /// Whether an Azure app registration exists, i.e. whether a Microsoft
+    /// account could be connected at all. `false` is the honest "not
+    /// configured" answer the Accounts surface shows instead of a Connect
+    /// button that could only ever fail.
+    public var hasGraphCredentials: Bool { graphAuth != nil }
 
     public var savedClientID: String? {
         BakedOAuthCredentials.clientID
@@ -123,7 +179,13 @@ import AinkradAppKit
     /// `saveAppleMailDirectory`. Routing it through an `onAuthorizationURL`
     /// callback that would never fire is the shape to avoid.
     ///
-    /// `.graph` (Task 20) gets its flow when its backend lands.
+    /// `.graph` is the second browser flow, and it is the SAME flow: both
+    /// cases below run `Auth/LoopbackCallbackListener` + `Auth/PKCE` +
+    /// `Auth/OAuthTokenClient`, differing only in the endpoints and scopes
+    /// their auth type configures. A build with no Azure registration answers
+    /// `.notAuthenticated` here rather than pretending it could connect —
+    /// callers test `hasGraphCredentials` first to avoid offering the button
+    /// at all.
     public func authorize(kind: MailAccount.ProviderKind,
                           onAuthorizationURL: (@Sendable (URL) -> Void)? = nil)
         async throws -> (accountID: String, address: String) {
@@ -131,7 +193,10 @@ import AinkradAppKit
         case .gmail:
             guard let gmailAuth else { throw MailError.notAuthenticated(accountID: "") }
             return try await gmailAuth.authorize(onAuthorizationURL: onAuthorizationURL)
-        case .imap, .graph, .appleMail, .unsupported:
+        case .graph:
+            guard let graphAuth else { throw MailError.notAuthenticated(accountID: "") }
+            return try await graphAuth.authorize(onAuthorizationURL: onAuthorizationURL)
+        case .imap, .appleMail, .unsupported:
             throw MailError.unsupportedProvider(kind: kind.identifier, accountID: "")
         }
     }
@@ -154,11 +219,16 @@ import AinkradAppKit
         case .imap:
             return try makeIMAPProvider(for: account)
         case .graph:
-            // The backend itself is a later task. Refusing by name here (rather
-            // than being absent from the switch) is what lets an `accounts`
-            // document that already names it load.
-            throw MailError.unsupportedProvider(kind: account.provider.identifier,
-                                                accountID: account.id)
+            // No Azure registration in this build: THIS ONE account cannot be
+            // built, reported by its own id, exactly like an IMAP account with
+            // no stored password. `attachStoredAccounts()` logs it and carries
+            // on, so every Gmail/IMAP/Apple Mail account stays attached and the
+            // plugin still loads — the "not configured" state is one dead
+            // account row, never an app-wide failure.
+            guard let graphAuth else {
+                throw MailError.notAuthenticated(accountID: account.id)
+            }
+            return GraphProvider(accountID: account.id, auth: graphAuth)
         case .unsupported(let raw):
             throw MailError.unsupportedProvider(kind: raw, accountID: account.id)
         }
@@ -390,6 +460,20 @@ import AinkradAppKit
     /// release.
     public func signOut(accountID: String) {
         gmailAuth?.signOut(accountID: accountID)
+        // UNCONDITIONAL, via a static needing no instance — the whole point.
+        // `graphAuth?.signOut(…)` alone looks equivalent and is not: `graphAuth`
+        // is nil whenever this build has no Azure registration (every build
+        // today) or the saved one was removed, and in exactly those cases the
+        // optional chain does nothing and `graph-refresh-<id>` SURVIVES THE
+        // SIGN-OUT in the Keychain. A credential outliving its revocation is
+        // worse than either purge gap this branch has closed.
+        // `IMAPAppPasswordStore.clear` below is a static for the same reason.
+        // Clearing a never-written key is a no-op, and the two backends use
+        // different keys, so this cannot clear Gmail's.
+        GraphAuth.clearRefreshToken(accountID: accountID, secrets: host.secrets)
+        // The live instance too, when there is one: only it holds the
+        // in-memory access token, which the static cannot reach.
+        graphAuth?.signOut(accountID: accountID)
         IMAPAppPasswordStore.clear(accountID: accountID, secrets: host.secrets)
         stopAccessingDirectory(accountID: accountID)
         host.documents.setData(nil, forKey: DocumentKeys.appleMailDirectory(accountID: accountID))

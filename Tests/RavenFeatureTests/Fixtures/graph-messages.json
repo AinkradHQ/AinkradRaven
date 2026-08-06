@@ -1,0 +1,54 @@
+{
+  "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=PAGE-2",
+  "value": [
+    {
+      "id": "m1",
+      "conversationId": "conv-1",
+      "internetMessageId": "<m1@example.test>",
+      "subject": "Subject 1",
+      "bodyPreview": "Preview 1",
+      "receivedDateTime": "2026-01-03T10:00:00Z",
+      "isRead": true,
+      "hasAttachments": true,
+      "parentFolderId": "folder-b-id",
+      "categories": ["Category A"],
+      "flag": { "flagStatus": "complete" },
+      "from": { "emailAddress": { "name": "Person A", "address": "a@example.test" } },
+      "toRecipients": [
+        { "emailAddress": { "name": "Person B", "address": "b@example.test" } }
+      ],
+      "ccRecipients": [
+        { "emailAddress": { "name": "Person C", "address": "c@example.test" } }
+      ]
+    },
+    {
+      "id": "m2",
+      "conversationId": "conv-2",
+      "internetMessageId": "<m2@example.test>",
+      "subject": "Subject 1",
+      "bodyPreview": "Preview 2",
+      "receivedDateTime": "2026-01-02T10:00:00.500Z",
+      "isRead": false,
+      "hasAttachments": false,
+      "parentFolderId": "folder-a-id",
+      "categories": [],
+      "flag": { "flagStatus": "flagged" },
+      "from": { "emailAddress": { "name": "Person B", "address": "b@example.test" } },
+      "toRecipients": [
+        { "emailAddress": { "name": "Person A", "address": "a@example.test" } }
+      ]
+    },
+    {
+      "id": "m3",
+      "conversationId": "conv-1",
+      "internetMessageId": "<m3@example.test>",
+      "subject": "Subject 3",
+      "bodyPreview": "Preview 3",
+      "receivedDateTime": "2026-01-01T10:00:00Z",
+      "hasAttachments": false,
+      "parentFolderId": "folder-a-id",
+      "from": { "emailAddress": { "name": "", "address": "a@example.test" } },
+      "toRecipients": []
+    }
+  ]
+}

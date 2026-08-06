@@ -1,0 +1,21 @@
+{
+  "@odata.deltaLink": "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$deltatoken=DELTA-TOKEN-2",
+  "value": [
+    { "id": "m1", "conversationId": "conv-1", "subject": "Subject 1" },
+    {
+      "id": "m2",
+      "conversationId": "conv-2",
+      "@removed": { "reason": "deleted" }
+    },
+    {
+      "id": "m9",
+      "@removed": { "reason": "deleted" }
+    },
+    { "id": "m3", "conversationId": "conv-3", "subject": "Subject 3" },
+    {
+      "id": "m4",
+      "conversationId": "conv-1",
+      "@removed": { "reason": "deleted" }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "@odata.type": "#microsoft.graph.fileAttachment",
+  "id": "att-1",
+  "name": "Attachment 1.bin",
+  "contentType": "application/octet-stream",
+  "size": 8,
+  "contentBytes": "++++AAEC//4="
+}
