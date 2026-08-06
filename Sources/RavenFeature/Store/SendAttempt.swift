@@ -157,14 +157,25 @@ public enum SendAttempt {
         // omitted set would have made the same mistake in the field where it
         // is least visible: nobody can tell from the received copy that a
         // blind recipient was dropped.
+        //
+        // `richBody` is the newest member of that set and the same hazard: a
+        // message signed without it would lose its formatting, silently, on
+        // exactly the accounts that have a signature. The signature itself is a
+        // stored `String` with no attributes, so it is appended with NO spans —
+        // the existing runs keep their offsets because the text is extended at
+        // the end, and the appended region is plain, which is correct.
+        let signed = message.bodyText + sigdash + account.signature
         return OutgoingMessage(to: message.to, cc: message.cc, bcc: message.bcc,
                                subject: message.subject,
-                               bodyText: message.bodyText + sigdash + account.signature,
+                               bodyText: signed,
                                inReplyToMessageID: message.inReplyToMessageID,
                                threadID: message.threadID,
                                accountID: message.accountID,
                                attachments: message.attachments,
-                               icsReply: message.icsReply)
+                               icsReply: message.icsReply,
+                               richBody: message.richBody.map {
+                                   RichBody(text: signed, spans: $0.spans)
+                               })
     }
 
     /// Shared wording, so the composer banner and the agent's tool result say

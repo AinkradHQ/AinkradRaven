@@ -45,7 +45,10 @@ public struct ComposeSurface: View {
     /// recipient.
     @State var copyFieldsExpanded = false
     @State var subject = ""
-    @State var bodyText = ""
+    /// The body being composed: the plain text, with any formatting described
+    /// beside it. Since M6 this replaces the bare `String` — see `RichBody`,
+    /// whose `text` IS that string, unconverted.
+    @State var richBody = RichBody()
     /// Files the user attached via `ComposeAttachmentPicker`, in pick order. Emitted as
     /// one MIME part per file — see `GmailProvider.rfc822`. Held in memory
     /// only, like every other attachment byte stream in this app.
@@ -75,14 +78,14 @@ public struct ComposeSurface: View {
     @State var selectedFromAccountID: String?
     /// A future time picked in `schedulePicker`, or `nil` for "send normally
     /// (subject only to the undo-send hold window)". Reset on `clear()`.
-    @State private var scheduledSendAt: Date?
-    @State private var isScheduling = false
+    @State var scheduledSendAt: Date?
+    @State var isScheduling = false
     /// The most recently queued send's outbox entry, while it is still inside
     /// its undo-send hold window — set right after `send()` queues it, and
     /// the target of the "Undo" button in `undoBanner`. `nil` once the hold
     /// elapses (the periodic timer transmits it) or the user cancels it.
-    @State private var undoableEntryID: UUID?
-    @State private var undoDeadline: Date?
+    @State var undoableEntryID: UUID?
+    @State var undoDeadline: Date?
     /// True once the reply/forward prefill has run, so re-rendering never
     /// overwrites what the user has since typed.
     @State var didPrefill = false
@@ -125,6 +128,21 @@ public struct ComposeSurface: View {
     /// private: `ComposeSurfaceAdvice` needs it to resolve the sending address.
     var effectiveAccountID: String? {
         selectedFromAccountID ?? runtime.composingAccountID
+    }
+
+    /// The plain text of the body — the identity on `richBody.text`, never a
+    /// derivation. Everything that read the old `bodyText` field (the autosave
+    /// digest, `hasContent`, `ComposeAdvice`'s facts, the outgoing message)
+    /// reads this and is therefore unchanged.
+    ///
+    /// Setting it replaces the body wholesale with plain text, which is
+    /// correct at all three call sites: a reply prefill, a Sage-supplied draft,
+    /// and `clear()` are each a plain `String` arriving from outside the
+    /// editor. A draft with formatting is restored by `load`, which assigns
+    /// `richBody` directly instead.
+    var bodyText: String {
+        get { richBody.text }
+        nonmutating set { richBody = RichBody(plainText: newValue) }
     }
 
     public var body: some View {
@@ -188,87 +206,6 @@ public struct ComposeSurface: View {
             confirmTitle: scheduledSendAt == nil ? "Send Anyway" : "Schedule Anyway",
             onConfirm: performSend)
     }
-    // MARK: Drafts rail
-
-    /// The width the rail earns when it is shown. Matches
-    /// `RavenShell.draftsRailMinWidth`'s assumption about what a rail costs.
-    private static let draftsRailWidth: CGFloat = 220
-
-    /// Whether the second column exists.
-    ///
-    /// Two conditions, both necessary. The shell's width threshold
-    /// (`showsDraftsRail`) is unchanged. The new one is "there is at least one
-    /// saved draft": a rail whose entire content was a sentence explaining that
-    /// nothing is saved yet cost 220pt of the composer's width to say nothing,
-    /// and it was the emptiest possible version of it — a brand-new message —
-    /// that the user was looking at. No drafts, no column; the first autosave
-    /// (600ms into typing) brings it in, and `draftsVersion` is already bumped
-    /// on every draft mutation so this re-evaluates then.
-    private var showsRail: Bool { showsDraftsRail && savedDraftCount > 0 }
-
-    /// Read through `draftsVersion` for the same reason `ComposeDraftsRail`
-    /// does: `DraftBox` is a plain in-memory box, not observable.
-    private var savedDraftCount: Int {
-        _ = draftsVersion
-        return DraftBox.shared.all().count
-    }
-
-    private var draftList: some View {
-        ComposeDraftsRail(
-            version: draftsVersion,
-            selectedDraftID: keeper.draftID,
-            onSelect: load,
-            onDelete: { id in
-                DraftBox.shared.remove(id)
-                // Deleting the draft being edited retires the session too, so the
-                // pending autosave cannot immediately write it back.
-                if keeper.draftID == id { keeper.retire(); clear() }
-                draftsVersion += 1
-            })
-    }
-
-    /// Loads a saved draft into the composer, INCLUDING whatever conversation
-    /// it belonged to. A draft persisted from a dismissed reply carries
-    /// `threadID`/`inReplyToMessageID`/`accountID` on its `OutgoingMessage`, so
-    /// resuming it restores a reply rather than silently demoting it to a new
-    /// message that would land outside the thread.
-    private func load(_ id: String, _ message: OutgoingMessage) {
-        // Autosaves from here on update THIS entry rather than forking a copy.
-        keeper.adopt(id)
-        toChips = message.to.map { RecipientChip(raw: rfc5322(for: $0)) }
-        ccChips = message.cc.map { RecipientChip(raw: rfc5322(for: $0)) }
-        bccChips = message.bcc.map { RecipientChip(raw: rfc5322(for: $0)) }
-        subject = message.subject
-        bodyText = message.bodyText
-        attachments = message.attachments
-        if let threadID = message.threadID, let accountID = message.accountID {
-            activeContext = .reply(mode: .reply, thread: ComposeThreadReference(
-                threadID: threadID, accountID: accountID,
-                lastMessageRFC822ID: message.inReplyToMessageID))
-        } else {
-            activeContext = .new
-            selectedFromAccountID = message.accountID
-        }
-    }
-
-    func rfc5322(for address: MailAddress) -> String {
-        guard let name = address.name, !name.isEmpty else { return address.email }
-        return "\(name) <\(address.email)>"
-    }
-
-    /// Empties the composer. Deliberately does NOT retire the keeper — the two
-    /// callers that need that (`send`, and deleting the edited draft) do it
-    /// explicitly, because `clear` is also how a session legitimately starts over
-    /// and a retire there would be silent.
-    private func clear() {
-        toChips = []; ccChips = []; bccChips = []; subject = ""; bodyText = ""
-        attachments = []
-        copyFieldsExpanded = false
-        selectedFromAccountID = nil
-        scheduledSendAt = nil
-        isScheduling = false
-        activeContext = .new
-    }
 
     // MARK: Composer
 
@@ -280,28 +217,10 @@ public struct ComposeSurface: View {
                               isExpanded: $copyFieldsExpanded,
                               candidates: suggestionCandidates)
             AinkradTextField(text: $subject, placeholder: "Subject")
-            AinkradTextArea(text: $bodyText, placeholder: "Write your message\u{2026}",
-                            minHeight: 140)
-                // **Base text direction, set — not implemented.**
-                //
-                // An Arabic message typed into an implicitly left-to-right
-                // editor has its cursor, its alignment and its punctuation on
-                // the wrong side, and the same message arrives laid out
-                // left-to-right at the far end. Handing the direction to
-                // SwiftUI's `layoutDirection` (and, in the sent message, to an
-                // HTML `dir` attribute — see `GmailProvider.rfc822`) lets the
-                // system's Unicode bidi algorithm do the reordering it already
-                // does correctly. The only thing it cannot infer is the
-                // paragraph's base direction, and that is the one thing set
-                // here.
-                //
-                // Scoped to the editor alone, deliberately: mirroring the whole
-                // composer would move the Send button and the drafts rail, which
-                // are app chrome and belong wherever the host's own layout
-                // direction puts them.
-                .environment(\.layoutDirection,
-                             BaseTextDirection.detect(bodyText) == .rightToLeft
-                                ? .rightToLeft : .leftToRight)
+            // The rich editor, its format bar, and the base-direction handling
+            // that used to sit here — all in `ComposeBodyField`.
+            ComposeBodyField(richBody: $richBody,
+                             placeholder: "Write your message\u{2026}", minHeight: 140)
 
             ComposeAdviceView(findings: findings, onApply: apply)
 
@@ -343,30 +262,16 @@ public struct ComposeSurface: View {
             onSend: send)
     }
 
-    private func undoSend() {
-        guard let undoableEntryID else { return }
-        if let message = runtime.outbox.cancelHeld(undoableEntryID) {
-            // Restored exactly as `load` would show an existing draft: the
-            // recipient chips, subject, and body come straight back into the
-            // composer rather than being silently discarded.
-            let restoredID = keeper.save(message, generation: keeper.generation)
-            self.undoableEntryID = nil
-            self.undoDeadline = nil
-            if let restoredID {
-                load(restoredID, message)
-            }
-            draftsVersion += 1
-        }
-    }
-
-    /// The typed content as an `OutgoingMessage`, before routing.
+    /// The typed content as an `OutgoingMessage`, before routing. The assembly
+    /// itself is in `ComposeMessage`, which is pure and tested — including the
+    /// rule that a body with no formatting attaches no `richBody` at all.
     func message() -> OutgoingMessage {
-        OutgoingMessage(
+        ComposeMessage.outgoing(
             to: ComposeValidation.validAddresses(toChips),
             cc: ComposeValidation.validAddresses(ccChips),
             bcc: ComposeValidation.validAddresses(bccChips),
             subject: subject,
-            bodyText: bodyText,
+            body: richBody,
             attachments: attachments)
     }
 
