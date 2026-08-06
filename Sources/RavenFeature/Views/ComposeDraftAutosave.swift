@@ -124,4 +124,112 @@ extension ComposeSurface {
             || !subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+
+    // MARK: Drafts rail, loading and clearing
+
+    /// Moved here from `ComposeSurface` when the rich editor arrived: that file
+    /// had to get SMALLER, not larger, and this half — the rail, loading a
+    /// saved draft, emptying the composer, and pulling a held send back out of
+    /// the outbox — is the same draft-session concern the rest of this file
+    /// already owns. Nothing changed in the move except access level (an
+    /// extension in another file cannot see `private` members).
+    // MARK: Drafts rail
+
+    /// The width the rail earns when it is shown. Matches
+    /// `RavenShell.draftsRailMinWidth`'s assumption about what a rail costs.
+    static let draftsRailWidth: CGFloat = 220
+
+    /// Whether the second column exists.
+    ///
+    /// Two conditions, both necessary. The shell's width threshold
+    /// (`showsDraftsRail`) is unchanged. The new one is "there is at least one
+    /// saved draft": a rail whose entire content was a sentence explaining that
+    /// nothing is saved yet cost 220pt of the composer's width to say nothing,
+    /// and it was the emptiest possible version of it — a brand-new message —
+    /// that the user was looking at. No drafts, no column; the first autosave
+    /// (600ms into typing) brings it in, and `draftsVersion` is already bumped
+    /// on every draft mutation so this re-evaluates then.
+    var showsRail: Bool { showsDraftsRail && savedDraftCount > 0 }
+
+    /// Read through `draftsVersion` for the same reason `ComposeDraftsRail`
+    /// does: `DraftBox` is a plain in-memory box, not observable.
+    var savedDraftCount: Int {
+        _ = draftsVersion
+        return DraftBox.shared.all().count
+    }
+
+    var draftList: some View {
+        ComposeDraftsRail(
+            version: draftsVersion,
+            selectedDraftID: keeper.draftID,
+            onSelect: load,
+            onDelete: { id in
+                DraftBox.shared.remove(id)
+                // Deleting the draft being edited retires the session too, so the
+                // pending autosave cannot immediately write it back.
+                if keeper.draftID == id { keeper.retire(); clear() }
+                draftsVersion += 1
+            })
+    }
+
+    /// Loads a saved draft into the composer, INCLUDING whatever conversation
+    /// it belonged to. A draft persisted from a dismissed reply carries
+    /// `threadID`/`inReplyToMessageID`/`accountID` on its `OutgoingMessage`, so
+    /// resuming it restores a reply rather than silently demoting it to a new
+    /// message that would land outside the thread.
+    func load(_ id: String, _ message: OutgoingMessage) {
+        // Autosaves from here on update THIS entry rather than forking a copy.
+        keeper.adopt(id)
+        toChips = message.to.map { RecipientChip(raw: rfc5322(for: $0)) }
+        ccChips = message.cc.map { RecipientChip(raw: rfc5322(for: $0)) }
+        bccChips = message.bcc.map { RecipientChip(raw: rfc5322(for: $0)) }
+        subject = message.subject
+        // The draft's formatting comes back with it; a draft written before
+        // M6 (or by any plain producer) has none, and restores as plain text
+        // with no conversion step in which an artefact could appear.
+        richBody = message.richBody ?? RichBody(plainText: message.bodyText)
+        attachments = message.attachments
+        if let threadID = message.threadID, let accountID = message.accountID {
+            activeContext = .reply(mode: .reply, thread: ComposeThreadReference(
+                threadID: threadID, accountID: accountID,
+                lastMessageRFC822ID: message.inReplyToMessageID))
+        } else {
+            activeContext = .new
+            selectedFromAccountID = message.accountID
+        }
+    }
+
+    func rfc5322(for address: MailAddress) -> String {
+        guard let name = address.name, !name.isEmpty else { return address.email }
+        return "\(name) <\(address.email)>"
+    }
+
+    /// Empties the composer. Deliberately does NOT retire the keeper — the two
+    /// callers that need that (`send`, and deleting the edited draft) do it
+    /// explicitly, because `clear` is also how a session legitimately starts over
+    /// and a retire there would be silent.
+    func clear() {
+        toChips = []; ccChips = []; bccChips = []; subject = ""; bodyText = ""
+        attachments = []
+        copyFieldsExpanded = false
+        selectedFromAccountID = nil
+        scheduledSendAt = nil
+        isScheduling = false
+        activeContext = .new
+    }
+    func undoSend() {
+        guard let undoableEntryID else { return }
+        if let message = runtime.outbox.cancelHeld(undoableEntryID) {
+            // Restored exactly as `load` would show an existing draft: the
+            // recipient chips, subject, and body come straight back into the
+            // composer rather than being silently discarded.
+            let restoredID = keeper.save(message, generation: keeper.generation)
+            self.undoableEntryID = nil
+            self.undoDeadline = nil
+            if let restoredID {
+                load(restoredID, message)
+            }
+            draftsVersion += 1
+        }
+    }
 }

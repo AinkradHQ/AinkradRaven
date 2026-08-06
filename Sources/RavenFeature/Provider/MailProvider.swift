@@ -70,7 +70,30 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     /// offers.
     public let bcc: [MailAddress]
     public let subject: String
+    /// The plain text of the body, verbatim — **required, and never removed.**
+    ///
+    /// Since M6 the composer also carries `richBody`, but this key stays the
+    /// truth about what the `text/plain` part will say. It is what an older
+    /// build reads: one that knows nothing of `richBody` decodes this, sends a
+    /// correct plain-text message, and strands nothing. Removing it, or making
+    /// it optional, would turn a rollback (or two builds against one document
+    /// store) into an outbox that will not load — see `richBody`.
     public let bodyText: String
+    /// The same body with its formatting, when the composer produced any.
+    ///
+    /// **One additive optional key.** `nil` for every message that predates M6,
+    /// for everything `create_draft` produces (Sage supplies a `String` and
+    /// cannot supply attributes), and for anything typed without formatting —
+    /// and a `nil` rich body is exactly the case `MarkdownToHTML` keeps
+    /// serving, so those messages' bytes on the wire are unchanged.
+    ///
+    /// **`richBody!.text == bodyText` is an invariant**, enforced at every
+    /// entry point below rather than trusted: the initializer re-anchors the
+    /// rich body's text to `bodyText`, so the two cannot disagree however this
+    /// value was produced. `SendAttempt.withSignature` is the live hazard —
+    /// that rebuild has already silently dropped `attachments` and `icsReply`
+    /// once, and a field forgotten there is a shipped bug on this file.
+    public let richBody: RichBody?
     /// Set when this is a reply, so the provider can thread it correctly.
     public let inReplyToMessageID: String?
     public let threadID: String?
@@ -104,11 +127,29 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
                 subject: String,
                 bodyText: String, inReplyToMessageID: String? = nil,
                 threadID: String? = nil, accountID: String? = nil,
-                attachments: [OutgoingAttachment] = [], icsReply: ICSReply? = nil) {
+                attachments: [OutgoingAttachment] = [], icsReply: ICSReply? = nil,
+                richBody: RichBody? = nil) {
         self.to = to; self.cc = cc; self.bcc = bcc; self.subject = subject
         self.bodyText = bodyText; self.inReplyToMessageID = inReplyToMessageID
         self.threadID = threadID; self.accountID = accountID
         self.attachments = attachments; self.icsReply = icsReply
+        self.richBody = Self.anchored(richBody, to: bodyText)
+    }
+
+    /// Keeps `richBody.text` equal to `bodyText`, always.
+    ///
+    /// `bodyText` is authoritative, so a rich body that disagrees with it is
+    /// re-anchored to it rather than accepted or rejected: the spans are
+    /// re-validated against the authoritative text by `RichBody.init`, which
+    /// drops any run that no longer addresses real characters. The alternative
+    /// — trusting the caller — makes the two fields two truths, and the first
+    /// site to forget one (a rebuild that carries `bodyText` and not
+    /// `richBody`, or the reverse) ships a message whose plain and HTML parts
+    /// say different things.
+    private static func anchored(_ rich: RichBody?, to bodyText: String) -> RichBody? {
+        guard let rich else { return nil }
+        guard rich.text != bodyText else { return rich }
+        return RichBody(text: bodyText, spans: rich.spans)
     }
 
     /// Explicit member-wise decode/encode so documents persisted before M4
@@ -129,6 +170,16 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
         accountID = try c.decodeIfPresent(String.self, forKey: .accountID)
         attachments = try c.decodeIfPresent([OutgoingAttachment].self, forKey: .attachments) ?? []
         icsReply = try c.decodeIfPresent(ICSReply.self, forKey: .icsReply)
+        // Lenient in BOTH senses, and deliberately so. Absent (every document
+        // written before M6) decodes to `nil` and the message sends as plain
+        // text. Present but unreadable — a future build's shape, a truncated
+        // object — also decodes to `nil` rather than throwing, because this
+        // type is what an outbox entry is made of: a throw here fails the
+        // entry, and one failed entry used to take the entire send queue with
+        // it. The worst case is a message that goes out unformatted; it is
+        // never a message that quietly ceases to exist.
+        richBody = Self.anchored(try? c.decodeIfPresent(RichBody.self, forKey: .richBody),
+                                 to: bodyText)
     }
 
     /// The same message attributed to `accountID`. Used where the account is
@@ -138,7 +189,8 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     public func attributed(to accountID: String?) -> OutgoingMessage {
         OutgoingMessage(to: to, cc: cc, bcc: bcc, subject: subject, bodyText: bodyText,
                         inReplyToMessageID: inReplyToMessageID, threadID: threadID,
-                        accountID: accountID, attachments: attachments, icsReply: icsReply)
+                        accountID: accountID, attachments: attachments, icsReply: icsReply,
+                        richBody: richBody)
     }
 }
 

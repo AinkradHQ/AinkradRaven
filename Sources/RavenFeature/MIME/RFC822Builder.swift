@@ -41,9 +41,20 @@ struct RFC822Builder {
     ///   part and boundary recognition depends on. A bare `\n` in a MIME
     ///   structure this picky is exactly how a recipient ends up seeing raw
     ///   boundary markers;
-    /// - the HTML part renders that same text via
-    ///   `MarkdownToHTML.renderComposed`, which splits the signature off before
-    ///   parsing so the sigdash is never mistaken for a setext heading.
+    /// - the HTML part renders that same text — through
+    ///   `RichBodyHTML.renderComposed` when the composer recorded formatting,
+    ///   and `MarkdownToHTML.renderComposed` when it did not. Both split the
+    ///   signature off before rendering, so the sigdash is never mistaken for a
+    ///   setext heading, and both call the same `Signature`/`QuotedRegion`
+    ///   splitters on the same string.
+    ///
+    /// **A message with no rich body is byte-identical to what this emitted
+    /// before the rich composer existed.** The renderer choice is the only
+    /// branch, `bodyText` is still the plain part, and the boundary and
+    /// encoding decisions are untouched — which is why the existing
+    /// `AttachmentMIMETests`, `BccTests` and `SMIMETests` needed no edit. Were
+    /// any of them to need one, that would be evidence this branch had changed
+    /// the plain path rather than added a second one.
     ///
     /// Both parts declare `Content-Transfer-Encoding: base64` and are actually
     /// base64d. They previously emitted raw UTF-8 under an implicit `7bit`,
@@ -66,6 +77,28 @@ struct RFC822Builder {
         includeBccHeader: Bool,
         identityLookup: (String) -> SecIdentity?
     ) -> String {
+        // The `text/plain` derivation is the IDENTITY FUNCTION. A rich body
+        // stores the plain text and describes the formatting beside it, so the
+        // plain part is that text unchanged — no HTML→text pass, no stub, and
+        // nothing for a recipient's quote or signature trimming to lose. It is
+        // equal to `bodyText` by `OutgoingMessage`'s own invariant; naming it
+        // this way is what makes the one line it could stop being lossless
+        // visible.
+        let plainText = message.richBody?.plainText ?? message.bodyText
+        // Which renderer is decided by ONE condition: whether formatting was
+        // recorded at all. `MarkdownToHTML` is not retired and is not reserved
+        // for a single caller — it is how a body that arrived as a bare
+        // `String` is interpreted, which covers an agent-created draft, every
+        // document written before the rich composer, and a reply sent without
+        // the composer ever opening. Routing those to a plain renderer instead
+        // would un-blockquote every quoted trailer and un-separate every
+        // signature.
+        let rendered: String
+        if let rich = message.richBody {
+            rendered = RichBodyHTML.renderComposed(rich)
+        } else {
+            rendered = MarkdownToHTML.renderComposed(message.bodyText)
+        }
         // Base direction, set once on a wrapper rather than reimplemented.
         //
         // An Arabic message rendered inside an implicitly `dir="ltr"` document
@@ -73,10 +106,10 @@ struct RFC822Builder {
         // wrong end — the Unicode bidi algorithm reorders the runs correctly
         // and cannot guess the PARAGRAPH direction, which is what `dir`
         // supplies. Emitted only for `rtl`, so an English message's HTML part
-        // is byte-for-byte what it always was.
-        let rendered = MarkdownToHTML.renderComposed(message.bodyText)
+        // is byte-for-byte what it always was. Detected on the plain text,
+        // which is the same string either renderer was handed.
         let html: String
-        switch BaseTextDirection.detect(message.bodyText) {
+        switch BaseTextDirection.detect(plainText) {
         case .leftToRight: html = rendered
         case .rightToLeft: html = "<div dir=\"rtl\">\(rendered)</div>"
         }
@@ -86,13 +119,13 @@ struct RFC822Builder {
         // no `-`), so the hyphenated `raven-<uuid>` boundary token cannot
         // occur inside them, and checking megabytes of base64 text here would
         // be pure waste.
-        let innerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
+        let innerBoundary = randomBoundary(avoiding: [plainText, html, icsText])
         let alternative = [
             "--\(innerBoundary)",
             MIMEHeader.literalLine("Content-Type", "text/plain; charset=UTF-8"),
             MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"),
             "",
-            MIMEHeader.base64Body(message.bodyText),
+            MIMEHeader.base64Body(plainText),
             "--\(innerBoundary)",
             MIMEHeader.literalLine("Content-Type", "text/html; charset=UTF-8"),
             MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"),
@@ -141,9 +174,9 @@ struct RFC822Builder {
             // separately from, and checked against, the inner one as well as
             // every text part — two boundaries that could collide would
             // corrupt whichever nests inside the other.
-            var outerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
+            var outerBoundary = randomBoundary(avoiding: [plainText, html, icsText])
             while outerBoundary == innerBoundary {
-                outerBoundary = randomBoundary(avoiding: [message.bodyText, html, icsText])
+                outerBoundary = randomBoundary(avoiding: [plainText, html, icsText])
             }
             contentTypeLine = MIMEHeader.literalLine(
                 "Content-Type", "multipart/mixed; boundary=\"\(outerBoundary)\"")
@@ -187,7 +220,7 @@ struct RFC822Builder {
         if let accountID = message.accountID, let identity = identityLookup(accountID),
            let signed = signedEnvelope(
                contentTypeLine: contentTypeLine, body: body,
-               avoiding: [message.bodyText, html, icsText], identity: identity) {
+               avoiding: [plainText, html, icsText], identity: identity) {
             lines.append(signed.contentTypeLine)
             return lines.joined(separator: "\r\n") + "\r\n\r\n" + signed.body
         }
