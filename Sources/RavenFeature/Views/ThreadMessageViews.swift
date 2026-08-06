@@ -44,6 +44,14 @@ struct MessageRow: View {
                 CalendarInviteCard(invite: invite, threadID: message.threadID, runtime: runtime)
             }
 
+            // Any agent-recorded label reason for this thread. Shown once per
+            // thread — on its newest message — rather than repeated on every
+            // card, since the record is about the thread's labels, not this
+            // message's text.
+            if isNewestInThread {
+                LabelReasonNote(threadID: message.threadID, runtime: runtime)
+            }
+
             if !message.attachments.isEmpty {
                 AttachmentChipRow(attachments: message.attachments, messageID: message.id,
                                   threadID: message.threadID, runtime: runtime)
@@ -93,6 +101,10 @@ struct MessageRow: View {
         }
     }
 
+    private var isNewestInThread: Bool {
+        runtime.store.thread(message.threadID)?.messages.last?.id == message.id
+    }
+
     @ViewBuilder private var content: some View {
         if isLoading && loadedBody == nil {
             AinkradLoadingState(label: "Loading message…")
@@ -137,6 +149,63 @@ struct MessageRow: View {
                 .font(AinkradFontResolver.font(.body, typography: typo))
                 .foregroundStyle(theme.foreground.opacity(0.55))
         }
+    }
+}
+
+/// The most recent agent-recorded label reason for a thread (`label_with_reason`),
+/// as a chip whose tooltip is the reason text in full.
+///
+/// Read straight from the store rather than passed in, because the record is
+/// written by a tool call that never goes through `RavenViewModel` — a cached
+/// copy would show a stale "why" (or none) after Sage filed the thread.
+/// Renders nothing at all when there is no record, which is the ordinary case
+/// for mail the user filed themselves.
+struct LabelReasonNote: View {
+    let threadID: String
+    let runtime: RavenRuntime
+
+    @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradTypography) private var typo
+
+    private var latest: LabelReason? {
+        guard let accountID = runtime.store.thread(threadID)?.accountID else { return nil }
+        return runtime.store.labelReasons(accountID: accountID, threadID: threadID).first
+    }
+
+    var body: some View {
+        if let latest {
+            HStack(spacing: AinkradSpacing.xs) {
+                AinkradIconGlyph(systemName: "text.badge.checkmark")
+                Text(summary(latest))
+                    .font(AinkradFontResolver.font(.caption, typography: typo))
+                    .foregroundStyle(theme.foreground.opacity(0.7))
+                    .lineLimit(2)
+            }
+            // The full text on hover: the chip line is truncated to two lines
+            // so a 500-character reason cannot push the message body off
+            // screen, and the untruncated record has to stay reachable.
+            .help(latest.reason)
+        }
+    }
+
+    /// "Labelled A, unlabelled B — <reason>", with whichever half applies. The
+    /// labels are named because a reason without them records that something
+    /// was justified but not what.
+    private func summary(_ reason: LabelReason) -> String {
+        var parts: [String] = []
+        if !reason.add.isEmpty { parts.append("labelled \(reason.add.joined(separator: ", "))") }
+        if !reason.remove.isEmpty {
+            parts.append("unlabelled \(reason.remove.joined(separator: ", "))")
+        }
+        let what = parts.isEmpty ? "Labels reviewed" : parts.joined(separator: ", ").capitalizedFirst
+        return "\(what) — \(reason.reason)"
+    }
+}
+
+private extension String {
+    var capitalizedFirst: String {
+        guard let first else { return self }
+        return first.uppercased() + dropFirst()
     }
 }
 

@@ -415,6 +415,24 @@ import AinkradAppKit
         DraftBox.shared.remove(id)
     }
 
+    // MARK: label_with_reason
+    //
+    // The tool table entry lives here, with the rest of the registration
+    // contract; its behaviour is in `RavenMCPLabelWithReasonTests`, for the same
+    // reason `bundle_by_sender` has its own suite — this file is already the
+    // largest MCP suite and a tool's behaviour is a subject of its own.
+
+    @Test("label_with_reason is registered as a non-destructive write and requires a reason")
+    func labelWithReasonRegistration() throws {
+        let tool = try #require(RavenMCPServer.tools.first { $0.name == "label_with_reason" })
+        #expect(tool.destructive == false)
+        #expect(tool.readOnly == false)
+        let schema = try #require(JSONSerialization
+            .jsonObject(with: Data(tool.schemaJSON.utf8)) as? [String: Any])
+        let required = try #require(schema["required"] as? [String])
+        #expect(Set(required) == ["thread_ids", "reason"])
+    }
+
     @Test("send_draft after a transient failure reports queued, not sent, and keeps the draft")
     func sendDraftTransientFailureReportsQueued() async throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())

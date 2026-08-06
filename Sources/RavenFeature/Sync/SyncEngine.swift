@@ -60,7 +60,11 @@ import Foundation
     /// Pinned to UTC to match `MonthShard`'s convention — the results of this
     /// window feed straight into UTC-keyed month shards, so a local-time
     /// boundary here would disagree with where threads actually get filed.
-    static func windowStart(from now: Date, windowDays: Int) -> Date {
+    /// `nonisolated` because it reads no engine state at all: it builds a UTC
+    /// `Calendar` and returns a `Date`. Callers that are not on the main actor
+    /// (`LabelReasonLog`, which must stay a pure codec) can then reuse this one
+    /// copy of the window arithmetic instead of writing a second one.
+    nonisolated static func windowStart(from now: Date, windowDays: Int) -> Date {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
         return calendar.date(byAdding: .day, value: -windowDays, to: now) ?? .distantPast

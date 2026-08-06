@@ -109,6 +109,20 @@ public enum RavenMCPServer {
                                  ("remove", "array", "Label ids to remove.")],
                                 required: ["thread_ids"]),
              destructive: false, readOnly: false),
+        Tool(name: "label_with_reason", operation: "label_with_reason",
+             summary: "Exactly the label tool, plus a short note recording WHY, stored on this "
+                    + "machine and shown beside the thread. The reason is never sent to the mail "
+                    + "provider and never leaves this machine; it is kept for 90 days, the same "
+                    + "window as synced mail. Reasons are capped at 500 characters and a blank "
+                    + "one is refused. If any thread id is unknown, nothing is applied to any of "
+                    + "them.",
+             schemaJSON: schema([("thread_ids", "array", "Thread ids."),
+                                 ("add", "array", "Label ids to add."),
+                                 ("remove", "array", "Label ids to remove."),
+                                 ("reason", "string",
+                                  "Why, in at most 500 characters. Stored locally only.")],
+                                required: ["thread_ids", "reason"]),
+             destructive: false, readOnly: false),
         Tool(name: "create_draft", operation: "create_draft",
              summary: "Create a draft visible in Compose. Does NOT send. The draft is bound to "
                     + "the account that will send it: account_id if given, otherwise the "
