@@ -35,6 +35,28 @@ public enum RavenMCPOperations {
         (args["account_id"] as? String).map { [$0] }
     }
 
+    /// The most bundles `bundle_by_sender` will return, and the cap an
+    /// oversized `limit` is clamped to. A tool response is text a model reads,
+    /// so an unbounded `limit` is a way to spend a context window rather than a
+    /// feature; 200 is well past any triage session and far short of a problem.
+    static let maxLimit = 200
+
+    /// `limit` validated at the boundary: absent means the default, a
+    /// non-positive or non-integer value is REFUSED rather than silently
+    /// coerced (asking for 0 or -1 senders is a caller bug, and answering it
+    /// with 25 hides that), and an oversized one is clamped to `maxLimit`.
+    /// `nil` means "reject the call".
+    ///
+    /// Internal rather than private so a test can observe the CLAMP directly:
+    /// through the tool it is invisible unless a fixture holds more than
+    /// `maxLimit` senders, and an assertion that only checks the oversized call
+    /// succeeds would pass just as well with no clamp at all.
+    static func boundedLimit(_ args: [String: Any], default fallback: Int = 25) -> Int? {
+        guard let raw = args["limit"] else { return fallback }
+        guard let value = raw as? Int, value > 0 else { return nil }
+        return min(value, maxLimit)
+    }
+
     /// `providers` is optional and used ONLY by `search_mail`'s
     /// `include_archive` path — every other tool physically cannot reach the
     /// network ahead of the store, exactly as before. It is a router rather
@@ -145,12 +167,20 @@ public enum RavenMCPOperations {
             if unread.isEmpty {
                 return ok("No unread threads in the synced window (last 90 days).")
             }
-            let bySender = Dictionary(grouping: unread) {
-                $0.participants.first?.email ?? "unknown"
-            }
-            let breakdown = bySender
-                .sorted { $0.value.count > $1.value.count }
-                .map { "\($0.key): \($0.value.count)" }
+            // Grouped and ordered by `SenderBundles`, the same code
+            // `bundle_by_sender` uses, so the two tools cannot disagree about
+            // who a sender is or how many threads they sent.
+            //
+            // This replaced an inline `Dictionary(grouping:)` on the RAW
+            // `participants.first?.email` sorted by count alone. Two defects
+            // went with it: `Bea <b@example.test>`, `b@example.test` and
+            // `B@Example.Test` were three separate senders, and — because a
+            // count-only comparator leaves every tie to `Dictionary` iteration,
+            // which Swift seeds per process — the breakdown came back in a
+            // DIFFERENT ORDER on each run whenever two senders had the same
+            // count. `SenderBundles.isBefore`'s third key closes that.
+            let breakdown = SenderBundles.bundle(unread, limit: unread.count)
+                .map { "\($0.sender.label): \($0.threadCount)" }
                 .joined(separator: "\n")
             return ok("""
             \(unread.count) unread threads.
@@ -161,6 +191,26 @@ public enum RavenMCPOperations {
             Threads:
             \(unread.map(describe).joined(separator: "\n"))
             """)
+
+        case "bundle_by_sender":
+            // Store only. `providers` is in scope for every case in this
+            // switch, and this one deliberately does not read it: there is no
+            // sender grouping a provider could answer that the index rows
+            // cannot, so reaching the network here would buy nothing and break
+            // the M0 invariant `send_draft` is the sole exception to.
+            guard let limit = boundedLimit(args) else {
+                return fail("limit must be a positive integer (max \(maxLimit).)")
+            }
+            // The same filtered, merged, windowed read `unread_summary` and
+            // `search_mail` use — a bundle count that disagreed with the inbox
+            // Sage was just shown would be worse than no bundling at all.
+            let rows = UnifiedInbox.inbox(store: store, accountIDs: scope(args),
+                                          months: recentMonths())
+            if rows.isEmpty {
+                return ok("No threads in the synced window (last 90 days) to bundle.")
+            }
+            return ok(SenderBundles.render(SenderBundles.bundle(rows, limit: limit),
+                                           totalThreads: rows.count))
 
         case "read_thread":
             guard let id = args["thread_id"] as? String else { return fail("thread_id required.") }

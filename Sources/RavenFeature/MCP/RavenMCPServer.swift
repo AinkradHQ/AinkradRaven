@@ -56,6 +56,20 @@ public enum RavenMCPServer {
              schemaJSON: schema([("account_id", "string",
                                   "One account. Omit to cover every connected account.")]),
              destructive: false, readOnly: true),
+        Tool(name: "bundle_by_sender", operation: "bundle_by_sender",
+             summary: "Group the synced window's inbox threads by sender, most threads first, "
+                    + "across EVERY connected account unless account_id names one. Addresses "
+                    + "are matched case-insensitively with display names stripped, so "
+                    + "\"Bea <b@example.test>\" and \"b@example.test\" are one sender; threads "
+                    + "whose sender is unrecorded are counted under \"(unknown sender)\" rather "
+                    + "than dropped. Each bundle states its thread count, unread count, newest "
+                    + "date, per-account counts and thread ids. Never touches the network.",
+             schemaJSON: schema([("account_id", "string",
+                                  "One account. Omit to cover every connected account."),
+                                 ("limit", "integer",
+                                  "Max senders returned, default 25, capped at 200. Must be "
+                                  + "a positive integer.")]),
+             destructive: false, readOnly: true),
         Tool(name: "read_thread", operation: "read_thread",
              summary: "Full text of one thread, with quoted trailers removed. Works for a "
                     + "thread in any connected account and reports which account it belongs "
