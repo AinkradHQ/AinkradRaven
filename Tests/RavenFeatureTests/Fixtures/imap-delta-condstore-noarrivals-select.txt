@@ -1,0 +1,4 @@
+* 3 EXISTS
+* OK [UIDVALIDITY 1] generation
+* OK [UIDNEXT 20] predicted
+* OK [HIGHESTMODSEQ 102] highest

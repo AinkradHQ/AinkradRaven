@@ -1,0 +1,10 @@
+* OK [CAPABILITY IMAP4rev1 IDLE LITERAL+ CONDSTORE] Server ready
+* CAPABILITY IMAP4rev1 UIDPLUS MOVE
+* LIST (\HasNoChildren) "/" "Folder A"
+* LIST (\HasNoChildren \Sent) "/" "Folder \"B\" \\ C"
+* 3 EXISTS
+* 3 FETCH (UID 42 RFC822.SIZE 1024 FLAGS (\Seen \Flagged) INTERNALDATE "01-Jan-2026 00:00:00 +0000")
+* 4 FETCH (ENVELOPE ("01-Jan-2026 00:00:00 +0000" "Subject 1" (("A" NIL "a" "example.test")) NIL NIL (("B" NIL "b" "example.test")) NIL NIL NIL "<m1@example.test>"))
+* 5 FETCH (X (L1 (L2 (L3 (L4 (L5 (L6 "depth six")))))))
+* 6 FETCH (BODY[HEADER.FIELDS (SUBJECT DATE)] "Subject 1")
+a001 OK [READ-WRITE] SELECT completed

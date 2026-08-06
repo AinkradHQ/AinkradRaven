@@ -1,0 +1,3 @@
+* 1 FETCH (UID 202 BODYSTRUCTURE (("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 8 1)("TEXT" "HTML" ("CHARSET" "UTF-8") NIL NIL "7BIT" 33 1) "ALTERNATIVE" ("BOUNDARY" "b1")) BODY[1] {8}
+Body one BODY[2] {33}
+<p>Body one<script>x</script></p>)

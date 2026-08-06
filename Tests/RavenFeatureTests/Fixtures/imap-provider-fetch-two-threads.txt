@@ -1,0 +1,8 @@
+* 1 FETCH (UID 10 FLAGS (\Seen) INTERNALDATE "01-Aug-2026 09:00:00 +0000" ENVELOPE ("Sat, 01 Aug 2026 09:00:00 +0000" "Subject 1" (("Name A" NIL "a" "example.test")) NIL NIL (("Name Z" NIL "z" "example.test")) NIL NIL NIL "<m1@example.test>") BODYSTRUCTURE ("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 10 1) BODY[HEADER.FIELDS (MESSAGE-ID REFERENCES IN-REPLY-TO)] {33}
+Message-ID: <m1@example.test>
+
+)
+* 2 FETCH (UID 11 FLAGS () INTERNALDATE "15-Jul-2026 09:00:00 +0000" ENVELOPE ("Wed, 15 Jul 2026 09:00:00 +0000" "Subject 2" (("Name B" NIL "b" "example.test")) NIL NIL (("Name Z" NIL "z" "example.test")) NIL NIL NIL "<m2@example.test>") BODYSTRUCTURE ("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 10 1) BODY[HEADER.FIELDS (MESSAGE-ID REFERENCES IN-REPLY-TO)] {33}
+Message-ID: <m2@example.test>
+
+)

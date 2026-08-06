@@ -1,0 +1,2 @@
+* 1 FETCH (UID 10 FLAGS (\Seen))
+* 2 FETCH (UID 11 FLAGS ())

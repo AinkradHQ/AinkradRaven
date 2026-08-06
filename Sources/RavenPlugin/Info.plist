@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>com.ainkrad.plugin.raven</string>
+    <key>CFBundleName</key><string>RavenPlugin</string>
+    <key>CFBundleExecutable</key><string>RavenPlugin</string>
+    <key>CFBundlePackageType</key><string>BNDL</string>
+    <key>NSPrincipalClass</key><string>RavenPluginEntryPoint</string>
+    <key>AinkradAppID</key><string>raven</string>
+    <key>AinkradDisplayName</key><string>Raven</string>
+    <key>AinkradIconSymbol</key><string>bird</string>
+    <key>AinkradAPIVersion</key><integer>8</integer>
+    <key>AinkradAuthor</key><string>Ahmed M. Elhalaby</string>
+    <key>description</key><string>Smart mail client with a Sage-driven tool surface.</string>
+</dict>
+</plist>

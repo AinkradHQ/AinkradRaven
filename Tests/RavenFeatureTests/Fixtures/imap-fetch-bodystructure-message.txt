@@ -1,0 +1,2 @@
+* 1 FETCH (UID 205 BODYSTRUCTURE (("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 8 1)("MESSAGE" "RFC822" ("NAME" "wrapper-a.eml") NIL NIL "7BIT" 420 ("Wed, 7 Jan 2026 08:00:00 +0000" "Subject 3" (("Sender Five" NIL "e" "example.test")) (("Sender Five" NIL "e" "example.test")) (("Sender Five" NIL "e" "example.test")) (("Recipient Two" NIL "b" "example.test")) NIL NIL NIL "<m5@example.test>") ("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 9 1) 12 NIL ("ATTACHMENT" ("FILENAME" "forwarded-a.eml")) NIL NIL) "MIXED" ("BOUNDARY" "b8")) BODY[1] {8}
+Body one)

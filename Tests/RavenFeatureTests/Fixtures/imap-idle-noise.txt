@@ -1,0 +1,4 @@
+* OK Still here
+* 4 RECENT
+* FLAGS (\Seen \Flagged)
+* OK [UNSEEN 3] first unseen

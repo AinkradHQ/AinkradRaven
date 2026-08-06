@@ -1,0 +1,186 @@
+import Testing
+import Foundation
+@testable import RavenFeature
+
+@Suite("Sync backfill")
+@MainActor struct SyncBackfillTests {
+    private func makeEngine(_ provider: FakeMailProvider)
+        -> (SyncEngine, DocumentMailStore) {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        let engine = SyncEngine(store: store, provider: provider,
+                                accountID: "a1", windowDays: 90)
+        return (engine, store)
+    }
+
+    private func thread(_ id: String, date: Date) -> MailThread {
+        MailThread(id: id, accountID: "a1", messages: [
+            MailMessage(id: "m-\(id)", threadID: id, from: MailAddress(email: "b@x.com"),
+                        subject: "S", date: date, labelIDs: ["INBOX"], snippet: "s")
+        ])
+    }
+
+    @Test("backfill walks every page into the store")
+    func walksPages() async throws {
+        let now = Date()
+        let provider = FakeMailProvider()
+        provider.pages = [
+            ThreadPage(threads: [thread("t1", date: now)], nextPageToken: "p2"),
+            ThreadPage(threads: [thread("t2", date: now)], nextPageToken: nil),
+        ]
+        let (engine, store) = makeEngine(provider)
+        try await engine.backfill()
+
+        let ids = Set(store.summaries(accountID: "a1", months: [MonthShard.key(for: now)]).map(\.id))
+        #expect(ids == ["t1", "t2"])
+    }
+
+    @Test("state changes push through onChange with no timer involved")
+    func stateChangesPushThroughOnChange() async throws {
+        let provider = FakeMailProvider()
+        provider.pages = [
+            ThreadPage(threads: [thread("t1", date: Date())], nextPageToken: "p2"),
+            ThreadPage(threads: [thread("t2", date: Date())], nextPageToken: nil),
+        ]
+        let (engine, _) = makeEngine(provider)
+
+        var observedStates: [SyncState] = []
+        engine.onChange = { observedStates.append(engine.state) }
+
+        try await engine.backfill()
+
+        // No timer anywhere in this test — every entry below was pushed
+        // synchronously by a `state` mutation inside `backfill()` itself
+        // (one per page, plus the terminal `.idle`), not sampled off a poll.
+        #expect(observedStates.contains(.backfilling(threadsSynced: 1)))
+        #expect(observedStates.contains(.backfilling(threadsSynced: 2)))
+        #expect(observedStates.last == .idle)
+        #expect(observedStates.count >= 3)
+    }
+
+    @Test("backfill seeds the account cursor so deltas can start")
+    func seedsCursor() async throws {
+        let provider = FakeMailProvider()
+        provider.cursor = "c42"
+        provider.pages = [ThreadPage(threads: [], nextPageToken: nil)]
+        let (engine, store) = makeEngine(provider)
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "me@x.com", displayName: "Me"))
+        try await engine.backfill()
+
+        #expect(store.accounts().first?.syncCursor == "c42")
+        #expect(store.accounts().first?.state == .ready)
+    }
+
+    @Test("a failing page marks the account failed and preserves the error")
+    func pageFailure() async throws {
+        let provider = FakeMailProvider()
+        provider.failures["fetchThreads"] = [MailError.providerFailed(status: 500, message: "boom")]
+        let (engine, store) = makeEngine(provider)
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "me@x.com", displayName: "Me"))
+
+        await #expect(throws: MailError.self) { try await engine.backfill() }
+        #expect(store.accounts().first?.state == .failed)
+        #expect(store.accounts().first?.lastError?.isEmpty == false)
+    }
+
+    @Test("a provider that echoes back the same page token terminates instead of hanging")
+    func constantTokenTerminates() async throws {
+        let provider = FakeMailProvider()
+        // Every page hands back the exact token it was just given — a
+        // pathological/hostile provider. Without cycle detection this would
+        // spin `backfill()`'s repeat-loop forever on the main actor.
+        provider.pages = [
+            ThreadPage(threads: [], nextPageToken: "same"),
+            ThreadPage(threads: [], nextPageToken: "same"),
+            ThreadPage(threads: [], nextPageToken: "same"),
+        ]
+        let (engine, _) = makeEngine(provider)
+
+        try await engine.backfill()
+
+        #expect(engine.lastBackfillTruncated == true)
+    }
+
+    @Test("hitting the page cap truncates the backfill and records that it happened")
+    func pageCapTruncates() async throws {
+        // Five pages with distinct, ever-advancing tokens — no cycle here,
+        // just more pages than the (test-injected, small) cap allows. Proves
+        // the cap itself stops the walk, not the cycle detector.
+        let provider = FakeMailProvider()
+        provider.pages = (1...5).map { i in
+            ThreadPage(threads: [], nextPageToken: i < 5 ? "p\(i + 1)" : nil)
+        }
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        let engine = SyncEngine(store: store, provider: provider, accountID: "a1",
+                                 windowDays: 90, maxBackfillPages: 3)
+
+        try await engine.backfill()
+
+        #expect(engine.lastBackfillTruncated == true)
+    }
+
+    /// The mail-loss guard. `backfill()` seeds `syncCursor` on success, so if
+    /// a transient per-thread failure were swallowed the missing threads would
+    /// be filed behind the cursor and no delta would ever re-deliver them.
+    /// Failing the backfill — and therefore NOT seeding the cursor — is what
+    /// makes the loss impossible.
+    @Test("a transient failure during backfill does not seed the cursor past the missing mail")
+    func transientFailureDoesNotSeedCursor() async throws {
+        let provider = FakeMailProvider()
+        provider.failures["fetchThreads"] = [MailError.providerFailed(status: 500, message: "boom")]
+        provider.cursor = "c-would-skip-the-missing-thread"
+        let (engine, store) = makeEngine(provider)
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "me@x.com", displayName: "Me"))
+
+        await #expect(throws: MailError.self) { try await engine.backfill() }
+
+        #expect(store.accounts().first?.syncCursor == nil,
+                "seeding the cursor here would strand the unfetched threads forever")
+        #expect(store.accounts().first?.state == .failed)
+    }
+
+    @Test("a retried backfill after a transient failure completes and only then seeds the cursor")
+    func backfillRecoversAndSeedsCursor() async throws {
+        let now = Date()
+        let provider = FakeMailProvider()
+        provider.failures["fetchThreads"] = [MailError.providerFailed(status: 500, message: "boom")]
+        provider.pages = [ThreadPage(threads: [thread("t1", date: now)], nextPageToken: nil)]
+        provider.cursor = "c42"
+        let (engine, store) = makeEngine(provider)
+        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
+                                          address: "me@x.com", displayName: "Me"))
+
+        await #expect(throws: MailError.self) { try await engine.backfill() }
+        #expect(store.accounts().first?.syncCursor == nil)
+
+        // Backfill is a fresh page walk and upsert is idempotent, so simply
+        // running it again is a complete recovery — that is why failing is a
+        // safe response to a transient error here, unlike in syncDelta.
+        try await engine.backfill()
+        #expect(store.thread("t1") != nil)
+        #expect(store.accounts().first?.syncCursor == "c42")
+    }
+
+    @Test("windowStart is pinned to UTC, matching MonthShard's convention")
+    func windowStartUsesUTC() throws {
+        let df = ISO8601DateFormatter()
+        // Chosen so the 90-day lookback crosses the 2026 US DST start
+        // (2026-03-08): a calendar pinned to a DST-observing zone like
+        // America/Los_Angeles lands an hour off UTC across that boundary,
+        // while a fixed-offset zone (e.g. Asia/Tokyo) would not discriminate
+        // the bug at all, since plain day arithmetic is offset-independent
+        // absent a DST transition in the window.
+        let now = try #require(df.date(from: "2026-05-01T07:30:00Z"))
+
+        let utcResult = SyncEngine.windowStart(from: now, windowDays: 90)
+
+        var localBug = Calendar(identifier: .gregorian)
+        localBug.timeZone = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let buggyResult = localBug.date(byAdding: .day, value: -90, to: now)
+
+        #expect(utcResult != buggyResult)
+        #expect(utcResult == df.date(from: "2026-01-31T07:30:00Z"))
+    }
+}

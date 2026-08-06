@@ -1,0 +1,4 @@
+* LIST (\HasNoChildren \Trash) "/" "Folder A"
+* LIST "/" "Folder D"
+* LIST (\HasNoChildren) "/" "Folder B"
+* OK Completed

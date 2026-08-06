@@ -1,0 +1,183 @@
+{
+  "id": "19fc39c9905ce93f",
+  "threadId": "19fc39c9905ce93f",
+  "labelIds": [
+    "UNREAD",
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "snippet": "[someoneorg/example-repo] Example CI (Postgres) workflow run Example CI (Postgres): All jobs have failed View workflow run Status Job Annotations Example CI (Postgres) / Sample API Tests (Postgres) Failed",
+  "payload": {
+    "partId": "",
+    "mimeType": "multipart/alternative",
+    "filename": "",
+    "headers": [
+      {
+        "name": "Delivered-To",
+        "value": "someone@example.com"
+      },
+      {
+        "name": "Received",
+        "value": "by 203.0.113.1 with SMTP id example0000000; Sun, 02 Aug 2026 10:58:44 -0700 (PDT)"
+      },
+      {
+        "name": "X-Forwarded-Encrypted",
+        "value": "i=1; AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=@example.com"
+      },
+      {
+        "name": "X-Received",
+        "value": "by 203.0.113.2 with SMTP id example1111111; Sun, 02 Aug 2026 10:58:44 -0700 (PDT)"
+      },
+      {
+        "name": "ARC-Seal",
+        "value": "i=1; a=rsa-sha256; t=1785693524; cv=none; d=example.com; s=arc-20260327; b=EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE=="
+      },
+      {
+        "name": "ARC-Message-Signature",
+        "value": "i=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com; s=arc-20260327; h=mime-version:from:to:cc:subject:date:message-id; bh=EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE=; b=EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE=="
+      },
+      {
+        "name": "ARC-Authentication-Results",
+        "value": "i=1; mx.example.com; dkim=pass header.i=@example.com header.s=pf2023 header.b=\"EXAMPLE1==\"; spf=pass (example.com: domain of notifications@example.com designates 203.0.113.10 as permitted sender) smtp.mailfrom=notifications@example.com; dmarc=pass (p=QUARANTINE sp=REJECT dis=NONE) header.from=example.com"
+      },
+      {
+        "name": "Return-Path",
+        "value": "<notifications@example.com>"
+      },
+      {
+        "name": "Received",
+        "value": "by 203.0.113.1 with SMTP id example0000000; Sun, 02 Aug 2026 10:58:44 -0700 (PDT)"
+      },
+      {
+        "name": "Received-SPF",
+        "value": "pass (example.com: domain of notifications@example.com designates 203.0.113.10 as permitted sender) client-ip=203.0.113.10;"
+      },
+      {
+        "name": "Authentication-Results",
+        "value": "mx.example.com; dkim=pass header.i=@example.com header.s=pf2023 header.b=\"EXAMPLE2==\"; spf=pass (example.com: domain of notifications@example.com designates 203.0.113.10 as permitted sender) smtp.mailfrom=notifications@example.com; dmarc=pass (p=QUARANTINE sp=REJECT dis=NONE) header.from=example.com"
+      },
+      {
+        "name": "DKIM-Signature",
+        "value": "v=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com; s=pf2023; t=1785693524; bh=EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE=; h=Reply-To:List-Archive:Date:List-Id:List-Post:Subject:Cc:To:From; b=EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE="
+      },
+      {
+        "name": "Received",
+        "value": "by 203.0.113.1 with SMTP id example0000000; Sun, 02 Aug 2026 10:58:44 -0700 (PDT)"
+      },
+      {
+        "name": "Content-Type",
+        "value": "multipart/alternative; boundary=\"part_437efb914f8f708ff6e67704f90b14f9a4a65a2e62add59968998d889c3d7193\"; charset=UTF-8"
+      },
+      {
+        "name": "List-Id",
+        "value": "someoneorg/example-repo <example-repo.someoneorg.example.com>"
+      },
+      {
+        "name": "Precedence",
+        "value": "list"
+      },
+      {
+        "name": "Reply-To",
+        "value": "\"someoneorg/example-repo\" <example-repo@example.com>"
+      },
+      {
+        "name": "List-Post",
+        "value": "noreply@example.com"
+      },
+      {
+        "name": "X-Github-Sender",
+        "value": "exampleuser"
+      },
+      {
+        "name": "List-Archive",
+        "value": "https://example.com/someoneorg/example-repo"
+      },
+      {
+        "name": "Message-Id",
+        "value": "<someoneorg/example-repo/check-suites/CS_EXAMPLE0000000002/1700000002@example.com>"
+      },
+      {
+        "name": "Date",
+        "value": "Sun, 02 Aug 2026 10:54:07 -0700"
+      },
+      {
+        "name": "X-Github-Recipient",
+        "value": "exampleuser"
+      },
+      {
+        "name": "X-Github-Reason",
+        "value": "ci_activity"
+      },
+      {
+        "name": "X-Github-Notify-Platform",
+        "value": "notifyd"
+      },
+      {
+        "name": "Subject",
+        "value": "[someoneorg/example-repo] PR run failed: Example CI (Postgres) - fix(sample): adjust retry handling"
+      },
+      {
+        "name": "Cc",
+        "value": "Ci activity <ci-activity@example.com>"
+      },
+      {
+        "name": "To",
+        "value": "\"someoneorg/example-repo\" <example-repo@example.com>"
+      },
+      {
+        "name": "From",
+        "value": "\"Alex Example\" <notifications@example.com>"
+      },
+      {
+        "name": "Mime-Version",
+        "value": "1.0"
+      }
+    ],
+    "body": {
+      "size": 0
+    },
+    "parts": [
+      {
+        "partId": "0",
+        "mimeType": "text/plain",
+        "filename": "",
+        "headers": [
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": "7bit"
+          },
+          {
+            "name": "Content-Type",
+            "value": "text/plain; charset=UTF-8"
+          }
+        ],
+        "body": {
+          "size": 765,
+          "data": "W3NvbWVvbmVvcmcvZXhhbXBsZS1yZXBvXSBFeGFtcGxlIENJIChQb3N0Z3Jlcykgd29ya2Zsb3cgcnVuDQoNClJlcG9zaXRvcnk6IHNvbWVvbmVvcmcvZXhhbXBsZS1yZXBvDQpXb3JrZmxvdzogRXhhbXBsZSBDSSAoUG9zdGdyZXMpDQpEdXJhdGlvbjogMTUgbWludXRlcyBhbmQgMC4wIHNlY29uZHMNCkZpbmlzaGVkOiAyMDI2LTA4LTAyIDE3OjA1OjAwIFVUQw0KDQpWaWV3IHJlc3VsdHM6IGh0dHBzOi8vZXhhbXBsZS5jb20vc29tZW9uZW9yZy9leGFtcGxlLXJlcG8vYWN0aW9ucy9ydW5zLzEwMDAwMDAwMDINCg0KSm9iczoNCiAgKiBTYW1wbGUgQVBJIFRlc3RzIChQb3N0Z3JlcykgZmFpbGVkICgyIGFubm90YXRpb25zKQ0KDQotLSANCllvdSBhcmUgcmVjZWl2aW5nIHRoaXMgYmVjYXVzZSB5b3UgYXJlIHN1YnNjcmliZWQgdG8gdGhpcyB0aHJlYWQuDQo"
+        }
+      },
+      {
+        "partId": "1",
+        "mimeType": "text/html",
+        "filename": "",
+        "headers": [
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": "quoted-printable"
+          },
+          {
+            "name": "Content-Type",
+            "value": "text/html; charset=UTF-8"
+          }
+        ],
+        "body": {
+          "size": 29859,
+          "data": "PGh0bWw-PGJvZHk-PHA-W3NvbWVvbmVvcmcvZXhhbXBsZS1yZXBvXSBFeGFtcGxlIENJIChQb3N0Z3Jlcykgd29ya2Zsb3cgcnVuPC9wPjxwPlJlcG9zaXRvcnk6IHNvbWVvbmVvcmcvZXhhbXBsZS1yZXBvPC9wPjxwPldvcmtmbG93OiBFeGFtcGxlIENJIChQb3N0Z3Jlcyk8L3A-PHA-RHVyYXRpb246IDE1IG1pbnV0ZXMgYW5kIDAuMCBzZWNvbmRzPC9wPjxwPkZpbmlzaGVkOiAyMDI2LTA4LTAyIDE3OjA1OjAwIFVUQzwvcD48cD48YSBocmVmPSJodHRwczovL2V4YW1wbGUuY29tL3NvbWVvbmVvcmcvZXhhbXBsZS1yZXBvL2FjdGlvbnMvcnVucy8xMDAwMDAwMDAyIj5WaWV3IHJlc3VsdHM8L2E-PC9wPjxwPkpvYnM6PC9wPjx1bD48bGk-U2FtcGxlIEFQSSBUZXN0cyAoUG9zdGdyZXMpIGZhaWxlZCAoMiBhbm5vdGF0aW9ucyk8L2xpPjwvdWw-PC9ib2R5PjwvaHRtbD4"
+        }
+      }
+    ]
+  },
+  "sizeEstimate": 37295,
+  "historyId": "2171817",
+  "internalDate": "1785693247000"
+}

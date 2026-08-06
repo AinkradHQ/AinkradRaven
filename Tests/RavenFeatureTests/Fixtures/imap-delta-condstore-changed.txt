@@ -1,0 +1,1 @@
+* 1 FETCH (UID 10 MODSEQ (101) FLAGS (\Seen))

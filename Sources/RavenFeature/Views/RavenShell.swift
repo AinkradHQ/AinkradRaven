@@ -1,0 +1,223 @@
+import SwiftUI
+import AinkradAppKit
+import AinkradAppKitUI
+
+/// The app's root view: the inbox+thread split at full height, with one
+/// floating compose affordance over it.
+///
+/// There is deliberately no surface switcher. The old `Inbox | Compose`
+/// segmented picker had exactly two segments, one of which ("Inbox") was the
+/// only thing the app is for and so was never a real choice, and the other of
+/// which now opens as an overlay instead of replacing the whole app. A picker
+/// whose every segment is either the default or a modal is chrome, not
+/// navigation.
+///
+/// Composing is ONE surface. Reply/Reply-all/Forward used to be an inline panel
+/// pinned to the bottom of the thread and new mail a full-screen surface, which
+/// meant two layouts, two send paths, and two places a draft could be lost.
+/// Both now present the same `ComposeSurface` in the same overlay, differing
+/// only by the `ComposeContext` handed to it.
+public struct RavenShell: View {
+    let runtime: RavenRuntime
+
+    /// For the root fill only — see the `.background` in `split(availableWidth:)`.
+    @Environment(\.ainkradTheme) private var theme
+
+    /// What the overlay is composing, or `nil` when it is closed. A single
+    /// optional rather than a Bool plus a payload, so "open" and "what it is
+    /// composing" cannot disagree.
+    @State private var composing: ComposeContext?
+
+    /// The width of the inbox pane. A fixed rail, not a fraction: a thread list
+    /// that grows with the window ends up with rows of mostly empty space,
+    /// while the reading pane is the part that genuinely benefits from width.
+    private static let inboxWidth: CGFloat = 360
+
+    public init(runtime: RavenRuntime) { self.runtime = runtime }
+
+    /// Bridges the optional above to the Bool the kit's overlay modifiers take.
+    ///
+    /// Setting it false clears `composing`, which closes the overlay — and
+    /// deliberately does NOT touch `DraftBox`. The "a draft is removed if and
+    /// only if the message was sent" invariant means a dismissed composer's
+    /// text must survive; `ComposeSurface` saves its own draft on the way out,
+    /// so the next open finds it in the Drafts list.
+    private var isComposing: Binding<Bool> {
+        Binding(get: { composing != nil }, set: { if !$0 { composing = nil } })
+    }
+
+    public var body: some View {
+        // A root-level `GeometryReader` purely to size the compose overlay
+        // against the room actually available. The shell already fills both
+        // axes, so this changes nothing about the split's own layout — and it is
+        // the shell, not the composer, that chooses `contentWidth`, so this is
+        // where the measurement belongs.
+        GeometryReader { proxy in
+            split(availableWidth: proxy.size.width)
+        }
+        // Sage's `open_compose` action lands a draft in the publisher; raising
+        // the overlay is the shell's job because the shell owns `composing`.
+        // `.new`, not a reply: an agent-drafted message carries its own
+        // recipients and body, and stamping it onto a thread it did not name
+        // would file it into a conversation nobody asked for. `ComposeSurface`
+        // consumes the request in `prefillIfNeeded`.
+        //
+        // Opening the composer is the whole of it — nothing here queues or
+        // sends. The user reviews the draft and presses Send themselves.
+        .onChange(of: ComposeDraftPublisher.shared.requestedPrefill) { _, requested in
+            guard requested != nil, composing == nil else { return }
+            composing = .new
+        }
+    }
+
+    private func split(availableWidth: CGFloat) -> some View {
+        HStack(spacing: AinkradSpacing.sm) {
+            InboxSurface(model: runtime.model, runtime: runtime)
+                .frame(width: Self.inboxWidth)
+            ThreadSurface(model: runtime.model, runtime: runtime,
+                          onCompose: { composing = $0 })
+                .frame(maxWidth: .infinity)
+        }
+        .padding(AinkradSpacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The root fill, and the reason it has to be here rather than only on
+        // the two panes: this padding and the gap between the panes are part of
+        // Raven's pane too, and nothing was painting them. So with transparency
+        // turned fully OFF the panes went solid while the margin around them
+        // stayed glass — the host's backdrop showing through a region the
+        // opacity setting never reached. Rune does not hit this because its root
+        // view fills the whole pane with one fill and has no unpainted margin.
+        //
+        // `theme.background`, not a panel: `ravenSurface` would add a chamfer,
+        // border and glow to the pane's outer edge, which the host already
+        // draws. This is only the fill.
+        .background(theme.background.opacity(runtime.appearanceStore.appearance.surfaceOpacity))
+        .overlay(alignment: .bottomTrailing) { composeButton }
+        // `.ainkradModal(isPresented:contentWidth:)`, not `.ainkradSheet`: a
+        // composer is a focused, self-contained task with To/Cc/Subject/body
+        // fields and a drafts rail, so it needs a real content width — and the
+        // `contentWidth:` overload is the one where the number passed is the
+        // width the content actually gets (the bare `ainkradModal` pads first
+        // and then caps the padded result at 480, which is narrower than a
+        // recipient row wants). A sheet is edge-anchored and full-bleed on its
+        // cross axis, which suits a filter or a detail drawer, not a form the
+        // user will spend a minute inside.
+        // `ravenTranslucentModal`, not `.ainkradModal`: same scrim, same
+        // dismissal, same transition, but the panel takes the user's
+        // transparency setting instead of the kit's fixed 0.94 — which is why
+        // the composer read as an opaque slab over a blurred island. See
+        // `RavenTranslucentModal` for why that modifier is local. It also
+        // publishes `ravenModalPresented` so the inbox rail's focus ring stops
+        // painting over this scrim.
+        .ravenTranslucentModal(isPresented: isComposing,
+                              contentWidth: Self.composeWidth(in: availableWidth),
+                              appearance: runtime.appearanceStore.appearance) {
+            if let composing {
+                ComposeSurface(runtime: runtime, context: composing,
+                              // Below the threshold the rail is dropped rather
+                              // than squeezed: at that width it would be taking
+                              // room from the fields the user is actually typing
+                              // into, and the drafts it lists are still reachable
+                              // by reopening the composer.
+                              showsDraftsRail:
+                                Self.composeWidth(in: availableWidth) >= Self.draftsRailMinWidth,
+                              onClose: { self.composing = nil })
+                    // `maxHeight`, not a fixed height: the modal is scoped to
+                    // this view's bounds, and a fixed 520 would overflow a
+                    // short window (Raven runs in the host's overlay
+                    // presentation as well as a full pane).
+                    .frame(maxHeight: Self.composeHeight)
+                    // Mounted HERE, not inside `ComposeSurface`, and that is
+                    // load-bearing: `.ainkradToastHost()` re-injects its own
+                    // `AinkradToastCenter` for its content, so the view that
+                    // mounts it reads the environment DEFAULT (a fresh instance
+                    // per read) and would call `show(_:)` on a center nothing
+                    // renders. Wrapping the composer makes it the content.
+                    //
+                    // Scoped to the composer's bounds so send feedback appears
+                    // over the message it is about, not in the window corner.
+                    .ainkradToastHost()
+            }
+        }
+        // LAST in the chain, deliberately. `.ravenTranslucentModal`'s content is
+        // a SIBLING of the view it is attached to, not a descendant of it, so an
+        // environment modifier written above the modal reaches the panes and
+        // misses the composer — which is the same class of omission that left
+        // `ComposeFields` on the kit's opaque default in the first place.
+        // Outermost, it reaches both.
+        //
+        // Read here, in `body`, so the `@Observable` access is tracked and the
+        // slider repaints every surface together. See `RavenSectionFrame.swift`
+        // for why the deeper surfaces read this rather than take an argument.
+        .ravenAppearanceEnvironment(runtime.appearanceStore.appearance)
+    }
+
+    /// Wide enough for the drafts rail plus a composer that does not wrap a
+    /// typical recipient list, and short enough to leave the scrim visible so
+    /// the overlay still reads as sitting above the mail rather than replacing
+    /// it — but never wider than the room there actually is. Raven runs in the
+    /// host's overlay presentation as well as a full pane, and a flat 780 there
+    /// pushed the panel border over its own content.
+    private static let idealComposeWidth: CGFloat = 780
+    /// The floor: below this the overlay stops shrinking and simply uses what
+    /// there is, because a composer narrower than this is unusable either way.
+    private static let minComposeWidth: CGFloat = 360
+    /// The width at which the drafts rail earns its 220pt.
+    private static let draftsRailMinWidth: CGFloat = 660
+    private static let composeHeight: CGFloat = 520
+
+    static func composeWidth(in availableWidth: CGFloat) -> CGFloat {
+        // The scrim has to stay visible on both edges, hence the inset — the
+        // overlay must read as sitting above the mail, not replacing it.
+        let usable = availableWidth - 2 * AinkradSpacing.xl
+        guard usable > 0 else { return minComposeWidth }
+        return max(minComposeWidth, min(idealComposeWidth, usable))
+    }
+
+    /// The floating compose affordance: the kit's own `AinkradIconButton`
+    /// inside a chamfered, glowing plate, so it is the same HUD language as
+    /// every other floating surface rather than a bespoke Material circle.
+    /// Every colour comes from the theme — see `ComposeFloatingButton`.
+    private var composeButton: some View {
+        ComposeFloatingButton { composing = .new }
+            .padding(AinkradSpacing.lg)
+    }
+}
+
+/// The bottom-trailing compose button.
+///
+/// Not a circle: Cardinal HUD's affordances are chamfered, and a lone round
+/// button beside chamfered panels reads as borrowed from another product. The
+/// glyph itself is `AinkradIconButton` — the kit's icon button, with its own
+/// hover and tooltip behaviour — and this type only supplies the raised plate
+/// underneath it.
+private struct ComposeFloatingButton: View {
+    let action: () -> Void
+
+    @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradReduceMotion) private var reduceMotion
+    @State private var hovering = false
+
+    private static let size: CGFloat = 52
+
+    var body: some View {
+        // `AinkradIconButton(systemName:size:tooltip:)` already draws the
+        // chamfered plate, border, hover fill and accent glow, all scaled off
+        // `size` — this adds only the accent-tinted riser that makes it read as
+        // FLOATING above the panes rather than as one more toolbar glyph.
+        // Nothing here re-implements the button's own chrome.
+        AinkradIconButton(systemName: "square.and.pencil", size: Self.size,
+                          tooltip: "Compose (new message)", action: action)
+            .background(
+                // Every colour from the theme, including the lift: a fixed
+                // black shadow vanishes on a light theme, so the riser is the
+                // theme's own accent at low opacity.
+                ChamferShape(cut: Self.size * 0.2)
+                    .fill(theme.accentPrimary.opacity(hovering ? 0.30 : 0.18))
+                    .shadow(color: theme.accentSecondary.opacity(hovering ? 0.45 : 0.28),
+                            radius: hovering ? 14 : 8, x: 0, y: 2)
+            )
+            .onHover { hovering = $0 }
+            .animation(reduceMotion ? nil : AinkradMotion.hover, value: hovering)
+    }
+}
