@@ -34,6 +34,10 @@ struct RavenAccountsPane: View {
     @Environment(\.ainkradTypography) private var typo
 
     @State private var isConnecting = false
+    /// Tracked separately from `isConnecting` so a Graph flow in progress does not
+    /// put the Gmail button into a spinner it will never leave (and vice versa) —
+    /// the two flows are independent and either can be the one running.
+    @State private var isConnectingGraph = false
     @State private var connectError: String?
     /// Per account, keyed by account id. A single shared string wrote whatever
     /// was typed for one account into whichever row rendered last, which with
@@ -124,6 +128,19 @@ struct RavenAccountsPane: View {
                               icon: "person.badge.plus", isLoading: isConnecting,
                               action: { connect() })
                     .disabled(!runtime.canConnectAccount || isConnecting)
+                // Graph is the second browser flow and needs no form of its own —
+                // an Azure app registration is app-level configuration, not a
+                // per-mailbox one, so there is nothing for the user to type here.
+                // Gated on its OWN credential check rather than
+                // `canConnectAccount`, which asks about the GOOGLE OAuth client:
+                // sharing that gate would offer Outlook to a build with only
+                // Google credentials and refuse it to a build with only Azure
+                // ones. Both are wrong in the direction of a button that cannot
+                // work, which is the state this pane exists to avoid.
+                AinkradButton(title: "Connect Outlook", style: .ghost, icon: "cloud",
+                              isLoading: isConnectingGraph,
+                              action: { connect(kind: .graph) })
+                    .disabled(!runtime.canConnectGraphAccount || isConnectingGraph)
                 // Deliberately NOT gated on `canConnectAccount`: that asks whether a
                 // Gmail OAuth client is available, and an IMAP mailbox needs none.
                 AinkradButton(title: "Add IMAP Mailbox", style: .ghost, icon: "server.rack",
@@ -277,15 +294,19 @@ struct RavenAccountsPane: View {
     /// except that the credentials themselves are now declarative fields
     /// (`RavenSettingsCatalog`), so this no longer owns their text and reads
     /// what was saved instead.
-    private func connect() {
-        guard runtime.canConnectAccount else {
-            connectError = "Enter a Gmail OAuth client id and secret before connecting."
+    private func connect(kind: MailAccount.ProviderKind = .gmail) {
+        let isGraph = kind == .graph
+        guard isGraph ? runtime.canConnectGraphAccount : runtime.canConnectAccount else {
+            connectError = isGraph
+                ? "Add an Azure app registration (tenant id, client id, client secret) "
+                    + "before connecting an Outlook account."
+                : "Enter a Gmail OAuth client id and secret before connecting."
             return
         }
-        isConnecting = true
+        if isGraph { isConnectingGraph = true } else { isConnecting = true }
         Task {
             do {
-                try await runtime.connectAccount(onAuthorizationURL: { url in
+                try await runtime.connectAccount(kind: kind, onAuthorizationURL: { url in
                     // `authorize` already opens this in the default browser;
                     // logging it too covers the case (a bare command-line
                     // host, or a browser that fails to focus) where that
@@ -297,7 +318,8 @@ struct RavenAccountsPane: View {
                     // This callback is `@Sendable` and arrives off the main
                     // actor, hence the hop.
                     Task { @MainActor in
-                        runtime.log("Raven: open this URL to finish connecting Gmail: \(url)")
+                        runtime.log("Raven: open this URL to finish connecting "
+                                    + "\(isGraph ? "Outlook" : "Gmail"): \(url)")
                     }
                 })
                 accountsVersion += 1
@@ -307,7 +329,7 @@ struct RavenAccountsPane: View {
             } catch {
                 connectError = "Could not connect: \(error)"
             }
-            isConnecting = false
+            if isGraph { isConnectingGraph = false } else { isConnecting = false }
         }
     }
 }

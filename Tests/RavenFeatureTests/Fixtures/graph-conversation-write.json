@@ -1,0 +1,14 @@
+{
+  "value": [
+    {
+      "id": "AAMkMSG-1",
+      "conversationId": "AAQkCONV-1",
+      "categories": ["Category A", "Category B", "archive"]
+    },
+    {
+      "id": "AAMkMSG-2",
+      "conversationId": "AAQkCONV-1",
+      "categories": []
+    }
+  ]
+}

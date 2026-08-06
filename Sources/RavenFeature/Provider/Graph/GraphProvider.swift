@@ -6,17 +6,30 @@ import Foundation
 /// all server-side, so this maps rather than computes — see `GraphMapping` for
 /// why `LocalThreading` has no part in it.
 ///
-/// Write paths (`send`, `applyLabels`) are Task 20's. Until they land this
-/// provider declares `.readOnly`, which makes `MailProviderRouter` refuse a
-/// mutation *before* it reaches the provider, for every caller, rather than
-/// each call site having to remember that Graph cannot write yet.
+/// Write paths (`send`, `applyLabels`) are in `GraphMutations.swift`.
+///
+/// **Verified against recorded fixtures only.** There is no Azure app
+/// registration in this build, so nothing here — read or write — has met a live
+/// Graph endpoint; the live-verification checklist is Task 24's.
 public final class GraphProvider: MailProvider, @unchecked Sendable {
     public let accountID: String
-    /// Read paths only in Task 19 — see the type's documentation.
-    public let capabilities: MailProviderCapabilities = .readOnly
-    private let auth: GraphAuth
-    private let session: URLSession
-    private let base = URL(string: "https://graph.microsoft.com/v1.0/me/")!
+    /// `.readWrite` since the write paths landed, which is what lets
+    /// `MailProviderRouter.writableProvider` route a mutation here at all.
+    ///
+    /// This is not a weakening of the read-only period's rule that a message id
+    /// is never fabricated. `GraphMutations.send` still **records** the id Graph
+    /// returned when it created the draft, and throws `decodingFailed` if the
+    /// response carried none, rather than inventing one — a send is only ever
+    /// reported on evidence from the server.
+    public let capabilities: MailProviderCapabilities = .readWrite
+    // `internal`, not `private`: the write paths live in `GraphMutations.swift`
+    // (an extension, split off for the line limit) and issue their own
+    // `POST`/`PATCH` requests through the same authenticated session and the
+    // same error mapping. A second session or a second token source would be a
+    // second thing to keep in step.
+    let auth: GraphAuth
+    let session: URLSession
+    let base = URL(string: "https://graph.microsoft.com/v1.0/me/")!
 
     /// The fields every message-listing request asks for. Explicit rather than
     /// default, for two reasons: Graph's default projection does NOT include
@@ -48,9 +61,9 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
 
     // MARK: Transport
 
-    private func get<T: Decodable>(_ type: T.Type, path: String,
-                                   query: [URLQueryItem] = [],
-                                   notFoundID: String? = nil) async throws -> T {
+    func get<T: Decodable>(_ type: T.Type, path: String,
+                           query: [URLQueryItem] = [],
+                           notFoundID: String? = nil) async throws -> T {
         var components = URLComponents(url: base.appendingPathComponent(path),
                                        resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
@@ -89,8 +102,8 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
     ///    `MailAccount.lastError`, which is written to a document; a Graph
     ///    error body echoes the request (`$filter` contents and all), so it
     ///    must never reach that field.
-    private func perform<T: Decodable>(_ type: T.Type, request: URLRequest,
-                                       notFoundID: String? = nil) async throws -> T {
+    func perform<T: Decodable>(_ type: T.Type, request: URLRequest,
+                               notFoundID: String? = nil) async throws -> T {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw MailError.providerFailed(status: -1, message: "no response")
@@ -284,21 +297,10 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
         return Array(GraphMapping.threads(list.value ?? [], accountID: accountID).prefix(limit))
     }
 
-    // MARK: MailProvider — writes (Task 20)
+    // MARK: MailProvider — writes
 
-    /// Refused here as well as at the router. `capabilities` is `.readOnly`, so
-    /// `MailProviderRouter.writableProvider` never routes a mutation here at
-    /// all; this exists so that a caller holding the provider DIRECTLY still
-    /// gets a typed refusal instead of a silent no-op that looks like success.
-    public func applyLabels(_ mutation: LabelMutation) async throws {
-        throw MailError.readOnlyAccount(accountID)
-    }
-
-    /// Refused for the same reason as `applyLabels`. **A throw, never a
-    /// fabricated message id:** at-most-once send is built on a RECORDED
-    /// success, so returning anything here would record a send that never
-    /// happened.
-    public func send(_ message: OutgoingMessage) async throws -> String {
-        throw MailError.readOnlyAccount(accountID)
-    }
+    // `send` and `applyLabels` are `GraphMutations.swift`'s, split off for the
+    // repo's line limit along the same seam `IMAPProvider`/`IMAPProvider+Mutations`
+    // uses: this file walks the mailbox and decides what changed, that one issues
+    // requests about one message the caller named.
 }

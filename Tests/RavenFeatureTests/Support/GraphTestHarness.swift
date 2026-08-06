@@ -101,6 +101,68 @@ final class SeenRequests: @unchecked Sendable {
     var all: [Entry] { lock.lock(); defer { lock.unlock() }; return entries }
 }
 
+/// Method, URL and body of every intercepted request, together.
+///
+/// `SeenRequests` and `RecordedBodies` each capture half, which is enough for a
+/// read (one GET, one body-less) and not for a write: the write suites must assert
+/// that a particular METHOD went to a particular PATH with a particular body, and
+/// correlating three parallel arrays by index is exactly the "payload injected at
+/// the wrong nesting level" mistake wearing a different hat.
+final class RecordedRequests: @unchecked Sendable {
+    struct Entry {
+        let method: String
+        let url: String
+        let body: String
+
+        /// The path after `…/v1.0/me/`, so assertions read as the Graph resource
+        /// rather than as a host name repeated in every expectation.
+        var path: String {
+            guard let range = url.range(of: "/v1.0/me/") else { return url }
+            return String(url[range.upperBound...])
+        }
+
+        /// The body decoded as a JSON object, or `nil`. Used so an assertion names
+        /// a key rather than matching substrings of serialized JSON — a substring
+        /// match cannot tell `{"flag":{"flagStatus":"flagged"}}` from a
+        /// `flagStatus` that landed at the top level.
+        var json: [String: Any]? {
+            guard let data = body.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
+            return object as? [String: Any]
+        }
+    }
+
+    private let lock = NSLock()
+    private var entries: [Entry] = []
+
+    func record(_ request: URLRequest) {
+        let entry = Entry(method: request.httpMethod ?? "",
+                          url: request.url?.absoluteString ?? "",
+                          body: Self.body(of: request))
+        lock.lock(); entries.append(entry); lock.unlock()
+    }
+
+    var all: [Entry] { lock.lock(); defer { lock.unlock() }; return entries }
+    var count: Int { all.count }
+
+    /// `StubURLProtocol` hands a POST's body over as a stream rather than on
+    /// `httpBody`, so both forms are read — the same reason `RecordedBodies` does.
+    static func body(of request: URLRequest) -> String {
+        if let data = request.httpBody { return String(decoding: data, as: UTF8.self) }
+        guard let stream = request.httpBodyStream else { return "" }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            if read <= 0 { break }
+            data.append(buffer, count: read)
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
 /// Collects request BODIES from inside `StubURLProtocol`, which hands a POST's
 /// body over as a stream rather than on `httpBody`.
 final class RecordedBodies: @unchecked Sendable {

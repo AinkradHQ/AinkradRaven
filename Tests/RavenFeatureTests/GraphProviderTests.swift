@@ -346,26 +346,20 @@ struct GraphProviderTests {
         #expect(threads.first?.id == "conv-1")
     }
 
-    // MARK: Writes are Task 20's
+    // MARK: Writes
 
-    /// Read paths only. A refusal, never a fabricated message id: at-most-once
-    /// send is built on a RECORDED success, so a stub return here would record
-    /// a send that never happened.
-    @Test("send and applyLabels are refused while Graph is read-only")
-    func writesAreRefused() async throws {
-        let provider = makeProvider()
-        #expect(provider.capabilities == .readOnly)
-        await #expect(throws: MailError.readOnlyAccount("a1")) {
-            try await self.bounded("send") {
-                _ = try await provider.send(
-                    OutgoingMessage(to: [MailAddress(email: "b@example.test")],
-                                    subject: "Subject 1", bodyText: "body"))
-            }
-        }
-        await #expect(throws: MailError.readOnlyAccount("a1")) {
-            try await self.bounded("applyLabels") {
-                try await provider.applyLabels(LabelMutation(threadIDs: ["conv-1"], add: ["x"]))
-            }
-        }
+    /// The capability flip, pinned here as well as in the write suites because THIS
+    /// is the file that previously asserted `.readOnly` — the tripwire fired as
+    /// designed and this is the confirmation, not a deletion.
+    ///
+    /// The reason the read-only period existed is unchanged and now lives in
+    /// `GraphSendTests`: a message id is **recorded** from Graph's draft-creation
+    /// response and never fabricated, which
+    /// `GraphSendTests.missingIDIsAFailureNotAFabrication` asserts by giving the
+    /// provider a response with no `id` and requiring a throw. Behaviour of the two
+    /// write methods themselves is `GraphMutationTests`'/`GraphSendTests`'.
+    @Test("Graph declares readWrite, so the router will route a mutation to it")
+    func capabilitiesAreReadWrite() {
+        #expect(makeProvider().capabilities == .readWrite)
     }
 }
