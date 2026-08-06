@@ -97,7 +97,12 @@ enum MarkdownToHTML {
 
     /// Escaped text with its line breaks preserved as `<br>` — for content
     /// that must render as typed, with no Markdown interpretation at all.
-    private static func literalLines(_ text: String) -> String {
+    ///
+    /// Shared with `RichBodyHTML` rather than reimplemented there: the
+    /// signature and the quoted original are rendered by BOTH renderers, and a
+    /// second copy of this is how the same reply comes to render one way when
+    /// it was typed with formatting and another way when it was not.
+    static func literalLines(_ text: String) -> String {
         text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
