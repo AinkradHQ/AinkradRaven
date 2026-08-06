@@ -150,23 +150,27 @@ struct IMAPAuthenticator: Sendable {
                            saslIR: saslIR, answersFailureChallenge: true)
     }
 
+    // The three payload helpers below are thin forwarders to `SASLMechanism`,
+    // which is where the bytes actually live now: SMTP's `AUTH` (Task 15) needs
+    // the identical payloads under different command framing, and a second copy
+    // of a byte layout nothing but a live server can validate is the wrong kind
+    // of duplication. They stay here, with these names and signatures, because
+    // `IMAPAuthTests` pins them directly — the extraction moved the bytes, not
+    // the contract.
+
     /// The raw (pre-base64) SASL PLAIN response. Separate so a test can assert
     /// the exact byte layout, NUL separators included.
     static func plainInitialResponse(username: String, password: String) -> Data {
-        var bytes = Data([0x00])
-        bytes.append(Data(username.utf8))
-        bytes.append(0x00)
-        bytes.append(Data(password.utf8))
-        return bytes
+        SASLMechanism.plainInitialResponse(username: username, password: password)
     }
 
     /// The raw (pre-base64) XOAUTH2 response, exactly
     /// `user=<addr>\u{01}auth=Bearer <token>\u{01}\u{01}`.
     static func xoauth2InitialResponse(username: String, accessToken: String) -> Data {
-        Data("user=\(username)\u{01}auth=Bearer \(accessToken)\u{01}\u{01}".utf8)
+        SASLMechanism.xoauth2InitialResponse(username: username, accessToken: accessToken)
     }
 
-    static func base64(_ data: Data) -> String { data.base64EncodedString() }
+    static func base64(_ data: Data) -> String { SASLMechanism.base64(data) }
 
     /// Builds `AUTHENTICATE <mech>` with the initial response placed where the
     /// server's capabilities allow it.

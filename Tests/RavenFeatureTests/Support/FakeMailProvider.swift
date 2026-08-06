@@ -132,6 +132,10 @@ final class FakeMailProvider: MailProvider, @unchecked Sendable {
     /// model "the network call was already in flight and then failed" — the
     /// case where the entry leaves the queue with nothing transmitted.
     var sendErrorAfterGate: Error?
+    /// When set, `send` delegates to this instead of returning a canned id — the
+    /// seam that lets a test put a REAL sender (an `SMTPSubmitter` over a scripted
+    /// transport) behind a real `Outbox`.
+    var sendVia: (@Sendable (OutgoingMessage) async throws -> String)?
 
     /// Resolves once `send` has actually been entered and is parked, so the
     /// test never races the drain it is trying to overlap.
@@ -169,6 +173,12 @@ final class FakeMailProvider: MailProvider, @unchecked Sendable {
         }
         if let error = sendErrorAfterGate { throw error }
         sentMessages.append(message)
+        // Real transmission, when a test wants one. `SMTPSubmitterTests` sets this
+        // to a real `SMTPSubmitter` over a `ScriptedTransport`, so the outbox's
+        // at-most-once behaviour is driven by the actual SMTP dialogue rather than
+        // by an error handed to it — a fake error would prove the outbox's
+        // classification and nothing about what SMTP reports.
+        if let sendVia { return try await sendVia(message) }
         return "sent-\(sentMessages.count)"
     }
 

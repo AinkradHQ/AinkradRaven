@@ -1,0 +1,4 @@
+250-mail.example.test greets [127.0.0.1]
+250-SIZE 35882577
+250-STARTTLS
+250 8BITMIME

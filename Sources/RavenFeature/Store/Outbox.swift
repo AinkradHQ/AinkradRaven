@@ -385,12 +385,11 @@ extension MutationOutbox {
                 }
             } catch {
                 guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { continue }
-                entries[index].inFlightAt = nil
-                entries[index].attempts += 1
-                entries[index].lastError = String(describing: error)
-                if entries[index].attempts >= maxAttempts {
-                    entries[index].isDeadLettered = true
-                }
+                // Three fates, not one — see `OutboxFailure`. Retrying is still
+                // the default; the exceptions are the two failures where an
+                // automatic retry is actively wrong (a permanent refusal, and an
+                // outcome that may already have been a delivery).
+                OutboxFailure.apply(error, to: &entries[index], maxAttempts: maxAttempts)
                 persistRecordingFailure()
             }
         }

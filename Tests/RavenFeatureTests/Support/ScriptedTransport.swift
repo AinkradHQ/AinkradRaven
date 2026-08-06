@@ -64,6 +64,9 @@ actor ScriptedTransport: MailTransport {
     private var chunkPlan: ChunkPlan
     private var pending: [Data] = []
     private var rules: [Rule] = []
+    /// Needles whose `send(_:)` fails with **nothing recorded** — see
+    /// `failSend(containing:)`.
+    private var failingSendNeedles: [String] = []
     private var connected = false
     private var closed = false
     private let idleReadBehavior: IdleReadBehavior
@@ -117,6 +120,18 @@ actor ScriptedTransport: MailTransport {
         respond(to: needle, with: Data(text.utf8), plan: plan, repeatable: repeatable)
     }
 
+    /// Makes any `send(_:)` whose payload contains `needle` throw
+    /// `MailTransportError.closed` **before recording anything**, modelling a
+    /// connection that died with zero bytes of that write on the wire.
+    ///
+    /// The "nothing recorded" part is the whole point: `sent` stays a truthful
+    /// record of what a server would have seen, so a test can assert that the
+    /// message data really did NOT cross the wire. A rule that recorded the
+    /// payload and then threw would be modelling a *partial* write instead, which
+    /// this seam cannot express (`send` either delivers the whole `Data` or
+    /// throws) and which would make exactly that assertion unavailable.
+    func failSend(containing needle: String) { failingSendNeedles.append(needle) }
+
     /// Re-chunks every response queued from now on.
     func setChunkPlan(_ plan: ChunkPlan) { chunkPlan = plan }
 
@@ -144,8 +159,11 @@ actor ScriptedTransport: MailTransport {
 
     func send(_ bytes: Data) async throws {
         try requireOpen()
-        sent.append(bytes)
         let payload = String(decoding: bytes)
+        if failingSendNeedles.contains(where: { payload.contains($0) }) {
+            throw MailTransportError.closed
+        }
+        sent.append(bytes)
         for index in rules.indices {
             guard payload.contains(rules[index].needle) else { continue }
             let rule = rules[index]

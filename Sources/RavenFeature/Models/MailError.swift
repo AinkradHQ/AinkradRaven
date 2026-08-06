@@ -31,4 +31,18 @@ public enum MailError: Error, Equatable {
     /// readable and every OTHER account stays attached, which is the whole
     /// reason the kind decodes leniently in the first place.
     case unsupportedProvider(kind: String, accountID: String)
+    /// The provider refused this operation **permanently** — an SMTP `5yz`, a
+    /// rejected credential, a server that will not offer TLS. Distinct from
+    /// `.providerFailed`, which `Outbox.drain` retries with backoff: this one is
+    /// dead-lettered on the first failure, because five more attempts buy five
+    /// more identical refusals and delay the human who has to fix the cause.
+    /// `message` is server-authored text or a fixed phrase — never a credential.
+    case sendRefused(status: Int, message: String)
+    /// The message data was fully transmitted and the server's verdict never
+    /// arrived, so whether it was sent is **unknown**. `Outbox.drain` holds an
+    /// entry that fails this way for review (`OutboxSendOutcome.needsReview`)
+    /// rather than retrying it: retrying might deliver the same email twice,
+    /// which is the one failure this app's send path is built to never risk. See
+    /// `SMTPSession.finishData`, the only place this originates.
+    case sendOutcomeUnknown(message: String)
 }
