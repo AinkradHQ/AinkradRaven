@@ -177,6 +177,15 @@ import AinkradAppKit
     /// Entries whose outcome is unknown because a previous process died
     /// mid-send — see `Outbox.needsReview()`. Never auto-resolved.
     public private(set) var outboxNeedsReview: [OutboxEntry] = []
+    /// Queued entries this build could not decode from disk — see
+    /// `Outbox.unreadableEntryCount`. They will never be sent, so they belong
+    /// in the same attention group as the ones needing review, not in a log.
+    public private(set) var outboxUnreadableEntryCount = 0
+    /// The stored send queue could not be read at all — see
+    /// `Outbox.queueDocumentUnreadable`. Distinct from the count above: how
+    /// many operations were lost is unknowable, so it is shown as its own
+    /// sentence rather than folded into a number.
+    public private(set) var outboxQueueUnreadable = false
 
     public init(host: HostServices) {
         self.host = host
@@ -421,6 +430,8 @@ import AinkradAppKit
     public func refreshOutboxSnapshots() {
         outboxDeadLettered = outbox.deadLettered()
         outboxNeedsReview = outbox.needsReview()
+        outboxUnreadableEntryCount = outbox.unreadableEntryCount
+        outboxQueueUnreadable = outbox.queueDocumentUnreadable
     }
 
     public func discardOutboxEntry(_ id: UUID) {

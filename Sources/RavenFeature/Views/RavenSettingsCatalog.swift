@@ -87,7 +87,8 @@ enum RavenSettingsCatalog {
             // page at all — strictly better than the old arrangement, where it
             // was a panel you had to already be looking at. A closure, not a
             // count: the number changes while the overlay is open.
-            badge: { runtime.outboxNeedsReview.count + runtime.outboxDeadLettered.count })
+            badge: { runtime.outboxNeedsReview.count + runtime.outboxDeadLettered.count
+                + runtime.outboxUnreadableEntryCount + (runtime.outboxQueueUnreadable ? 1 : 0) })
     }
 
     // MARK: Accounts

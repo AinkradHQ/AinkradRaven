@@ -82,6 +82,12 @@ extension MutationOutbox {
     /// on-disk queue may be stale relative to memory.
     public private(set) var lastPersistenceError: String?
 
+    /// Entries this build could not decode on load, and whether the queue was
+    /// unreadable outright — `OutboxQueueCodec.Load` says why those are two
+    /// states. Either means operations that will never send; both surface.
+    public private(set) var unreadableEntryCount = 0
+    public private(set) var queueDocumentUnreadable = false
+
     /// The single outstanding one-shot wake, if any — see `scheduleWake()`.
     /// Exactly one at a time; scheduling a new one always cancels whatever
     /// was here first. `DispatchWorkItem` + `DispatchQueue.main.asyncAfter`
@@ -116,21 +122,11 @@ extension MutationOutbox {
         self.accountID = accountID
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
-        if let data = documents.data(forKey: DocumentKeys.outbox),
-           let decoded = try? decoder.decode([OutboxEntry].self, from: data) {
-            entries = decoded.map { entry in
-                var entry = entry
-                if entry.inFlightAt != nil && !entry.isDeadLettered && !entry.needsReview {
-                    entry.needsReview = true
-                    if entry.lastError == nil {
-                        entry.lastError = "A previous process exited while this operation was " +
-                            "in flight; whether it reached the provider is unknown. Held for " +
-                            "manual review rather than resent, to avoid a possible duplicate."
-                    }
-                }
-                return entry
-            }
-        }
+        let loaded = OutboxQueueCodec.load(documents.data(forKey: DocumentKeys.outbox),
+                                           decoder: decoder)
+        entries = loaded.entries
+        unreadableEntryCount = loaded.unreadableEntryCount
+        queueDocumentUnreadable = loaded.documentUnreadable
         // Re-derive the wake from whatever was just loaded, so a hold or
         // scheduled send that came due while the app was closed does not
         // have to wait for the first sync-timer tick (which, in the real
@@ -434,6 +430,9 @@ extension MutationOutbox {
         }
     }
 
+    /// All-or-nothing on purpose, NOT the mirror of the lenient read: a failed
+    /// encode throws, `persistRecordingFailure` records it, the old bytes stay.
+    /// Skipping unencodable entries would write a queue missing one still held.
     private func persist() throws {
         documents.setData(try encoder.encode(entries), forKey: DocumentKeys.outbox)
     }
