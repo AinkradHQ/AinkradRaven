@@ -307,11 +307,28 @@ import Foundation
     }
 }
 
-/// The resolver is what stops a future backend from being mutated through
-/// Gmail's label strings. These tests pin the CURRENT gap deliberately: when
-/// Tasks 13 and 20 add `IMAPVocabulary`/`GraphVocabulary`, the nil expectations
-/// below fail, which is the intended tripwire — the author is forced to come
-/// here and confirm the wiring rather than discover it in a live mailbox.
+/// The resolver is what stops a backend from being mutated through Gmail's label
+/// strings. The nil expectations below are a deliberate tripwire, not an
+/// oversight: a backend gaining a vocabulary FAILS them, which forces whoever
+/// lands it to come here and confirm the wiring rather than discover it in a live
+/// mailbox. It has fired twice as intended — Task 16 for `.imap` and Task 20 for
+/// `.graph`.
+///
+/// What the list still asserts, and why it must keep existing: **a backend with no
+/// vocabulary refuses rather than guessing.** `.imap` remains on it because
+/// `IMAPVocabulary` needs the account's persisted mailbox directory and a bare
+/// `ProviderKind` names no account (the account-keyed overload is what answers for
+/// it, and refuses an absent OR empty directory — see
+/// `IMAPVocabularyTests.emptyDirectoryRefusesFolders` for the silent-no-op that
+/// refusal prevents). `.unsupported` remains on it because a kind written by a
+/// newer build is precisely the case where guessing is least defensible.
+///
+/// `.graph` left the list because `GraphVocabulary` needs no directory at all:
+/// every folder string it renders is a Graph `wellKnownName`, present in every
+/// mailbox and accepted verbatim by `/move`, so it cannot render the empty
+/// mutation that makes a missing IMAP directory dangerous. That is a fact about
+/// Graph, and `GraphVocabularyTests.resolverAnswersForGraph` pins that what it
+/// resolves to is Graph's mapping and not Gmail's.
 @Suite("LabelVocabularyResolver")
 @MainActor struct LabelVocabularyResolverTests {
 
@@ -329,11 +346,24 @@ import Foundation
         #expect(vocabulary.flags(from: []).isEmpty)
     }
 
-    @Test("backends without a vocabulary yet do not resolve to a wrong one",
-          arguments: [MailAccount.ProviderKind.imap, .graph, .unsupported("quantumpost")])
+    @Test("backends with no vocabulary on this overload do not resolve to a wrong one",
+          arguments: [MailAccount.ProviderKind.imap, .unsupported("quantumpost")])
     func unbuiltBackendsDoNotResolve(kind: MailAccount.ProviderKind) {
         // The important half is that this is nil rather than Gmail's mapping.
         #expect(LabelVocabularyResolver.vocabulary(for: kind) == nil)
+    }
+
+    /// The other half of the rule, kept beside the refusals so the two cannot drift:
+    /// `.graph` now resolves, and it resolves to GRAPH's mapping. A regression that
+    /// dropped `GraphVocabulary` and let the `.gmail` case catch `.graph` would pass
+    /// a bare non-nil check and fail this one.
+    @Test("graph resolves from the kind alone, to Graph's own mapping")
+    func graphResolvesWithoutADirectory() throws {
+        let vocabulary = try #require(LabelVocabularyResolver.vocabulary(for: .graph))
+        #expect(vocabulary.label(for: .unread) == "\\Unread")
+        #expect(vocabulary.label(for: .trash) == "\u{1}folder:deleteditems")
+        // Gmail's identity mapping, which this must not be.
+        #expect(vocabulary.label(for: .unread) != GmailVocabulary().label(for: .unread))
     }
 
     @Test("an account absent from the store does not resolve")

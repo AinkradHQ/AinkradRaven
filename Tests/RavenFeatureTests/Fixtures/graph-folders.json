@@ -1,0 +1,7 @@
+{
+  "value": [
+    { "id": "folder-a-id", "displayName": "Folder A" },
+    { "id": "folder-b-id", "displayName": "Folder B", "wellKnownName": "archive" },
+    { "id": "folder-c-id", "displayName": "Archive" }
+  ]
+}

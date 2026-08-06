@@ -10,6 +10,18 @@ final class StubURLProtocol: URLProtocol {
     /// has no per-session instance state of its own to hang it on).
     nonisolated(unsafe) static var handler: (@Sendable (URLRequest) -> (Int, [String: String], Data))?
 
+    /// Fails a request at the **transport** rather than answering it, when the
+    /// closure returns an error for that request.
+    ///
+    /// Separate from `handler` (which can only express an HTTP status) because a
+    /// dropped connection is a genuinely different failure from a 5xx, and the
+    /// at-most-once send path treats it as such: the request left and no verdict
+    /// came back. Consulted first, so a test can fail exactly one of several
+    /// requests and let the handler answer the rest — which is what
+    /// `GraphSendTests` needs to fail the *commit* while the draft creation
+    /// succeeds. `nil` (the default) leaves every existing test unaffected.
+    nonisolated(unsafe) static var transportFailure: (@Sendable (URLRequest) -> Error?)?
+
     static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
@@ -20,6 +32,10 @@ final class StubURLProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        if let failure = StubURLProtocol.transportFailure?(request) {
+            client?.urlProtocol(self, didFailWithError: failure)
+            return
+        }
         guard let handler = StubURLProtocol.handler else {
             client?.urlProtocol(self, didFailWithError:
                 NSError(domain: "StubURLProtocol", code: -1))

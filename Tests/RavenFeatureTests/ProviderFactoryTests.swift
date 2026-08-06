@@ -138,7 +138,12 @@ import AinkradAppKit
     @Test("kinds whose backend has not landed refuse by name, per account")
     func pendingKindsRefuse() throws {
         let factory = factoryWithGmailCredentials(host: FakeHostServices())
-        for kind in [MailAccount.ProviderKind.imap, .graph, .unsupported("quantumpost")] {
+        // `.graph` left this list in Task 19: its backend HAS landed, so an
+        // unbuildable Graph account is now "no Azure registration in this
+        // build" (`notAuthenticated`), not "no such backend". That state has
+        // its own test in `GraphAccountStateTests.swift` (suite "Graph not
+        // configured") — named by FILE, so this reference is greppable.
+        for kind in [MailAccount.ProviderKind.imap, .unsupported("quantumpost")] {
             #expect(throws: MailError.unsupportedProvider(kind: kind.identifier,
                                                           accountID: "a1")) {
                 _ = try factory.makeProvider(for: account("a1", kind: kind))
@@ -149,7 +154,10 @@ import AinkradAppKit
     @Test("no interactive sign-in exists for a kind that has no flow yet")
     func authorizeRefusesUnsupportedKinds() async throws {
         let factory = factoryWithGmailCredentials(host: FakeHostServices())
-        for kind in [MailAccount.ProviderKind.imap, .graph, .appleMail] {
+        // `.graph` has a flow as of Task 19 — see `GraphAccountStateTests.swift`
+        // (suite "Graph not configured") for what it answers when no Azure
+        // registration is baked in.
+        for kind in [MailAccount.ProviderKind.imap, .appleMail] {
             await #expect(throws: MailError.unsupportedProvider(kind: kind.identifier,
                                                                accountID: "")) {
                 _ = try await factory.authorize(kind: kind)

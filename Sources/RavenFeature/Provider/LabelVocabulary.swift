@@ -126,9 +126,10 @@ public let defaultLabelVocabulary: LabelVocabulary = GmailVocabulary()
 /// mailbox mutated through the wrong vocabulary is not.
 ///
 /// Returning `nil` rather than falling back to Gmail is the whole point: a
-/// fallback is exactly the bug. When Tasks 13 and 20 add `IMAPVocabulary` and
-/// `GraphVocabulary`, they add the cases here and every mutation site starts
-/// working with no further wiring.
+/// fallback is exactly the bug. `IMAPVocabulary` and `GraphVocabulary` have since
+/// landed and are wired in below; `.imap` still answers nil on THIS overload,
+/// because it needs an account's persisted mailbox directory and a bare kind names
+/// no account.
 public enum LabelVocabularyResolver {
     /// `nil` means "this build cannot safely express mutations for that
     /// backend". Callers must refuse, never guess.
@@ -157,11 +158,16 @@ public enum LabelVocabularyResolver {
             // below.
             return nil
         case .graph:
-            // Deliberately unresolved until Task 20 ships the real vocabulary.
-            // `MailFlagVocabularyTests` pins this nil, so adding a vocabulary
-            // without revisiting that test is a build failure rather than a
-            // surprise in production.
-            return nil
+            // Resolves from the KIND alone, unlike `.imap` above, and the
+            // difference is a fact about Graph rather than a relaxation of the
+            // rule. Every folder-valued string `GraphVocabulary` produces is a
+            // Graph `wellKnownName` (`inbox`, `archive`, `deleteditems`, …) —
+            // service-owned, locale-independent, present in EVERY mailbox, and
+            // accepted verbatim as `/move`'s `destinationId`. So there is no
+            // account for which `.archive` renders to nil, and therefore none of
+            // the empty-mutation-reported-as-success hazard that makes an IMAP
+            // account with no persisted directory a refusal.
+            return GraphVocabulary()
         case .unsupported:
             return nil
         }
