@@ -264,14 +264,28 @@ extension IMAPProvider {
 
     // MARK: - Sending
 
-    /// IMAP does not transmit mail; SMTP submission is Task 15.
+    /// IMAP does not transmit mail — SMTP does. Since Task 16 this hands the
+    /// message to the `submit` closure `ProviderFactory` built from the account's
+    /// persisted SMTP host/port/TLS and its app password.
     ///
-    /// A throw rather than `capabilities = .readOnly`, because read-only is a claim
-    /// about the *account* that `MailProviderRouter` uses to refuse `applyLabels`
-    /// too — and `applyLabels` works here. Naming the missing half is the honest
-    /// shape: the flag path is usable today and the send path is not yet wired.
+    /// **At-most-once is untouched by the wiring**, because this method adds no
+    /// retry, no fallback and no catch: `SMTPSubmitter.submit` returns an id only
+    /// after a `250` on end-of-data, and every failure — including
+    /// `MailError.sendOutcomeUnknown`, which `Outbox.drain` holds for review rather
+    /// than re-sending — propagates exactly as thrown. Nothing here infers success
+    /// from the absence of an error.
+    ///
+    /// A throw when there is no submitter, rather than `capabilities = .readOnly`,
+    /// for the same reason as before: read-only is a claim about the *account* that
+    /// `MailProviderRouter` uses to refuse `applyLabels` too, and `applyLabels`
+    /// works here.
     func send(_ message: OutgoingMessage) async throws -> String {
-        throw MailError.providerFailed(
-            status: -1, message: "IMAP accounts transmit over SMTP, which is not wired yet")
+        guard let submit else {
+            throw MailError.providerFailed(
+                status: -1,
+                message: "This IMAP account has no SMTP server configured, so it cannot "
+                       + "send mail. Add one in Settings › Accounts.")
+        }
+        return try await submit(message)
     }
 }

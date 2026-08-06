@@ -33,7 +33,15 @@ protocol MailTransport: AnyObject, Sendable {
 
 /// How TLS is applied to a connection. Named for the two shapes mail servers
 /// actually offer (993/465 vs 143/587) rather than for the transport's mechanics.
-enum MailTransportTLS: Sendable, Equatable {
+/// `String`-backed since Task 16, because the user's choice is now persisted in
+/// `IMAPAccountSettings`. The raw values are the case names and are part of the
+/// on-disk format: renaming one orphans every stored account's TLS mode.
+///
+/// **The synthesised decode is strict** — an unrecognised raw string throws, it does
+/// not return `nil` — so nothing may decode this type with `decodeIfPresent` and
+/// assume a missing case degrades to a default. `IMAPAccountSettings.init(from:)`
+/// wraps it in `try?` for exactly that reason, and says why there.
+enum MailTransportTLS: String, Sendable, Equatable, Codable {
     /// TLS from the first byte — the handshake is part of `connect()`.
     case implicit
     /// Connect in plaintext; the caller negotiates an upgrade and then calls
@@ -65,9 +73,11 @@ enum MailTransportError: Error, Equatable {
     /// `connect()` or `read()` exceeded its deadline. A hung read must surface
     /// as an error: the sync engine has no other way out of it.
     case timedOut
-    /// The transport cannot perform an in-place TLS upgrade. See
-    /// `NetworkTransport.startTLS()` for why `NWConnection` cannot, and for
-    /// what an explicit-TLS mail port needs instead.
+    /// The transport cannot perform an in-place TLS upgrade. Since Task 15b
+    /// `NetworkTransport` can, via `STARTTLSFramer`; this remains for an endpoint
+    /// that was not built for one (an implicit-TLS endpoint has no framer to
+    /// release) and for any other conformer that genuinely cannot. It is never a
+    /// policy refusal, and it is never followed by a plaintext continuation.
     case tlsUpgradeUnsupported
     /// Scripted-double only: the test script had no more bytes to hand back.
     /// A deterministic error rather than a suspended read, so a wrong

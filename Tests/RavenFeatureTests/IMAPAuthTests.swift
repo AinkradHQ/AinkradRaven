@@ -130,32 +130,87 @@ struct IMAPAuthWireTests {
         #expect(await transport.sentText.contains(Fixture.password) == false)
     }
 
-    @Test("an explicit-STARTTLS configuration is refused before any credential byte")
-    func explicitTLSRefused() async throws {
+    /// Task 15b turned this branch from a refusal into an upgrade, because
+    /// `NetworkTransport` can now genuinely perform one (`STARTTLSFramer`). The
+    /// property the old refusal existed to guarantee — no credential byte on a
+    /// plaintext socket — is unchanged and is what this pins, by the same
+    /// `bytesSentBeforeUpgrade` mechanism `SMTPSessionTests.explicitTLS` uses.
+    ///
+    /// The pre-upgrade prefix is asserted **exactly and non-empty**. Exactly,
+    /// because `#expect(prefix.contains(password) == false)` alone passes for a
+    /// build that never got as far as sending anything; non-empty, because it is
+    /// what distinguishes "the upgrade came after the negotiation" from "there was
+    /// no negotiation".
+    @Test("an explicit-STARTTLS configuration upgrades before any credential byte")
+    func explicitTLSUpgradesFirst() async throws {
         let (session, transport, greeting) = try await makeAuthSession(
-            capabilities: "IMAP4rev1 STARTTLS")
+            capabilities: "IMAP4rev1 STARTTLS LOGINDISABLED")
         defer { Task { await session.close() } }
-        // Socket-like idle reads AND a scripted LOGIN that SUCCEEDS. Both are
-        // deliberate, and both were chosen by mutation: with `.throwScriptExhausted`
-        // the read loop tore the session down straight after the greeting, so a
-        // build that had lost the refusal never got as far as writing the password
-        // and these assertions passed for the wrong reason. As written, losing the
-        // refusal completes a LOGIN and puts `app-password-secret` in `sentText` on
-        // a plaintext socket — which is what fails.
-        await transport.respond(to: "LOGIN", with: "A0001 OK LOGIN completed\r\n")
-        await transport.respond(to: "CAPABILITY", with: "* CAPABILITY IMAP4rev1\r\nA0002 OK done\r\n")
+        await transport.respond(to: "STARTTLS", with: "A0001 OK begin TLS\r\n")
+        // The plaintext list says LOGINDISABLED and offers no mechanism; the
+        // post-TLS one offers AUTH=PLAIN. So an implementation that authenticated
+        // from the pre-TLS list could not succeed at all, and one that skipped the
+        // mandatory re-read would refuse — which is what makes this fixture
+        // distinguish the rule from the plausible wrong one.
+        await transport.respond(to: "CAPABILITY",
+                                with: "* CAPABILITY IMAP4rev1 AUTH=PLAIN SASL-IR\r\nA0002 OK done\r\n")
+        await transport.respond(to: "AUTHENTICATE PLAIN", with: "A0003 OK authenticated\r\n")
+        await transport.respond(to: "CAPABILITY",
+                                with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0004 OK done\r\n")
         let auth = IMAPAuthenticator(session: session, security: .explicit)
 
-        await expectAuthFailure(IMAPAuthError.explicitTLSUnsupported) {
+        let after = try #require(await expectAuthSuccess {
+            try await auth.authenticate(
+                .appPassword(username: Fixture.address, password: Fixture.password),
+                greeting: greeting)
+        })
+
+        #expect(await transport.startTLSCount == 1)
+        let before = await transport.bytesSentBeforeUpgrade
+        #expect(String(decoding: before, as: UTF8.self) == "A0001 STARTTLS\r\n")
+        #expect(before.isEmpty == false)
+        #expect(String(decoding: before, as: UTF8.self).contains(Fixture.password) == false)
+        // And the credential really was sent — after the upgrade. Pinned as a
+        // literal so this cannot pass by nothing having happened.
+        #expect(await transport.sentText == """
+        A0001 STARTTLS\r
+        A0002 CAPABILITY\r
+        A0003 AUTHENTICATE PLAIN AGFAZXhhbXBsZS50ZXN0AGFwcC1wYXNzd29yZC1zZWNyZXQ=\r
+        A0004 CAPABILITY\r
+
+        """)
+        #expect(after.contains("IDLE"))
+    }
+
+    @Test("a plaintext server that never offered STARTTLS is refused, not logged into")
+    func explicitTLSUnadvertisedRefused() async throws {
+        let (session, transport, greeting) = try await makeAuthSession(
+            capabilities: "IMAP4rev1 AUTH=PLAIN SASL-IR")
+        defer { Task { await session.close() } }
+        // A COMPLETE dialogue that would succeed if it were attempted — including
+        // a `STARTTLS` the server never advertised but would nonetheless honour —
+        // and socket-like idle reads. Both are the shape
+        // `loginDisabledWritesNothing` documents: with an exhausted script the
+        // assertions below would pass because the session tore down, not because
+        // the refusal held.
+        await transport.respond(to: "STARTTLS", with: "A0001 OK begin TLS\r\n")
+        await transport.respond(to: "CAPABILITY",
+                                with: "* CAPABILITY IMAP4rev1 AUTH=PLAIN SASL-IR\r\nA0002 OK done\r\n")
+        await transport.respond(to: "AUTHENTICATE PLAIN", with: "A0003 OK authenticated\r\n")
+        await transport.respond(to: "CAPABILITY",
+                                with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0004 OK done\r\n")
+        let auth = IMAPAuthenticator(session: session, security: .explicit)
+
+        await expectAuthFailure(IMAPAuthError.startTLSUnadvertised) {
             try await auth.authenticate(
                 .appPassword(username: Fixture.address, password: Fixture.password),
                 greeting: greeting)
         }
-        // Nothing was written, and no upgrade was even attempted — the refusal is
-        // upstream of both, which is the only ordering in which a plaintext
-        // socket cannot carry the password.
-        #expect(await transport.sentText.contains(Fixture.password) == false)
+        // Nothing at all on the wire: the greeting's [CAPABILITY …] code answered
+        // the only question that had to be asked, and the refusal is upstream of
+        // every write.
         #expect(await transport.sent.isEmpty)
+        #expect(await transport.sentText.contains(Fixture.password) == false)
         #expect(await transport.startTLSCount == 0)
         #expect(await transport.upgradePoint == nil)
     }
@@ -176,9 +231,10 @@ struct IMAPAuthWireTests {
     /// have been deleted rather than left standing with a comment overclaiming
     /// them.
     ///
-    /// Criterion 3 is therefore carried by `explicitTLSRefused` alone, which is
-    /// falsifiable and mutation-verified: it is the only branch where a real
-    /// implementation choice (refuse vs. attempt) exists.
+    /// Criterion 3 is therefore carried by `explicitTLSUpgradesFirst` alone, which
+    /// is falsifiable and mutation-verified: it is the only branch where a real
+    /// implementation choice (upgrade first vs. authenticate first) exists, and
+    /// the only one where `bytesSentBeforeUpgrade` is a non-empty, exact prefix.
     @Test("an XOAUTH2 login writes the base64 SASL response and re-reads capabilities")
     func xoauth2LoginWritesTheSASLResponse() async throws {
         let (session, transport, greeting) = try await makeAuthSession(

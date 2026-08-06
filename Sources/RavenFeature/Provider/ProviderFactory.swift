@@ -112,11 +112,18 @@ import AinkradAppKit
 
     /// Runs `kind`'s interactive sign-in and returns the account it identifies.
     ///
-    /// Only `.gmail` has an interactive flow today. `.imap` (Task 16) and
-    /// `.graph` (Task 20) get theirs when their backends land, and
-    /// `.appleMail` has none by nature: an imported local mailbox is chosen
-    /// with a directory picker, not authorized, so it is added via
-    /// `MailAccount` + `saveAppleMailDirectory` rather than through here.
+    /// Only `.gmail` has a *browser* flow, and this function is that flow.
+    ///
+    /// `.imap` still throws here, and that is the correct answer rather than a gap
+    /// Task 16 forgot to close: an IMAP account is not authorized, it is
+    /// *configured*. There is no redirect to wait for and no identity the server
+    /// hands back — the address, the servers and the password all come from the
+    /// form, so the account is added through `RavenRuntime.addIMAPAccount` /
+    /// `saveIMAPAccount`, exactly as `.appleMail` is added through
+    /// `saveAppleMailDirectory`. Routing it through an `onAuthorizationURL`
+    /// callback that would never fire is the shape to avoid.
+    ///
+    /// `.graph` (Task 20) gets its flow when its backend lands.
     public func authorize(kind: MailAccount.ProviderKind,
                           onAuthorizationURL: (@Sendable (URL) -> Void)? = nil)
         async throws -> (accountID: String, address: String) {
@@ -225,14 +232,133 @@ import AinkradAppKit
             throw MailError.unsupportedProvider(kind: account.provider.identifier,
                                                 accountID: account.id)
         }
-        return IMAPProvider(accountID: account.id) {
-            let working = try await IMAPProvider.openSession(settings: settings,
-                                                             credential: credential)
+        let open = openIMAPSession
+        let accountID = account.id
+        return IMAPProvider(accountID: account.id, submit: smtpSubmit(settings: settings,
+                                                                      credential: credential,
+                                                                      sender: account.address)) {
+            [weak self] in
+            let working = try await open(settings, credential)
+            await self?.recordMailboxDirectory(working.directory, accountID: accountID)
             // The release is bound to THIS session, so `withSession` cannot log out of
             // somebody else's, and every acquire here has exactly one.
             return IMAPSessionLease(working: working) {
                 await IMAPProvider.closeSession(working)
             }
+        }
+    }
+
+    /// Writes the mailbox list this session just `LIST`ed over the persisted one.
+    ///
+    /// **This is what keeps the vocabulary and the move destination from
+    /// disagreeing**, and the failure it prevents is losing mail into the wrong
+    /// folder rather than a stale-looking list. `IMAPProvider.applyLabels` resolves
+    /// its move *destination* from the live `working.directory`, while
+    /// `LabelVocabularyResolver` renders the mutation from the *persisted* one. If
+    /// the persisted copy predates a Trash folder the user has since created,
+    /// `IMAPVocabulary.label(for: .trash)` answers `nil`, `render` drops it,
+    /// `ThreadAction.trash` arrives as a bare `remove: ["INBOX"]` — which is
+    /// byte-identical to an archive — and the message is moved to **Archive instead
+    /// of Trash**, with no error anywhere. Refreshing here means every operation
+    /// after the first sees the mailboxes the server actually has.
+    ///
+    /// Written from the acquire, not from account setup alone, because that is the
+    /// one place a fresh `LIST` already exists: `openSession` performs it once per
+    /// session regardless, so this costs no round trip.
+    ///
+    /// **The residual window, stated rather than implied:** a folder created between
+    /// the moment a mutation is rendered and the moment the session is acquired is
+    /// still missed for that one action. Rendering happens upstream of the provider
+    /// (`ThreadMutationApplier`, the outbox), so no write here can close that gap;
+    /// what it closes is the unbounded one, where the persisted list was written
+    /// once at account-add and never again.
+    ///
+    /// A second `DocumentMailStore` over the same `host.documents` rather than a
+    /// reference to the runtime's: that type holds no cached state — a
+    /// `PluginDocumentStore`, a coder pair, and a diagnostic key — so two instances
+    /// read and write the same bytes, and this keeps the key name and the encoding
+    /// in the one type that owns them instead of duplicating both here.
+    private func recordMailboxDirectory(_ directory: IMAPMailboxDirectory,
+                                        accountID: String) {
+        // Best effort: a failed write must never fail the operation the session was
+        // acquired for. The consequence of a miss is one more stale read, which is
+        // the state this whole method is improving on, not a new failure mode.
+        try? DocumentMailStore(documents: host.documents)
+            .saveIMAPMailboxDirectory(directory, accountID: accountID)
+    }
+
+    /// How an IMAP session is established. The production value is
+    /// `IMAPProvider.openSession`; a test substitutes a scripted one.
+    ///
+    /// Internal, like `securityScopedBookmarks`, and for the same reason: it is a
+    /// seam, and a `public` one would let a caller outside this module redirect
+    /// every IMAP connection this app makes. Both `makeProvider` and
+    /// `testIMAPConnection` go through it, so a test exercises the same code path
+    /// production does rather than a parallel one.
+    var openIMAPSession: @Sendable (IMAPAccountSettings, IMAPCredential) async throws
+        -> IMAPWorkingSession = { try await IMAPProvider.openSession(settings: $0,
+                                                                     credential: $1) }
+
+    /// How this account submits mail, or `nil` when no SMTP server is configured.
+    ///
+    /// Built here rather than inside `IMAPProvider` because this is the file that
+    /// holds the credential path: the provider receives a closure it can call and
+    /// never an `IMAPCredential`, so no part of the read/write path can reach the
+    /// password even by accident.
+    private func smtpSubmit(settings: IMAPAccountSettings, credential: IMAPCredential,
+                            sender: String)
+        -> (@Sendable (OutgoingMessage) async throws -> String)? {
+        guard let endpoint = settings.smtpEndpoint else { return nil }
+        let submitter = SMTPSubmitter(endpoint: endpoint, sender: sender,
+                                      credential: credential)
+        return { try await submitter.submit($0) }
+    }
+
+    // MARK: IMAP account setup
+
+    /// A stable account id for an IMAP mailbox.
+    ///
+    /// Derived from the login rather than random, so re-adding the same mailbox
+    /// **replaces** it instead of producing a second account row pointing at the
+    /// same server — which would then be backfilled twice into two sets of shards.
+    /// Lowercased because IMAP usernames and hostnames are compared
+    /// case-insensitively by every server this targets.
+    static func imapAccountID(settings: IMAPAccountSettings) -> String {
+        "imap-\(settings.username.lowercased())@\(settings.host.lowercased())"
+    }
+
+    /// Persists one IMAP account's server settings and its app password, each to
+    /// the store that is right for it.
+    ///
+    /// The split is the whole point and is asserted structurally by
+    /// `IMAPAccountSetupTests`: `settings` (host, port, TLS mode, username) is a
+    /// *location* and goes to `host.documents`; `password` is a credential and goes
+    /// to `host.secrets` through `IMAPAppPasswordStore` and nowhere else. This
+    /// function is the only place in the app that writes an IMAP app password.
+    func saveIMAPAccount(settings: IMAPAccountSettings, password: String,
+                         accountID: String) throws {
+        host.documents.setData(try JSONEncoder().encode(settings),
+                               forKey: DocumentKeys.imapSettings(accountID: accountID))
+        IMAPAppPasswordStore.store(password, accountID: accountID, secrets: host.secrets)
+    }
+
+    /// Opens a session with the given settings and password *without* persisting
+    /// either, and returns the mailboxes the server listed.
+    ///
+    /// Nothing is written before the server has accepted the credential, so a failed
+    /// attempt leaves no account row, no settings document and no secret behind —
+    /// there is no "half-added account" state to clean up.
+    func probeIMAP(settings: IMAPAccountSettings, password: String) async
+        -> Result<IMAPMailboxDirectory, IMAPAccountSetup.ConnectionFailure> {
+        let credential = IMAPCredential.appPassword(username: settings.username,
+                                                    password: password)
+        do {
+            let working = try await openIMAPSession(settings, credential)
+            let directory = working.directory
+            await IMAPProvider.closeSession(working)
+            return .success(directory)
+        } catch {
+            return .failure(IMAPAccountSetup.classify(error))
         }
     }
 
@@ -245,12 +371,26 @@ import AinkradAppKit
 
     // MARK: Sign-out
 
-    /// Forgets everything this factory holds for one account: the Gmail
-    /// refresh token and the Apple Mail directory bookmark. Scoped to ONE
-    /// account — every other account's credentials stay untouched, matching
-    /// `RavenRuntime.signOut`'s contract.
+    /// Forgets every credential this factory holds for one account: the Gmail
+    /// refresh token, the IMAP app password, and the Apple Mail directory
+    /// bookmark. Scoped to ONE account — every other account's credentials stay
+    /// untouched, matching `RavenRuntime.signOut`'s contract.
+    ///
+    /// The IMAP app password is cleared unconditionally rather than only for
+    /// `.imap` accounts, because this function is given an id and not a kind, and
+    /// clearing a key that was never written is a no-op. Making it conditional
+    /// would mean an account whose row failed to decode — the exact case
+    /// `ProviderKind.unsupported` exists for — keeps its password forever.
+    ///
+    /// The *documents* an IMAP account owns (`imap-settings-<id>`,
+    /// `imap-mailboxes-<id>`) are removed by `DocumentMailStore.purge`, with every
+    /// other per-account document, so a purge that does not run through here is
+    /// still complete. This function owns only what lives in `host.secrets` plus
+    /// the live security-scoped grant, which is the one thing a store cannot
+    /// release.
     public func signOut(accountID: String) {
         gmailAuth?.signOut(accountID: accountID)
+        IMAPAppPasswordStore.clear(accountID: accountID, secrets: host.secrets)
         stopAccessingDirectory(accountID: accountID)
         host.documents.setData(nil, forKey: DocumentKeys.appleMailDirectory(accountID: accountID))
     }

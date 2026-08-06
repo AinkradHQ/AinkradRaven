@@ -44,6 +44,33 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
     private var connection: NWConnection?
     private var isClosed = false
     private var waiters: [Waiter] = []
+    /// Whoever is waiting for the transport to become usable *next*. Exactly one
+    /// call is ever registered here at a time, and which event fires it depends on
+    /// where in the endpoint's lifecycle we are:
+    ///   * implicit — `connect()`, fired by the connection reaching `.ready`
+    ///     (which for an implicit endpoint means TLS is up).
+    ///   * explicit — `connect()`, fired by the framer starting, i.e. TCP is up
+    ///     and the plaintext prelude may begin; then `startTLS()`, fired by the
+    ///     connection reaching `.ready`, which for an explicit endpoint happens
+    ///     only once the framer has released TLS and TLS has handshaken.
+    /// Failures do not come through here — they come through `failAll`, so a
+    /// single teardown path covers every suspended call.
+    private var gateWaiters: [@Sendable () -> Void] = []
+
+    // MARK: Explicit-TLS (STARTTLS) state — all queue-confined
+
+    /// Non-nil only for an explicit endpoint. The live framer's handle.
+    private var framerControl: STARTTLSFramer.Control?
+    /// Plaintext bytes read off the framer and not yet handed to a `read()`.
+    private var plaintextChunks: [Data] = []
+    /// `read()`s parked on an empty plaintext buffer, each paired with the waiter
+    /// that lets `close()`/a failure/a timeout kill it.
+    private var plaintextReaders: [(waiter: Waiter, deliver: @Sendable (Data) -> Void)] = []
+    /// Set the instant `startTLS()` is entered, and never cleared. Everything that
+    /// could put a plaintext byte on the wire is gated on this being false, so the
+    /// window between "upgrade requested" and "handshake finished" is not a window
+    /// in which a credential can be written.
+    private var didRequestUpgrade = false
 
     init(endpoint: MailTransportEndpoint,
          connectTimeout: Duration = .seconds(30),
@@ -74,7 +101,22 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
             case .implicit:
                 parameters = NWParameters(tls: NWProtocolTLS.Options(), tcp: NWProtocolTCP.Options())
             case .explicit:
-                parameters = NWParameters(tls: nil, tcp: NWProtocolTCP.Options())
+                // TLS IS in the stack from the start — it is simply held inert by
+                // the framer below it until `startTLS()`. Building the stack
+                // without TLS would leave nothing to upgrade *into*, which is the
+                // whole reason the old implementation could only refuse.
+                let control = STARTTLSFramer.Control()
+                self.framerControl = control
+                control.setHandlers(
+                    onStart: { [weak self] in
+                        guard let self else { return }
+                        self.queue.async { self.fireGate() }
+                    },
+                    onInput: { [weak self] data in
+                        guard let self else { return }
+                        self.queue.async { self.acceptPlaintext(data) }
+                    })
+                parameters = STARTTLSFramer.parameters(control: control)
             }
             guard let port = NWEndpoint.Port(rawValue: self.endpoint.port) else {
                 guard_.fire(.failure(.connectionFailed("invalid port \(self.endpoint.port)")))
@@ -91,25 +133,28 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
                 self?.failAll(.timedOut)
                 guard_.fire(.failure(.timedOut))
             }
+            self.gateWaiters.append { [weak self] in
+                waiter.timeout?.cancel()
+                self?.discard(waiter)
+                guard_.fire(.success(()))
+            }
             connection.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
                 switch state {
                 case .ready:
-                    waiter.timeout?.cancel()
-                    self.discard(waiter)
-                    guard_.fire(.success(()))
+                    self.fireGate()
                 case .failed(let error):
-                    waiter.timeout?.cancel()
-                    self.discard(waiter)
                     // Every OTHER suspended call dies with the connection too;
                     // this is the path that would otherwise strand a `read()`.
-                    self.failAll(.connectionFailed("\(error)"))
-                    guard_.fire(.failure(.connectionFailed("\(error)")))
+                    // Once the upgrade has been asked for, a connection failure
+                    // IS the TLS handshake failing — reported as `.tlsFailed` so
+                    // no caller can mistake it for an ordinary drop and retry in
+                    // the clear.
+                    self.failAll(self.didRequestUpgrade
+                                 ? .tlsFailed("\(error)")
+                                 : .connectionFailed("\(error)"))
                 case .cancelled:
-                    waiter.timeout?.cancel()
-                    self.discard(waiter)
                     self.failAll(.closed)
-                    guard_.fire(.failure(.closed))
                 default:
                     break
                 }
@@ -122,6 +167,27 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
         try await suspendVoid { guard_ in
             guard !self.isClosed, let connection = self.connection else {
                 guard_.fire(.failure(self.isClosed ? .closed : .notConnected))
+                return
+            }
+            // The two branches do NOT promise the same thing, and cannot:
+            //   * the TLS branch resolves on `contentProcessed` — the bytes have
+            //     been handed to the protocol stack;
+            //   * this branch resolves once the framer has accepted them.
+            // `NWProtocolFramer` offers no completion for `writeOutput`, so there
+            // is nothing to await. What was closed instead is the gap that made
+            // the difference *observable*: `Control.write` no longer queues bytes
+            // for a framer that has not attached — it returns false, and that
+            // becomes a thrown `.notConnected` here rather than a reported success
+            // for a byte that might never leave. What remains is ordering-safe:
+            // the framer processes `writeOutput` calls in order on its own queue,
+            // and a failure after acceptance surfaces on the connection like any
+            // other, failing every suspended call.
+            if self.usesPlaintextPath {
+                guard let control = self.framerControl, control.write(bytes) else {
+                    guard_.fire(.failure(.notConnected))
+                    return
+                }
+                guard_.fire(.success(()))
                 return
             }
             let waiter = self.register { guard_.fire(.failure($0)) }
@@ -151,8 +217,23 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
                 }
                 let waiter = self.register { guard_.fire(.failure($0)) }
                 self.scheduleTimeout(self.readTimeout, on: waiter) { [weak self] in
+                    self?.discardPlaintextReader(waiter)
                     self?.discard(waiter)
                     guard_.fire(.failure(.timedOut))
+                }
+                if self.usesPlaintextPath {
+                    if !self.plaintextChunks.isEmpty {
+                        waiter.timeout?.cancel()
+                        self.discard(waiter)
+                        guard_.fire(.success(self.plaintextChunks.removeFirst()))
+                        return
+                    }
+                    self.plaintextReaders.append((waiter, { [weak self] data in
+                        waiter.timeout?.cancel()
+                        self?.discard(waiter)
+                        guard_.fire(.success(data))
+                    }))
+                    return
                 }
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) {
                     [weak self] data, _, isComplete, error in
@@ -177,27 +258,77 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
         }
     }
 
-    /// **`NWConnection` cannot upgrade an established plaintext connection to
-    /// TLS.** TLS is a protocol in the parameters' stack, fixed when the
-    /// connection is created and handshaken during `start`; there is no public
-    /// API to insert it afterwards, and re-connecting is not an upgrade — the
-    /// server is mid-session on the existing socket waiting for a ClientHello.
+    /// Releases the `STARTTLSFramer` sitting under TLS and suspends until the
+    /// handshake either completes or fails.
     ///
-    /// So this refuses, loudly and typed, instead of pretending. Consequences,
-    /// recorded here because later tasks depend on them:
-    ///   * Implicit TLS (IMAPS 993, SMTPS 465) is fully supported by
-    ///     `connect()` and is the supported production path.
-    ///   * Explicit STARTTLS (143/587) needs a real implementation. The only
-    ///     Network.framework-shaped option is an `NWProtocolFramer` placed
-    ///     below TLS that performs the caller-supplied plaintext prelude and
-    ///     defers readiness until the upgrade point — which puts negotiation
-    ///     logic into this otherwise logic-free, untestable file, so it is
-    ///     deliberately NOT done here.
-    ///   * `ScriptedTransport.startTLS()` works and records the upgrade point,
-    ///     so Task 9's and Task 15's "no credential byte before TLS" assertions
-    ///     are unaffected.
+    /// `NWConnection` still cannot insert TLS into a running stack — that has not
+    /// changed. What changed is that for an explicit endpoint TLS was in the stack
+    /// all along, held inert by the framer below it, so this is a *release* rather
+    /// than an insertion. See `STARTTLSFramer` for the mechanism.
+    ///
+    /// **There is no plaintext fallback and no way to add one.** Three independent
+    /// reasons, so that losing any single one is still safe:
+    ///   1. `didRequestUpgrade` is set before anything else happens and is never
+    ///      cleared. `usesPlaintextPath` is false from that instant, so `send()`
+    ///      cannot reach the framer's plaintext write path again — not even while
+    ///      the handshake is in flight.
+    ///   2. `STARTTLSFramer.Control.write` independently refuses once upgraded.
+    ///   3. Every failure path below cancels the connection outright before
+    ///      throwing, so a caller that ignores the error finds a dead transport
+    ///      rather than a plaintext one.
+    ///
+    /// `tlsUpgradeUnsupported` survives for the one case that is genuinely
+    /// unsupported: an endpoint that was not built for an upgrade. An implicit
+    /// endpoint has no framer to release and is already encrypted; asking it to
+    /// "upgrade" is a caller bug, and answering "fine" would be a lie.
     func startTLS() async throws {
-        throw MailTransportError.tlsUpgradeUnsupported
+        guard endpoint.tls == .explicit else { throw MailTransportError.tlsUpgradeUnsupported }
+        try await suspendVoid { guard_ in
+            guard !self.isClosed, let connection = self.connection,
+                  let control = self.framerControl else {
+                guard_.fire(.failure(self.isClosed ? .closed : .notConnected))
+                return
+            }
+            if self.didRequestUpgrade {
+                // Idempotent, and only because the connection is already `.ready`
+                // — i.e. the handshake already succeeded. A second call during a
+                // handshake in flight cannot happen: the sessions above are
+                // strictly lock-step.
+                guard_.fire(connection.state == .ready ? .success(()) : .failure(.closed))
+                return
+            }
+            self.didRequestUpgrade = true
+            // Belt and braces behind guard 1, and **unobservable today**: once
+            // `didRequestUpgrade` is set, `read()` takes the `connection.receive`
+            // path and never consults `plaintextChunks` again, so deleting this
+            // line changes no behaviour any test can see (verified by mutation).
+            // It is kept because it makes the discard RFC 3207 §4.2 / RFC 3501
+            // require true of the *state* as well as of the read path, so a future
+            // edit to `usesPlaintextPath` cannot resurrect a pre-TLS byte.
+            self.plaintextChunks.removeAll()
+
+            let waiter = self.register { guard_.fire(.failure($0)) }
+            self.scheduleTimeout(self.connectTimeout, on: waiter) { [weak self] in
+                self?.discard(waiter)
+                // A handshake that never answers must not leave a usable socket
+                // behind, so this tears the connection down rather than just
+                // failing the call.
+                self?.hardFail(.tlsFailed("the TLS handshake did not complete in time"))
+                guard_.fire(.failure(.tlsFailed("the TLS handshake did not complete in time")))
+            }
+            self.gateWaiters.append { [weak self] in
+                waiter.timeout?.cancel()
+                self?.discard(waiter)
+                guard_.fire(.success(()))
+            }
+            guard control.upgrade() else {
+                waiter.timeout?.cancel()
+                self.discard(waiter)
+                self.hardFail(.notConnected)
+                guard_.fire(.failure(.notConnected))
+                return
+            }
+        }
     }
 
     func close() async {
@@ -239,9 +370,57 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
         waiters.removeAll { $0 === waiter }
     }
 
+    private func discardPlaintextReader(_ waiter: Waiter) {
+        plaintextReaders.removeAll { $0.waiter === waiter }
+    }
+
+    /// True exactly while bytes must go through the framer in the clear: an
+    /// explicit endpoint whose upgrade has not been asked for yet.
+    private var usesPlaintextPath: Bool {
+        endpoint.tls == .explicit && !didRequestUpgrade
+    }
+
+    /// Releases whoever is waiting on the transport becoming usable. Draining
+    /// before calling matters: a handler that registers a new gate waiter (the
+    /// `connect()` → `startTLS()` handover) must not be fired by the event that
+    /// released the previous one.
+    private func fireGate() {
+        let pending = gateWaiters
+        gateWaiters = []
+        for fire in pending { fire() }
+    }
+
+    /// Plaintext bytes off the framer: hand to the oldest parked `read()`, else
+    /// buffer. Ignored once the upgrade has been requested — see `startTLS`.
+    private func acceptPlaintext(_ data: Data) {
+        guard usesPlaintextPath, !data.isEmpty else { return }
+        if !plaintextReaders.isEmpty {
+            let reader = plaintextReaders.removeFirst()
+            discard(reader.waiter)
+            reader.deliver(data)
+            return
+        }
+        plaintextChunks.append(data)
+    }
+
+    /// Fails every suspended call AND kills the socket. Used where continuing
+    /// would be worse than failing — a TLS handshake that never completed.
+    private func hardFail(_ error: MailTransportError) {
+        isClosed = true
+        failAll(error)
+        connection?.stateUpdateHandler = nil
+        connection?.cancel()
+        connection = nil
+    }
+
     /// Fails every suspended call. Each `fire` is a no-op if that call already
     /// resumed, so this is safe to call from several teardown paths.
     private func failAll(_ error: MailTransportError) {
+        // Parked plaintext reads are registered in `waiters` too, so failing the
+        // waiters resumes them; this only drops the now-dead delivery closures.
+        plaintextReaders = []
+        plaintextChunks = []
+        gateWaiters = []
         let stranded = waiters
         waiters = []
         for waiter in stranded { waiter.fail(error) }

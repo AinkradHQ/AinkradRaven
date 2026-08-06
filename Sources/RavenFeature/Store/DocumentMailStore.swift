@@ -249,7 +249,32 @@ import AinkradAppKit
         documents.setData(nil, forKey: bodyIndexKey)
         documents.setData(nil, forKey: monthsKey)
         documents.setData(nil, forKey: DocumentKeys.labels(accountID: accountID))
+        // The per-account provider-configuration documents. These are not mail, but
+        // they are still "everything belonging to this account", and leaving them
+        // means the next account that happens to be given the same id inherits a
+        // stranger's server settings or folder list.
+        //
+        // `appleMailDirectory` was previously removed ONLY by
+        // `ProviderFactory.signOut`, so any purge that did not go through
+        // `RavenRuntime.signOut` — an MCP-driven one, a store-level one — left the
+        // security-scoped bookmark behind. Removing it here as well makes the purge
+        // complete on its own terms; the factory's own removal stays, because the
+        // factory also has to relinquish the live access grant that bookmark backs.
+        documents.setData(nil, forKey: DocumentKeys.appleMailDirectory(accountID: accountID))
+        documents.setData(nil, forKey: DocumentKeys.imapSettings(accountID: accountID))
+        documents.setData(nil, forKey: DocumentKeys.imapMailboxes(accountID: accountID))
         try removeAccount(accountID)
+    }
+
+    // MARK: IMAP mailbox directory
+
+    public func imapMailboxDirectory(accountID: String) -> IMAPMailboxDirectory? {
+        load(IMAPMailboxDirectory.self, DocumentKeys.imapMailboxes(accountID: accountID))
+    }
+
+    public func saveIMAPMailboxDirectory(_ directory: IMAPMailboxDirectory,
+                                         accountID: String) throws {
+        try save(directory, DocumentKeys.imapMailboxes(accountID: accountID))
     }
 
     // MARK: Bodies and labels

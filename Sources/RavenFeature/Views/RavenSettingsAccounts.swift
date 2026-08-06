@@ -53,6 +53,11 @@ struct RavenAccountsPane: View {
     /// open. Collapsed by default so several connected accounts read as a list
     /// of accounts rather than three screens of forms.
     @State private var expandedAccounts: Set<String> = []
+    /// Whether the IMAP form (`RavenSettingsIMAPForm`) is open. Collapsed by
+    /// default: it is eight fields, and an always-open eight-field form above the
+    /// account list would make the common case — look at my accounts — the harder
+    /// one.
+    @State private var isAddingIMAP = false
 
     init(runtime: RavenRuntime, showsSignature: Bool) {
         self.runtime = runtime
@@ -101,7 +106,8 @@ struct RavenAccountsPane: View {
                 AinkradEmptyState(
                     icon: "envelope.badge",
                     title: "No accounts connected",
-                    message: "Connect a Gmail account to start syncing mail into Raven.",
+                    message: "Connect a Gmail account, or add any IMAP mailbox, to start "
+                           + "syncing mail into Raven.",
                     actionTitle: "Connect Gmail",
                     action: { connect() })
                     .frame(height: 220)
@@ -110,10 +116,32 @@ struct RavenAccountsPane: View {
                 ForEach(accounts) { account in
                     accountRow(account)
                 }
-                AinkradButton(title: "Connect Another Account", style: .secondary,
+            }
+            HStack(spacing: AinkradSpacing.sm) {
+                AinkradButton(title: accounts.isEmpty ? "Connect Gmail"
+                                                      : "Connect Another Account",
+                              style: .secondary,
                               icon: "person.badge.plus", isLoading: isConnecting,
                               action: { connect() })
                     .disabled(!runtime.canConnectAccount || isConnecting)
+                // Deliberately NOT gated on `canConnectAccount`: that asks whether a
+                // Gmail OAuth client is available, and an IMAP mailbox needs none.
+                AinkradButton(title: "Add IMAP Mailbox", style: .ghost, icon: "server.rack",
+                              action: { isAddingIMAP.toggle() })
+                    .disabled(!runtime.canAddIMAPAccount)
+                Spacer(minLength: 0)
+            }
+            if isAddingIMAP {
+                RavenSettingsIMAPForm(
+                    runtime: runtime,
+                    onAdded: {
+                        isAddingIMAP = false
+                        accountsVersion += 1
+                        for account in runtime.accounts where signatures[account.id] == nil {
+                            signatures[account.id] = account.signature
+                        }
+                    },
+                    onCancel: { isAddingIMAP = false })
             }
             if let connectError {
                 AinkradBanner(message: connectError, status: .danger,

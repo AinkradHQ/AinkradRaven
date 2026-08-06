@@ -54,15 +54,30 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
     /// `withSession` may call it — that is what pairs every acquire with a release.
     let acquire: @Sendable () async throws -> IMAPSessionLease
 
+    /// Transmits one message over SMTP, or `nil` when this account has no
+    /// submission server configured.
+    ///
+    /// A closure, not an `SMTPSubmitter`, because a submitter holds an
+    /// `IMAPCredential`. `ProviderFactory` builds it — that file is where the
+    /// credential path lives — and this type therefore cannot reach the password
+    /// even to log it. `nil` is a real state (a pre-Task-16 settings document has
+    /// no `smtp` block) and `send` refuses on it by name.
+    ///
+    /// Not `private`: `send` lives in `IMAPProvider+Mutations.swift` and Swift's
+    /// `private` is file-scoped.
+    let submit: (@Sendable (OutgoingMessage) async throws -> String)?
+
     /// UIDs fetched per `fetchThreads` page.
     private let pageSize: Int
 
     let index = IMAPMessageIndex()
 
     init(accountID: String, pageSize: Int = 50,
+         submit: (@Sendable (OutgoingMessage) async throws -> String)? = nil,
          acquire: @escaping @Sendable () async throws -> IMAPSessionLease) {
         self.accountID = accountID
         self.pageSize = pageSize
+        self.submit = submit
         self.acquire = acquire
     }
 

@@ -145,25 +145,65 @@ public enum LabelVocabularyResolver {
             // mutation is ever rendered for it. If Apple Mail ever grows real
             // labels, this needs its own vocabulary.
             return GmailVocabulary()
-        case .imap, .graph:
-            // Deliberately unresolved until Tasks 13 and 20 ship the real
-            // vocabularies. `MailFlagVocabularyTests` pins this nil, so adding
-            // a vocabulary without revisiting that test is a build failure
-            // rather than a surprise in production.
+        case .imap:
+            // Still `nil` on THIS overload, and that has not changed with Task 16.
+            // Every folder-valued string an `IMAPVocabulary` can produce comes from
+            // the account's mailbox directory, and a bare `ProviderKind` names no
+            // account, so there is no directory to build one on. The dangerous
+            // fallback is the empty directory, not the missing one:
+            // `ThreadAction.archive` renders to `remove: [.inbox]`, an empty
+            // directory drops it, and an empty mutation is reported to the user as a
+            // successful archive while nothing moved. Use the account-keyed overload
+            // below.
+            return nil
+        case .graph:
+            // Deliberately unresolved until Task 20 ships the real vocabulary.
+            // `MailFlagVocabularyTests` pins this nil, so adding a vocabulary
+            // without revisiting that test is a build failure rather than a
+            // surprise in production.
             return nil
         case .unsupported:
             return nil
         }
     }
 
+    /// The vocabulary for an `.imap` account with `directory` persisted, or `nil`.
+    ///
+    /// **The refusal is the load-bearing half.** `nil` for an absent directory *and*
+    /// for a present-but-empty one, because those are the same thing to a mutation:
+    /// `IMAPVocabulary(directory: .init([]))` answers `nil` for `.archive`,
+    /// `.trash`, `.sent` and `.inbox` alike, `LabelVocabulary.render` drops every
+    /// `nil`, and the caller receives an empty `LabelMutation` — which no code below
+    /// distinguishes from "the user asked for nothing", so the archive is reported
+    /// as done and the message never moves.
+    /// `IMAPVocabularyTests.emptyDirectoryRefusesFolders` pins that rendering; this
+    /// is the guard that keeps it from ever being reached through the resolver.
+    ///
+    /// A non-empty directory that simply has no archive folder is a different case
+    /// and is NOT refused here: `IMAPProvider.applyLabels` sees a real vocabulary,
+    /// the unrepresentable flag is dropped by name, and the mutation that survives
+    /// is one the account can actually perform.
+    static func imapVocabulary(directory: IMAPMailboxDirectory?) -> LabelVocabulary? {
+        guard let directory, !directory.mailboxes.isEmpty else { return nil }
+        return IMAPVocabulary(directory: directory)
+    }
+
     /// The vocabulary for a stored account id, or `nil` when the account is
     /// unknown to the store as well as when its backend is unsupported — an
     /// unknown account is precisely the case where guessing is least defensible.
+    ///
+    /// This is the overload every mutation site uses, and since Task 16 it is the
+    /// one — and only one — that can answer for `.imap`, because it has the account
+    /// id the persisted mailbox directory is keyed by. Everything else routes to the
+    /// kind-only overload above, unchanged.
     @MainActor
     public static func vocabulary(forAccountID accountID: String?,
                                   store: MailStore) -> LabelVocabulary? {
         guard let accountID else { return nil }
         guard let account = store.accounts().first(where: { $0.id == accountID }) else { return nil }
+        if account.provider == .imap {
+            return imapVocabulary(directory: store.imapMailboxDirectory(accountID: accountID))
+        }
         return vocabulary(for: account.provider)
     }
 }

@@ -64,4 +64,22 @@ public struct MessageBody: Codable, Equatable, Sendable {
 
     func labels(accountID: String) -> [MailLabel]
     func saveLabels(_ labels: [MailLabel], accountID: String) throws
+
+    /// An `.imap` account's persisted mailbox set, or `nil` when none has been
+    /// stored — which is the ordinary state for every non-IMAP account and for an
+    /// IMAP account whose setup never completed a `LIST`.
+    ///
+    /// On the protocol rather than only on `DocumentMailStore` because
+    /// `LabelVocabularyResolver.vocabulary(forAccountID:store:)` is the single
+    /// place that decides whether an IMAP mutation may be rendered at all, and it
+    /// is handed a `MailStore`. Reaching the directory by downcasting to the
+    /// concrete store would make that decision depend on which store type the
+    /// caller happened to pass: a conforming store that is not a
+    /// `DocumentMailStore` would silently answer "no directory" and every IMAP
+    /// mutation through it would be refused for a reason nothing states.
+    func imapMailboxDirectory(accountID: String) -> IMAPMailboxDirectory?
+
+    /// Records the mailbox set a `LIST` returned for `accountID`.
+    func saveIMAPMailboxDirectory(_ directory: IMAPMailboxDirectory,
+                                  accountID: String) throws
 }

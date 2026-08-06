@@ -52,12 +52,25 @@ public enum DocumentKeys {
     /// here — so a document, exactly like `gmail-client-id`. Read by
     /// `ProviderFactory` to rebuild the `.imap` provider on relaunch.
     ///
-    /// Unlike `appleMailDirectory`, this is **not** removed by
-    /// `ProviderFactory.signOut` yet, and neither is the app password
-    /// (`IMAPAppPasswordStore.clear` has no production caller). Both belong with the
-    /// account-setup work that writes them; stated here rather than left to be
-    /// inferred from the absence of a line.
+    /// Removed on sign-out by `DocumentMailStore.purge(accountID:)`, alongside
+    /// `appleMailDirectory` and `imapMailboxes`; the app password it points at is
+    /// cleared by `ProviderFactory.signOut` through `IMAPAppPasswordStore.clear`.
     public static func imapSettings(accountID: String) -> String {
         "imap-settings-\(accountID)"
+    }
+
+    /// An `.imap` account's `LIST`ed mailbox set (`IMAPMailboxDirectory`), written
+    /// when the account is added and refreshed on **every session acquire**
+    /// thereafter (`ProviderFactory.recordMailboxDirectory`) — which is what stops
+    /// it drifting away from the live directory `IMAPProvider.applyLabels` resolves
+    /// move destinations from. `testIMAPConnection` deliberately writes nothing: it
+    /// runs before there is an account to key this by.
+    ///
+    /// Persisted because `LabelVocabularyResolver` is static and has no session:
+    /// without a stored directory it cannot build an `IMAPVocabulary`, so every IMAP
+    /// mutation is refused. Folder *names*, not credentials — the same category as
+    /// `appleMailDirectory`. Removed by `DocumentMailStore.purge(accountID:)`.
+    public static func imapMailboxes(accountID: String) -> String {
+        "imap-mailboxes-\(accountID)"
     }
 }

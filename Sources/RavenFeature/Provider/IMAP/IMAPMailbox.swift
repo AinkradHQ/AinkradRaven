@@ -7,18 +7,30 @@ import Foundation
 /// are not flags, and keeping the server's own words means a future special-use
 /// attribute this build has never heard of is still visible to a diagnostic
 /// rather than erased at parse time.
-struct IMAPMailbox: Equatable, Sendable {
+///
+/// ## Codable, and what is deliberately NOT stored
+///
+/// Task 16 persists the account's mailbox list so the static
+/// `LabelVocabularyResolver` can answer without a live session. Only what the
+/// **server said** is written — `name`, `delimiter`, `attributes` — and `flag`/
+/// `isSpecialUseDeclared` are recomputed on decode through the same
+/// `IMAPMailboxList.resolve` a live `LIST` goes through. Storing the resolved flag
+/// instead would freeze one build's heuristics into the document: a later fix to
+/// `nameHeuristics` (of the exact kind this file has already needed once) would
+/// apply to freshly-listed accounts and not to stored ones, and the two would
+/// disagree about which folder is the trash.
+public struct IMAPMailbox: Equatable, Sendable, Codable {
     /// The mailbox name exactly as the server spelled it, including any
     /// hierarchy. This is what `SELECT`/`UID COPY` must be given, so it is never
     /// normalised, case-folded or split.
-    let name: String
+    public let name: String
 
     /// The hierarchy delimiter, or `nil` for a flat namespace (`LIST` sends
     /// `NIL`). `nil` and `""` are different things and neither is guessed.
-    let delimiter: String?
+    public let delimiter: String?
 
     /// The `LIST` attributes, verbatim, in arrival order.
-    let attributes: [String]
+    public let attributes: [String]
 
     /// The canonical meaning of this mailbox.
     ///
@@ -26,18 +38,49 @@ struct IMAPMailbox: Equatable, Sendable {
     /// special use is `.user(name)`, because a mailbox the domain does not
     /// understand is still a mailbox the user can see and the provider must
     /// keep. Dropping it would silently hide mail.
-    let flag: MailFlag
+    public let flag: MailFlag
 
     /// Whether the mailbox can hold messages. `\Noselect` containers (a bare
     /// `[Gmail]` node, say) are listed and kept — they are part of the hierarchy
     /// — but must never be `SELECT`ed.
-    var isSelectable: Bool { !attributes.contains { $0.caseInsensitiveCompare("\\Noselect") == .orderedSame } }
+    public var isSelectable: Bool { !attributes.contains { $0.caseInsensitiveCompare("\\Noselect") == .orderedSame } }
 
     /// Whether the canonical meaning came from a `SPECIAL-USE` attribute rather
     /// than from a name heuristic. Recorded because the two have very different
     /// confidence and a mis-heuristic that moves mail into the wrong folder is
     /// the failure this whole file exists to avoid.
-    let isSpecialUseDeclared: Bool
+    public let isSpecialUseDeclared: Bool
+
+    init(name: String, delimiter: String?, attributes: [String], flag: MailFlag,
+         isSpecialUseDeclared: Bool) {
+        self.name = name
+        self.delimiter = delimiter
+        self.attributes = attributes
+        self.flag = flag
+        self.isSpecialUseDeclared = isSpecialUseDeclared
+    }
+
+    /// Only the server's own words are keys; see this type's documentation for why
+    /// `flag` is not among them.
+    private enum CodingKeys: String, CodingKey { case name, delimiter, attributes }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let name = try container.decode(String.self, forKey: .name)
+        let delimiter = try container.decodeIfPresent(String.self, forKey: .delimiter)
+        let attributes = try container.decodeIfPresent([String].self, forKey: .attributes) ?? []
+        let resolved = IMAPMailboxList.resolve(name: name, attributes: attributes,
+                                               delimiter: delimiter)
+        self.init(name: name, delimiter: delimiter, attributes: attributes,
+                  flag: resolved.flag, isSpecialUseDeclared: resolved.declared)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(delimiter, forKey: .delimiter)
+        try container.encode(attributes, forKey: .attributes)
+    }
 }
 
 /// Reading `LIST`/`LSUB` responses, and mapping mailboxes to canonical flags.
@@ -186,8 +229,14 @@ enum IMAPMailboxList {
 /// Separate from the parser because the reverse direction is a property of the
 /// *set*, not of any one line: "which mailbox is the trash" is only answerable
 /// once every `LIST` line has been read.
-struct IMAPMailboxDirectory: Equatable, Sendable {
-    let mailboxes: [IMAPMailbox]
+///
+/// `Codable` since Task 16, which persists it per account
+/// (`DocumentKeys.imapMailboxes`) so `LabelVocabularyResolver` can build an
+/// `IMAPVocabulary` without a live `LIST`. `refusedLineCount` is not persisted:
+/// it describes one `LIST` response's parse, not the account, and a decoded
+/// directory has no refused lines of its own.
+public struct IMAPMailboxDirectory: Equatable, Sendable, Codable {
+    public let mailboxes: [IMAPMailbox]
 
     /// How many `LIST` lines this build could not parse.
     ///
@@ -199,7 +248,19 @@ struct IMAPMailboxDirectory: Equatable, Sendable {
     /// shorter mailbox list is its own hazard — an archive that has quietly gone
     /// missing looks identical to a server that has none — so the count is part
     /// of the value and a caller can surface or log it.
-    let refusedLineCount: Int
+    public let refusedLineCount: Int
+
+    private enum CodingKeys: String, CodingKey { case mailboxes }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(try container.decode([IMAPMailbox].self, forKey: .mailboxes))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(mailboxes, forKey: .mailboxes)
+    }
 
     init(_ mailboxes: [IMAPMailbox], refusedLineCount: Int = 0) {
         self.mailboxes = mailboxes
@@ -227,7 +288,7 @@ struct IMAPMailboxDirectory: Equatable, Sendable {
     /// server with no archive folder needs the mutation refused, not a `SELECT`
     /// of a guessed `"Archive"` that does not exist. A declared `SPECIAL-USE`
     /// match wins over a heuristic one when both exist.
-    func mailbox(for flag: MailFlag) -> IMAPMailbox? {
+    public func mailbox(for flag: MailFlag) -> IMAPMailbox? {
         let matches = mailboxes.filter { $0.flag == flag && $0.isSelectable }
         return matches.first(where: \.isSpecialUseDeclared) ?? matches.first
     }
@@ -235,7 +296,7 @@ struct IMAPMailboxDirectory: Equatable, Sendable {
     /// The canonical meaning of a mailbox name this directory knows. An unknown
     /// name reads as `.user(name)` rather than nothing — the same
     /// never-drop-a-label rule `LabelVocabulary.flag(for:)` states.
-    func flag(for name: String) -> MailFlag {
+    public func flag(for name: String) -> MailFlag {
         mailboxes.first { $0.name == name }?.flag ?? .user(name)
     }
 }
