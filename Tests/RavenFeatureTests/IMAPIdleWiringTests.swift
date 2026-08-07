@@ -17,7 +17,7 @@ import AinkradAppKit
 /// `MultiAccountTests` established — so the real 120-second poll loop cannot race
 /// a manual tick. The IDLE clock is replaced through `idleClockOverride`, so the
 /// one-second coalesce window is released on demand rather than slept through.
-@Suite("IDLE wiring into the runtime")
+@Suite("IDLE wiring into the runtime", .timeLimit(.minutes(1)))
 @MainActor struct IMAPIdleWiringTests {
 
     /// A torn-down runtime (no live poll loop) with a fake IDLE clock installed.

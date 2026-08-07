@@ -13,7 +13,7 @@ import Foundation
 /// these assert the whole canonical-flag → wire path — which is what the acceptance
 /// criterion asks for — rather than the provider's half of it against strings a test
 /// author chose.
-@Suite("IMAP provider mutations")
+@Suite("IMAP provider mutations", .timeLimit(.minutes(1)))
 struct IMAPProviderMutationTests {
 
     private static let m1Thread = "imapt-88099c778cf88fc9"

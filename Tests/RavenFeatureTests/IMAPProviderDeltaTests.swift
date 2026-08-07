@@ -10,7 +10,7 @@ import Foundation
 /// since a cursor, everything there is a single-shot read.
 ///
 /// Verified against fixtures and a scripted transport; live verification deferred.
-@Suite("IMAP provider delta")
+@Suite("IMAP provider delta", .timeLimit(.minutes(1)))
 struct IMAPProviderDeltaTests {
 
     private static let m1Thread = "imapt-88099c778cf88fc9"

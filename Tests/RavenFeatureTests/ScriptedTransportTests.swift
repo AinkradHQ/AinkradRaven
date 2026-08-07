@@ -5,7 +5,7 @@ import Testing
 /// Covers the scripted double itself. Everything above the transport seam is
 /// tested through it, so if it lies — merges chunks, drops bytes, forgets the
 /// TLS upgrade point — every later task's test is worthless.
-@Suite("ScriptedTransport")
+@Suite("ScriptedTransport", .timeLimit(.minutes(1)))
 struct ScriptedTransportTests {
 
     /// A response with a `{n}` literal whose bytes contain CRLF, a quote, a

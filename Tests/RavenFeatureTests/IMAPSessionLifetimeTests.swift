@@ -17,7 +17,7 @@ import Foundation
 /// a minute held N authenticated connections against a per-user cap servers commonly
 /// set at 10–20, and the cap surfaces as a connect failure on a later, unrelated
 /// operation.
-@Suite("IMAP session lifetime")
+@Suite("IMAP session lifetime", .timeLimit(.minutes(1)))
 struct IMAPSessionLifetimeTests {
 
     private static let since = Date(timeIntervalSince1970: 1_750_000_000)
