@@ -72,12 +72,34 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
 
     let index = IMAPMessageIndex()
 
+    /// Where a thread's locators come from when the in-memory `index` has never
+    /// seen it — which is every thread, on every launch.
+    ///
+    /// `IMAPMessageIndex` is process-local and is populated only by a walk. A
+    /// relaunch therefore starts with it empty, and a *delta* sync refills it only
+    /// for threads that changed, so an older thread's locators never come back
+    /// without a full backfill. `applyLabels` used to read the empty index, find
+    /// nothing to do, and **return success** — the UI had already applied the
+    /// change optimistically, so an archive vanished locally and never reached the
+    /// server. That is the silent-no-op failure `destination`'s throw was written
+    /// to prevent, arriving one step earlier through a door nobody had shut.
+    ///
+    /// The recovery needs no new persistence, because the store already holds the
+    /// answer: `MailMessage.id` for every IMAP message IS
+    /// `IMAPMessageLocator.encoded`, so a stored thread can be decoded straight
+    /// back into locators. `ProviderFactory` supplies the reader; the default is
+    /// deliberately empty so a test that wants "this provider has never seen that
+    /// thread" still gets it.
+    let storedLocators: @Sendable (String) async -> [IMAPMessageLocator]
+
     init(accountID: String, pageSize: Int = 50,
          submit: (@Sendable (OutgoingMessage) async throws -> String)? = nil,
+         storedLocators: @escaping @Sendable (String) async -> [IMAPMessageLocator] = { _ in [] },
          acquire: @escaping @Sendable () async throws -> IMAPSessionLease) {
         self.accountID = accountID
         self.pageSize = pageSize
         self.submit = submit
+        self.storedLocators = storedLocators
         self.acquire = acquire
     }
 
@@ -281,7 +303,11 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
     }()
 
     func fetchThread(id: String) async throws -> MailThread {
-        let locators = await index.locators(threadID: id)
+        // Same index-then-store order as `applyLabels`, and for the same reason:
+        // the index is empty on every launch, so without the fallback a refresh of
+        // an already-stored thread reports `unknownThread` until a full walk.
+        var locators = await index.locators(threadID: id)
+        if locators.isEmpty { locators = await storedLocators(id) }
         guard !locators.isEmpty else { throw MailError.unknownThread(id) }
         return try await withSession { working in
         var inputs: [IMAPThreadAssembler.Input] = []
