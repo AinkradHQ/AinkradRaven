@@ -148,7 +148,21 @@ extension IMAPProvider {
         try await withSession { working in
         var byMailbox: [String: [UInt32]] = [:]
         for threadID in mutation.threadIDs {
-            for locator in await index.locators(threadID: threadID) {
+            // The in-memory index first, the store second. See
+            // `IMAPProvider.storedLocators`: the index is empty after every
+            // relaunch, and a delta sync refills it only for threads that changed.
+            var locators = await index.locators(threadID: threadID)
+            if locators.isEmpty { locators = await storedLocators(threadID) }
+            guard !locators.isEmpty else {
+                // NOT a silent return. The caller has already applied this change
+                // to the local store optimistically, so returning normally tells it
+                // the server agreed — and the user sees mail archived in Raven that
+                // is still sitting in their inbox everywhere else, with nothing
+                // anywhere pointing at the cause. Throwing is what lets
+                // `ThreadMutationApplier` roll the optimistic change back.
+                throw MailError.unknownThread(threadID)
+            }
+            for locator in locators {
                 byMailbox[locator.mailbox, default: []].append(locator.uid)
             }
         }

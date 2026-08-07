@@ -146,12 +146,17 @@ import AinkradAppKit
         // The user creates a Trash folder; the next session lists it.
         spy.directory = try IMAPProviderHarness.directory()
         let provider = try #require(runtime.providers.provider(for: accountID) as? IMAPProvider)
-        // Any operation that acquires a session. This one finds no locators for a
-        // thread the index has never seen and returns, so the only thing under test
-        // is the acquire itself.
-        try await bounded("acquire") {
-            try await provider.applyLabels(
-                LabelMutation(threadIDs: ["ghost"], add: ["\\Flagged"], remove: []))
+        // Any operation that acquires a session. This one names a thread neither the
+        // index nor the store has ever seen, so it acquires, refreshes the directory,
+        // and then THROWS — which is the point: a mutation with no locators to act on
+        // must not report success, or the caller's optimistic local change stands
+        // while the server never heard about it. The acquire still happened, which is
+        // what the assertions below are about.
+        await #expect(throws: MailError.unknownThread("ghost")) {
+            try await bounded("acquire") {
+                try await provider.applyLabels(
+                    LabelMutation(threadIDs: ["ghost"], add: ["\\Flagged"], remove: []))
+            }
         }
 
         // After: the persisted copy has been rewritten from the live LIST, and the

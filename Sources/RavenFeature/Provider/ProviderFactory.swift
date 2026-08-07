@@ -304,9 +304,29 @@ import AinkradAppKit
         }
         let open = openIMAPSession
         let accountID = account.id
-        return IMAPProvider(accountID: account.id, submit: smtpSubmit(settings: settings,
-                                                                      credential: credential,
-                                                                      sender: account.address)) {
+        return IMAPProvider(
+            accountID: account.id,
+            submit: smtpSubmit(settings: settings, credential: credential,
+                               sender: account.address),
+            // Rebuilds a thread's locators from the store when the provider's
+            // in-memory index has never seen it — i.e. after every relaunch. See
+            // `IMAPProvider.storedLocators`; without this, `applyLabels` had no
+            // UIDs to act on and an archive silently never reached the server.
+            //
+            // `MailMessage.id` for an IMAP message IS the encoded locator, so this
+            // is a decode, not a second index that could disagree with the first.
+            // Non-IMAP ids (a Gmail id on a thread that predates this account's
+            // migration, a truncated string) decode to `nil` and are dropped:
+            // `IMAPMessageLocator(encoded:)` refuses rather than guessing a UID.
+            //
+            // Hops to the factory rather than capturing `host.documents`:
+            // `PluginDocumentStore` is not `Sendable`, and this closure is. The
+            // factory is `@MainActor`, which is where the document store is already
+            // confined, so the hop is the isolation the type actually has rather
+            // than a lock bolted on.
+            storedLocators: { @Sendable [weak self] threadID in
+                await self?.locators(threadID: threadID) ?? []
+            }) {
             [weak self] in
             let working = try await open(settings, credential)
             await self?.recordMailboxDirectory(working.directory, accountID: accountID)
@@ -316,6 +336,19 @@ import AinkradAppKit
                 await IMAPProvider.closeSession(working)
             }
         }
+    }
+
+    /// A stored thread's IMAP locators, decoded from its message ids.
+    ///
+    /// `MailMessage.id` for an IMAP message IS `IMAPMessageLocator.encoded`, so
+    /// this is a decode rather than a second index that could drift from the first.
+    /// Ids this build did not mint — a Gmail id, a truncated string — decode to
+    /// `nil` and are dropped, because `IMAPMessageLocator(encoded:)` refuses rather
+    /// than guessing a UID, and acting on a guessed UID would mutate somebody
+    /// else's message.
+    private func locators(threadID: String) -> [IMAPMessageLocator] {
+        DocumentMailStore(documents: host.documents).thread(threadID)?
+            .messages.compactMap { IMAPMessageLocator(encoded: $0.id) } ?? []
     }
 
     /// Writes the mailbox list this session just `LIST`ed over the persisted one.

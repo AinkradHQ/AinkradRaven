@@ -54,16 +54,22 @@ enum IMAPProviderHarness {
     ///   scripted session is shared across the several operations most tests perform
     ///   and closing it after the first would fail every later one for the wrong
     ///   reason — the balance, not the teardown, is what those tests are checking.
+    /// `storedLocators` defaults to empty, which is what a provider that has never
+    /// walked genuinely knows. Tests that want the production fallback — the store
+    /// answering for a thread the in-memory index has never seen — pass one.
     static func provider(capabilities: String = "IMAP4rev1",
                          steps: [IMAPDeltaHarness.Step],
                          pageSize: Int = 50,
-                         closesOnRelease: Bool = false) async throws
+                         closesOnRelease: Bool = false,
+                         storedLocators: @escaping @Sendable (String) async -> [IMAPMessageLocator]
+                             = { _ in [] }) async throws
         -> (IMAPProvider, ScriptedTransport, IMAPSession, LeaseRecorder) {
         let (session, transport) = try await IMAPDeltaHarness.session(
             capabilities: capabilities, steps: steps)
         let working = IMAPWorkingSession(session: session, directory: try directory())
         let leases = LeaseRecorder()
-        let provider = IMAPProvider(accountID: accountID, pageSize: pageSize) {
+        let provider = IMAPProvider(accountID: accountID, pageSize: pageSize,
+                                    storedLocators: storedLocators) {
             await leases.noteAcquired()
             return IMAPSessionLease(working: working) {
                 await leases.noteReleased()
