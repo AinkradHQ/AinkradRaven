@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import RavenFeature
 
-@Suite("SMTP reply parsing")
+@Suite("SMTP reply parsing", .timeLimit(.minutes(1)))
 struct SMTPReplyParserTests {
     @Test("a single-line reply is code plus text")
     func singleLine() throws {
@@ -90,7 +90,7 @@ struct SMTPReplyParserTests {
     }
 }
 
-@Suite("SMTP session — both TLS modes")
+@Suite("SMTP session — both TLS modes", .timeLimit(.minutes(1)))
 struct SMTPSessionTLSTests {
     /// 465: TLS is part of `connect()`, so the session is encrypted before the
     /// greeting and never negotiates an upgrade.
@@ -264,7 +264,7 @@ struct SMTPSessionTLSTests {
     }
 }
 
-@Suite("SMTP session — authentication and failure mapping")
+@Suite("SMTP session — authentication and failure mapping", .timeLimit(.minutes(1)))
 struct SMTPSessionAuthTests {
     /// The SMTP framing of the XOAUTH2 payload, byte for byte, and the failure
     /// challenge it uniquely needs: a refusal arrives as `334 <base64 json>`, and

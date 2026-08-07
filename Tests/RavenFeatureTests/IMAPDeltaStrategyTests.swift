@@ -7,7 +7,7 @@ import Foundation
 /// Every await goes through `IMAPDeltaHarness.pass`/`expectPass`, which are
 /// deadline-bounded. None may be called bare — see `IMAPAuthHarness`'s note on
 /// why a hang is worse than a failure.
-@Suite("IMAP delta strategy")
+@Suite("IMAP delta strategy", .timeLimit(.minutes(1)))
 struct IMAPDeltaStrategyTests {
 
     private static let condstore = "IMAP4rev1 CONDSTORE QRESYNC"

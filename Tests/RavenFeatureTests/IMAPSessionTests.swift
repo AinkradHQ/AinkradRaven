@@ -12,7 +12,7 @@ import Foundation
 /// rather than spinning, because the failure mode this layer exists to prevent (a
 /// waiter that never resumes) presents as a hang, and a hung run reports as an
 /// infrastructure timeout instead of as a bug.
-@Suite("IMAP command channel")
+@Suite("IMAP command channel", .timeLimit(.minutes(1)))
 struct IMAPSessionTests {
 
     // MARK: - Greeting

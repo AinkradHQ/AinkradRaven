@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import RavenFeature
 
-@Suite("SMTP submission — envelope, Bcc and dot-stuffing")
+@Suite("SMTP submission — envelope, Bcc and dot-stuffing", .timeLimit(.minutes(1)))
 struct SMTPSubmitterAssemblyTests {
     /// **Both halves, in one test.** The envelope must name the blind recipient
     /// (or they never receive the mail) and the transmitted headers must not (or
@@ -134,7 +134,7 @@ struct SMTPSubmitterAssemblyTests {
     }
 }
 
-@Suite("SMTP submission — at most once")
+@Suite("SMTP submission — at most once", .timeLimit(.minutes(1)))
 @MainActor
 struct SMTPAtMostOnceTests {
     /// A `250` on end-of-data is the ONLY thing that yields an id.

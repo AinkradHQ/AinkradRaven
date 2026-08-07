@@ -12,7 +12,7 @@ import Foundation
 /// which registered the tag in `continuationOrder` for a `+ ` the server usually
 /// never sends. These tests reproduce the resulting desync and pin the structural
 /// fix (`IMAPCommand.isExclusive` + `reactiveContinuationLines`).
-@Suite("IMAP channel exclusivity")
+@Suite("IMAP channel exclusivity", .timeLimit(.minutes(1)))
 struct IMAPChannelExclusivityTests {
 
     /// The gate's scenario, verbatim. On the pre-fix code the recorded wire was:
@@ -288,7 +288,7 @@ struct IMAPChannelExclusivityTests {
     }
 }
 
-@Suite("IMAP credentials never leak")
+@Suite("IMAP credentials never leak", .timeLimit(.minutes(1)))
 struct IMAPCredentialLeakTests {
 
     @Test("a rejected login's error carries the server's text and no credential")
@@ -384,7 +384,7 @@ struct IMAPCredentialLeakTests {
     }
 }
 
-@Suite("IMAP credential storage")
+@Suite("IMAP credential storage", .timeLimit(.minutes(1)))
 @MainActor
 struct IMAPCredentialStorageTests {
 

@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import RavenFeature
 
-@Suite("IMAP SASL encoding")
+@Suite("IMAP SASL encoding", .timeLimit(.minutes(1)))
 struct IMAPSASLEncodingTests {
 
     @Test("the XOAUTH2 initial response is exactly user=…^Aauth=Bearer …^A^A")
@@ -63,7 +63,7 @@ struct IMAPSASLEncodingTests {
     }
 }
 
-@Suite("IMAP mechanism selection")
+@Suite("IMAP mechanism selection", .timeLimit(.minutes(1)))
 struct IMAPMechanismSelectionTests {
 
     @Test("LOGINDISABLED with no usable SASL mechanism refuses instead of choosing LOGIN")
@@ -102,7 +102,7 @@ struct IMAPMechanismSelectionTests {
     }
 }
 
-@Suite("IMAP authentication over the wire")
+@Suite("IMAP authentication over the wire", .timeLimit(.minutes(1)))
 struct IMAPAuthWireTests {
 
     @Test("LOGINDISABLED refuses without writing one byte to the transport")
