@@ -19,3 +19,4 @@ Sources/RavenFeature/Generated/BakedOAuthCredentials.swift
 # committed even if something goes wrong and a copy ends up inside it.
 raw-fixtures/
 .build/
+dist/
