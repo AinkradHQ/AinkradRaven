@@ -85,6 +85,7 @@ import Foundation
         state = .backfilling(threadsSynced: 0)
         lastBackfillTruncated = false
         var synced = 0
+        var syncedIDs: Set<String> = []
         var pageToken: String?
         var pagesFetched = 0
         do {
@@ -92,8 +93,22 @@ import Foundation
                 let requestedToken = pageToken
                 let page = try await provider.fetchThreads(since: windowStart, pageToken: pageToken)
                 for thread in page.threads {
-                    try store.upsertThread(thread)
-                    synced += 1
+                    // FOLDED, not replaced. A backfill page is one MAILBOX, not the
+                    // whole account, so a thread can legitimately arrive twice —
+                    // once per mailbox a server lists its messages in — and a blind
+                    // write makes the second arrival erase the first's labels. See
+                    // `ThreadFolding` for why this is right here and wrong on the
+                    // delta path below, which replaces because a delta carries the
+                    // whole thread and expresses removals by absence.
+                    try store.upsertThread(
+                        ThreadFolding.fold(thread, into: store.thread(thread.id)))
+                    // Counted by IDENTITY, not by write. The same thread arriving
+                    // from two mailboxes is one thread synced, and counting writes
+                    // reported 400+ for an account holding 212 messages — a number
+                    // that made a working sync look broken and a broken one look
+                    // busy.
+                    syncedIDs.insert(thread.id)
+                    synced = syncedIDs.count
                 }
                 pagesFetched += 1
                 state = .backfilling(threadsSynced: synced)

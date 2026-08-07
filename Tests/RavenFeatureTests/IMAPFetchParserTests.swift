@@ -68,14 +68,14 @@ struct IMAPFetchParserTests {
         #expect(second.envelope?.rawDate == "not-a-date")
         #expect(second.envelope?.parsedDate == nil)
         #expect(IMAPFetchParser.date(second) == Date(timeIntervalSince1970: 1_767_693_600))
-        let secondMessage = IMAPFetchParser.message(second, id: "u102", threadID: "t2")
+        let secondMessage = IMAPFetchParser.message(second, id: "u102", threadID: "t2", labelIDs: ["INBOX"])
         #expect(secondMessage.rfc822MessageID == "m2@example.test")
 
         // Neither rung available: the epoch, and the message still exists.
         #expect(third.envelope?.rawDate == nil)
         #expect(third.internalDate == nil)
         #expect(IMAPFetchParser.date(third) == Date(timeIntervalSince1970: 0))
-        let thirdMessage = IMAPFetchParser.message(third, id: "u103", threadID: "t3")
+        let thirdMessage = IMAPFetchParser.message(third, id: "u103", threadID: "t3", labelIDs: ["INBOX"])
         #expect(thirdMessage.rfc822MessageID == "m3@example.test")
         // An empty ENVELOPE subject falls back the way `GmailMapping` does.
         #expect(thirdMessage.subject == "(no subject)")
@@ -97,14 +97,20 @@ struct IMAPFetchParserTests {
         // No flags at all still means unread — the absence of `\Seen` is the signal.
         #expect(third.flags == [.unread])
 
-        let firstMessage = IMAPFetchParser.message(first, id: "u101", threadID: "t1")
+        let firstMessage = IMAPFetchParser.message(first, id: "u101", threadID: "t1", labelIDs: ["INBOX"])
         #expect(firstMessage.isRead)
         #expect(firstMessage.isStarred == false)
-        let secondMessage = IMAPFetchParser.message(second, id: "u102", threadID: "t2")
+        let secondMessage = IMAPFetchParser.message(second, id: "u102", threadID: "t2", labelIDs: ["INBOX"])
         #expect(secondMessage.isRead == false)
         #expect(secondMessage.isStarred)
-        // Raw IMAP flag strings must never reach the domain.
-        #expect(secondMessage.labelIDs.isEmpty)
+        // Raw IMAP flag strings must never reach the domain. This used to be
+        // spelled `labelIDs.isEmpty`, which held only because the parser wrote no
+        // labels at all — and that emptiness was itself the bug that made every
+        // IMAP thread invisible to `InboxFilter`. The property being pinned was
+        // never emptiness: it is that `labelIDs` carries MAILBOX names and never
+        // flag strings, which is what the backslash check below actually says.
+        #expect(secondMessage.labelIDs == ["INBOX"])
+        #expect(secondMessage.labelIDs.allSatisfy { !$0.hasPrefix("\\") })
         for flag in second.flags {
             #expect(flag.canonicalToken.contains("\\") == false,
                     "a raw IMAP flag string escaped as \(flag.canonicalToken)")
@@ -189,7 +195,7 @@ struct IMAPFetchParserTests {
             MailAttachment(attachmentID: "2", filename: "file-a.pdf",
                            mimeType: "application/pdf", size: 1234),
         ])
-        let message = IMAPFetchParser.message(response, id: "u203", threadID: "t203")
+        let message = IMAPFetchParser.message(response, id: "u203", threadID: "t203", labelIDs: ["INBOX"])
         #expect(message.hasAttachments)
         #expect(message.attachments == structure.attachments)
         // Metadata only: no section for part 2 was fetched, and none was invented.

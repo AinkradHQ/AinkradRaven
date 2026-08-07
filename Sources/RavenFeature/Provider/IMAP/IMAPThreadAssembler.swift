@@ -189,8 +189,17 @@ struct IMAPThreadAssembler: Sendable {
         var byKey: [String: Input] = [:]
         var keysInOrder: [String] = []
         var referencesByKey: [String: [String]] = [:]
+        // Every mailbox a given `Message-ID` was seen in, NOT just the surviving
+        // locator's. The collapse above keeps the lowest-sorting `(mailbox, uid)`,
+        // and mailbox names sort alphabetically, so a message present in both
+        // `Archive` and `INBOX` survives as the `Archive` copy — taking labels from
+        // the winner alone would file a message that is genuinely in the inbox
+        // outside it, and `InboxFilter` would hide it. The union is the honest
+        // answer and matches how Gmail-style servers actually LIST such a message.
+        var mailboxesByKey: [String: Set<String>] = [:]
         for input in ordered {
             let key = Self.messageKey(input.fetched)
+            mailboxesByKey[key, default: []].insert(input.locator.mailbox)
             guard byKey[key] == nil else { continue }
             byKey[key] = input
             keysInOrder.append(key)
@@ -214,7 +223,10 @@ struct IMAPThreadAssembler: Sendable {
                 guard let input = byKey[key] else { return nil }
                 return IMAPFetchParser.message(input.fetched,
                                                id: input.locator.encoded,
-                                               threadID: threadID)
+                                               threadID: threadID,
+                                               labelIDs: (mailboxesByKey[key] ?? [
+                                                   input.locator.mailbox
+                                               ]).sorted())
             }.sorted { ($0.date, $0.id) < ($1.date, $1.id) }
             guard !messages.isEmpty else { return nil }
             let losing = group.map(Self.threadID(root:)).filter { $0 != threadID }.sorted()
@@ -251,6 +263,29 @@ struct IMAPThreadAssembler: Sendable {
     /// Writes assembled threads to the store, merging where a group has swallowed
     /// a thread identity that is actually on disk.
     ///
+    /// ## Why the stored thread is folded in rather than replaced
+    ///
+    /// `upsertThread` writes the whole document, and a walk pages ONE mailbox at a
+    /// time — so a message that a server lists in two mailboxes (Gmail lists an
+    /// inbox message under its labels; any IMAP server lists one under a folder it
+    /// was copied to) is assembled twice, in different calls, under the same
+    /// thread id. A blind write means the second page's labels replace the first's,
+    /// and a thread genuinely in the inbox ends up labelled with whichever mailbox
+    /// happened to be walked last — invisible to `InboxFilter`, which is the bug
+    /// this whole path was found through.
+    ///
+    /// Folding unions the labels per message instead. Messages are matched on
+    /// `rfc822MessageID` rather than on `MailMessage.id`, because the id is an
+    /// `IMAPMessageLocator` and a locator is mailbox-scoped: the same message in
+    /// two mailboxes has two ids and would otherwise be stored twice, showing the
+    /// user one message as two. The surviving id is the lexicographically least,
+    /// for the same reason `root(of:)` uses a total order — so a thread walked
+    /// twice does not alternate between ids.
+    ///
+    /// Only labels are unioned. Every other field is taken from the FETCH just
+    /// performed, because that is the server's current answer: folding `isRead`
+    /// would resurrect an unread state the user has since cleared.
+    ///
     /// The filter against `store.thread(_:)` is what keeps the destructive path
     /// off the ordinary sync path: `candidateLosingIDs` is non-empty for every
     /// multi-message thread, but `mergeThreads` — which deletes documents and
@@ -260,12 +295,14 @@ struct IMAPThreadAssembler: Sendable {
     @MainActor
     static func commit(_ assembled: [Assembled], to store: MailStore) throws {
         for entry in assembled {
+            let thread = ThreadFolding.fold(entry.thread, into: store.thread(entry.thread.id))
             let losing = entry.candidateLosingIDs.filter { store.thread($0) != nil }
             if losing.isEmpty {
-                try store.upsertThread(entry.thread)
+                try store.upsertThread(thread)
             } else {
-                try store.mergeThreads(losingIDs: losing, into: entry.thread)
+                try store.mergeThreads(losingIDs: losing, into: thread)
             }
         }
     }
+
 }
