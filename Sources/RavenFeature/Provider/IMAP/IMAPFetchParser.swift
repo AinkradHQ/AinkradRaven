@@ -304,14 +304,24 @@ enum IMAPFetchParser {
     /// Builds the domain message. `id` and `threadID` are the caller's (Task
     /// 13's) to choose — see `IMAPFetchResponse`.
     ///
-    /// `labelIDs` is deliberately left empty. `MailMessage.labelIDs` stores the
-    /// *provider's* strings for round-tripping mutations, and for IMAP those are
-    /// mailbox names, which a single `FETCH` line does not know — the mailbox is
-    /// the `SELECT`ed context, mapped by Task 11's `IMAPMailbox`. Writing IMAP
-    /// flag strings here instead would be exactly the leak Task 2 removed.
-    /// `flags` carries the canonical reading for anyone who needs it.
+    /// `labelIDs` is the caller's too, and for the same reason: `MailMessage.
+    /// labelIDs` stores the *provider's* strings, and for IMAP those are mailbox
+    /// names, which a single `FETCH` line does not know — the mailbox is the
+    /// `SELECT`ed context, mapped by Task 11's `IMAPMailbox`. Writing IMAP *flag*
+    /// strings here instead would be exactly the leak Task 2 removed, so the
+    /// parameter takes mailbox names only and `flags` keeps carrying the canonical
+    /// reading.
+    ///
+    /// It defaulted to `[]` and every caller took the default, which is what made
+    /// IMAP mail invisible: `MailThread` flat-maps its messages' labels into the
+    /// summary, `InboxFilter.isInInbox` requires a canonical `.inbox` among them,
+    /// and no labels means no inbox flag — so a sync could fetch 500 messages,
+    /// write them all, and show an empty list. The default is gone rather than
+    /// corrected: a caller that genuinely has no mailbox to name should have to say
+    /// so, because silently passing none is the bug.
     static func message(_ response: IMAPFetchResponse,
-                        id: String, threadID: String) -> MailMessage {
+                        id: String, threadID: String,
+                        labelIDs: [String]) -> MailMessage {
         let envelope = response.envelope
         let attachments = response.bodyStructure?.attachments ?? []
         // Matches `GmailMapping.message`'s fallback so an empty-subject message
@@ -328,7 +338,7 @@ enum IMAPFetchParser {
             date: date(response),
             isRead: !response.flags.contains(.unread),
             isStarred: response.flags.contains(.starred),
-            labelIDs: [],
+            labelIDs: labelIDs,
             // NOT `!attachments.isEmpty` — see `IMAPBodyPart.carriesAttachment` for
             // why the paperclip and the saveable-file list are different questions,
             // and for the Gmail divergence that answering them the same way caused.

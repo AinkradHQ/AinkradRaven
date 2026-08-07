@@ -50,7 +50,7 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
             MailAttachment(attachmentID: "2", filename: "forwarded-a.eml",
                            mimeType: "message/rfc822", size: 420),
         ])
-        let message = IMAPFetchParser.message(response, id: "u205", threadID: "t205")
+        let message = IMAPFetchParser.message(response, id: "u205", threadID: "t205", labelIDs: ["INBOX"])
         #expect(message.hasAttachments)
         #expect(message.attachments == structure.attachments)
     }

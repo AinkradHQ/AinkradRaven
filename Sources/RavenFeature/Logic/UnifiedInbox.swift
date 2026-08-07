@@ -49,10 +49,32 @@ public enum UnifiedInbox {
     /// `InboxFilter` applied to the merge, so the Inbox list, `search_mail` and
     /// `unread_summary` agree about which threads count as inbox mail across
     /// accounts exactly as they already agreed within one account.
+    /// Each account's rows are filtered through **that account's** vocabulary, not
+    /// through one shared default. `InboxFilter.apply`'s default argument is
+    /// `defaultLabelVocabulary`, i.e. Gmail's, and calling it once over a merged
+    /// multi-account list silently applied Gmail's spelling to every backend — the
+    /// exact "a fallback is exactly the bug" case `LabelVocabularyResolver` was
+    /// built to prevent, reached through the one call site never wired to it. An
+    /// IMAP account whose inbox mailbox is not literally named `INBOX` had every
+    /// thread filtered out of a list that reported them as synced.
+    ///
+    /// An account the resolver refuses (`nil` — an unknown account, an
+    /// `.unsupported` backend, an IMAP account whose mailbox directory was never
+    /// persisted) contributes **nothing** rather than falling back. That is the
+    /// same refusal the mutation path makes, for the same reason: this build cannot
+    /// say which of that account's threads are in its inbox, and showing an
+    /// arbitrary subset is worse than showing none while the account's own settings
+    /// row explains it is not set up.
     @MainActor
     public static func inbox(store: MailStore, accountIDs: [String]? = nil,
                             months: [String]) -> [ThreadSummary] {
-        InboxFilter.apply(summaries(store: store, accountIDs: accountIDs, months: months))
+        let ids = accountIDs ?? store.accounts().map(\.id)
+        return ids.flatMap { accountID -> [ThreadSummary] in
+            guard let vocabulary = LabelVocabularyResolver.vocabulary(
+                forAccountID: accountID, store: store) else { return [] }
+            return InboxFilter.apply(store.summaries(accountID: accountID, months: months),
+                                     vocabulary: vocabulary)
+        }.sorted(by: isBefore)
     }
 
     /// Merges already-loaded rows from several accounts — used where the rows

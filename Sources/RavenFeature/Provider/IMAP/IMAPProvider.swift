@@ -121,10 +121,33 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
     /// The mailboxes a walk covers, in a deterministic order with `INBOX` first.
     ///
     /// `\Noselect` containers are excluded because they cannot be `SELECT`ed at
-    /// all; nothing else is, so a user's own folders are walked like any other and
-    /// mail outside the inbox is not invisible.
+    /// all. So is `\All` — Gmail's "All Mail" — and that exclusion needs its own
+    /// justification, because it is the only place this build declines to read
+    /// mail a server offered.
+    ///
+    /// `\All` is not a folder. RFC 6154 defines it as a *view* containing every
+    /// message in the account regardless of where it actually lives, so walking it
+    /// re-fetches the entire mailbox a second time: a real account with 281
+    /// messages reported over 600 synced, which is the symptom that found this.
+    /// The cost is not only the doubled fetch. The walk pages one mailbox at a
+    /// time, so `INBOX` and `All Mail` produce the SAME thread id from two
+    /// separate `assemble` calls, and the second `upsertThread` replaces the
+    /// first — labelling an inbox thread `All Mail`, i.e. archived, and hiding it
+    /// from the list it belongs in.
+    ///
+    /// The deliberate consequence: a message that exists ONLY in `\All` — archived,
+    /// carrying no other label — is not synced. That is not a gap being introduced
+    /// here, it is the contract `RavenRuntime.searchArchive` already states: mail
+    /// outside the synced window is reached by an explicit "search all mail" act
+    /// and presented as its own result list, never blended into a view whose whole
+    /// promise is "the last 90 days".
+    ///
+    /// `\Archive` is NOT excluded — a real archive folder holds messages that are
+    /// nowhere else, which is exactly the opposite of `\All`. The two share a
+    /// canonical `.archive` flag, so the test is on the server's own attribute.
     static func walkable(_ directory: IMAPMailboxDirectory) -> [IMAPMailbox] {
-        directory.mailboxes.filter(\.isSelectable).sorted { left, right in
+        directory.mailboxes.filter { $0.isSelectable && !$0.isEverythingView }
+            .sorted { left, right in
             let leftInbox = left.flag == .inbox, rightInbox = right.flag == .inbox
             if leftInbox != rightInbox { return leftInbox }
             return left.name < right.name

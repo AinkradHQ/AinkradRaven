@@ -45,6 +45,22 @@ public struct IMAPMailbox: Equatable, Sendable, Codable {
     /// — but must never be `SELECT`ed.
     public var isSelectable: Bool { !attributes.contains { $0.caseInsensitiveCompare("\\Noselect") == .orderedSame } }
 
+    /// Whether this is RFC 6154's `\All` — a *view* of every message in the
+    /// account rather than a place messages live. Gmail's "All Mail" is the one
+    /// everyone meets.
+    ///
+    /// Tested on the server's own attribute, NOT on `flag == .archive`, and the
+    /// difference is the whole point: `\All` and `\Archive` both resolve to the
+    /// canonical `.archive`, but a real archive folder holds mail that is nowhere
+    /// else while `\All` holds a second copy of everything. Keying on the flag
+    /// would exclude the wrong one and lose genuinely archived mail.
+    ///
+    /// `IMAPProvider.walkable` is the only reader; see it for why a sync skips
+    /// this mailbox and what that deliberately costs.
+    public var isEverythingView: Bool {
+        attributes.contains { $0.caseInsensitiveCompare("\\All") == .orderedSame }
+    }
+
     /// Whether the canonical meaning came from a `SPECIAL-USE` attribute rather
     /// than from a name heuristic. Recorded because the two have very different
     /// confidence and a mis-heuristic that moves mail into the wrong folder is
