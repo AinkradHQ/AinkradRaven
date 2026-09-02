@@ -246,7 +246,40 @@ extension RavenRuntime {
         guard let engine = syncEngines[accountID] else { return }
         setSyncState(engine.state, for: accountID)
         setTruncated(engine.lastBackfillTruncated, for: accountID)
+        reportSyncState(engine.state, accountID: accountID)
         model.reload()
+    }
+
+    /// Mirrors a failure into the notification feed.
+    ///
+    /// Only `.failed` reports: `.idle`, `.delta` and `.backfilling` are the
+    /// normal cycle and would be pure noise. Reported from HERE, the one place
+    /// state is mirrored, rather than from each failure site — the engine has
+    /// several and a missed one is a failure the user never learns about.
+    private func reportSyncState(_ state: SyncState, accountID: String) {
+        guard case .failed(let reason) = state else {
+            lastReportedSyncFailure[accountID] = nil
+            return
+        }
+        // `mirrorSyncEngineState` is called on every change, and a failed
+        // account stays failed until it recovers, so without this the same
+        // failure would be re-emitted on every tick.
+        guard lastReportedSyncFailure[accountID] != reason else { return }
+        lastReportedSyncFailure[accountID] = reason
+
+        let label = accountLabel(accountID)
+        if reason.contains("notAuthenticated") {
+            reporter.authenticationFailed(accountLabel: label)
+        } else {
+            reporter.syncFailed(accountLabel: label, reason: reason)
+        }
+    }
+
+    /// The account's display name, falling back to its id — a notification that
+    /// says "Could not sync" with no idea which account is barely a
+    /// notification at all.
+    private func accountLabel(_ accountID: String) -> String {
+        store.accounts().first { $0.id == accountID }?.displayName ?? accountID
     }
 
     /// Test-only seam: attaches an arbitrary `MailProvider` to the router
@@ -269,7 +302,12 @@ extension RavenRuntime {
         providers.attach(provider, accountID: accountID)
         let engine = SyncEngine(store: store, provider: provider, accountID: accountID)
         engine.onChange = { [weak self] in self?.mirrorSyncEngineState(accountID: accountID) }
-        engine.onNewThreads = { [weak self] threadIDs in self?.applyRules(threadIDs: threadIDs) }
+        engine.onNewThreads = { [weak self] threadIDs in
+            guard let self else { return }
+            self.applyRules(threadIDs: threadIDs)
+            self.reporter.mailArrived(count: threadIDs.count,
+                                      accountLabel: self.accountLabel(accountID))
+        }
         syncEngines[accountID] = engine
         // Additive: the poll loop above is untouched and keeps ticking for this
         // account whether or not an IDLE connection is established. See

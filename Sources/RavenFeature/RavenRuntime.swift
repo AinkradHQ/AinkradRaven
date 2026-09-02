@@ -61,6 +61,11 @@ import AinkradAppKit
     /// documentation reads `host.documents`/`host.log` through it. Still
     /// invisible outside `RavenFeature`.
     let host: HostServices
+    /// Raven's notification vocabulary.
+    let reporter: RavenSignalReporter
+    /// The last failure reason reported per account, so a persistently failed
+    /// account is reported once rather than on every state mirror.
+    var lastReportedSyncFailure: [String: String] = [:]
     /// The only construction site for any `MailProvider`, and the credential
     /// path with it — see `ProviderFactory`. Replaces M0's single
     /// `auth: GmailAuth?`, which made the runtime a Gmail-specific object.
@@ -191,6 +196,7 @@ import AinkradAppKit
         self.host = host
         // Built before anything that captures `self` (the outbox wake below),
         // because a `let` must be initialized before `self` may escape.
+        self.reporter = RavenSignalReporter(signals: host.signals)
         self.providerFactory = ProviderFactory(host: host)
         let store = DocumentMailStore(documents: host.documents)
         self.store = store
