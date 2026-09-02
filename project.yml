@@ -17,7 +17,7 @@ packages:
     # EXACTLY the revision the host's build checks out. Verify, never copy:
     #   git -C ../Ainkrad/build/SourcePackages/checkouts/AinkradAppKit rev-parse HEAD
     # Generation 9: HostServices.signals. Never ahead of the host's own pin.
-    revision: 45e6848c28b784d7a696f4b0a01a30313bcfff01
+    revision: 9b10f58b3f4fb2845ebdf0ecb10e579c8dfca4bb
 targets:
   RavenFeature:
     type: library.static
