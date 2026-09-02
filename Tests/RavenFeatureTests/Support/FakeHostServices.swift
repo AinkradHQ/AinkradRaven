@@ -80,6 +80,9 @@ final class FakeHostServices: HostServices {
     let log: PluginLogger = FakeLogger()
     let apps: PluginAppLauncher = FakeAppLauncher()
     let presentation: PluginPresentationControl = FakePresentationControl()
+    /// Generation 9. A no-op: these tests are about Raven, not about what the
+    /// host does with an event.
+    let signals: PluginSignalEmitter = NoopSignalEmitter()
     let context: PluginContextRegistry
     let actions: AgentActionProvider
 
