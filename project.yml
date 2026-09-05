@@ -14,9 +14,17 @@ settings:
 packages:
   AinkradAppKit:
     url: https://github.com/AhmedMElhalaby/AinkradAppKit
-    # EXACTLY the revision the host's build checks out. Verify, never copy:
+    # At or BEHIND the revision the host's build checks out, never ahead.
+    # Verify, never copy:
     #   git -C ../Ainkrad/build/SourcePackages/checkouts/AinkradAppKit rev-parse HEAD
-    # Generation 9: HostServices.signals. Never ahead of the host's own pin.
+    # Generation 9: HostServices.signals.
+    #
+    # "EXACTLY" is what this said, and it was wrong: the host advances whenever
+    # the SDK gains something it needs, and plugins lag until they have a reason
+    # to move. Behind is not automatically safe either — a public declaration
+    # removed, or merely given a defaulted parameter, re-mangles its symbol and
+    # kills `Bundle.load()` for a plugin still linking the old one. See
+    # AinkradQuest's project.yml for the full rule and the check commands.
     revision: 9b10f58b3f4fb2845ebdf0ecb10e579c8dfca4bb
 targets:
   RavenFeature:
