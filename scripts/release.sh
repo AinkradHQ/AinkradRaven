@@ -58,9 +58,21 @@ JSON
 # from -- so the uploaded zip and its sha256 can come from code the tag does
 # not contain. That shipped: the host's v0.17.1 tag landed on the previous
 # release's commit while its asset held 79 newer commits.
-gh release create "$VERSION" dist/ainkrad-plugin.json "dist/${ID}.bundle.zip" \
-  --target "$(git rev-parse HEAD)" \
-  --title "$NAME $VERSION" --notes "$NAME $VERSION"
+# Create, or repair an existing release by re-uploading its assets.
+#
+# `gh release create` fails outright on an existing tag, and under `set -e`
+# that aborts the run BEFORE the catalog update below -- so a release that
+# got as far as the tag but not the catalog could never be fixed by
+# re-running the thing that made it. That is exactly what happened to
+# Leyline v0.7.1. A re-run must be able to finish a half-finished release.
+if gh release view "$VERSION" >/dev/null 2>&1; then
+  echo "Release $VERSION exists - re-uploading assets."
+  gh release upload "$VERSION" dist/ainkrad-plugin.json "dist/${ID}.bundle.zip" --clobber
+else
+  gh release create "$VERSION" dist/ainkrad-plugin.json "dist/${ID}.bundle.zip" \
+    --target "$(git rev-parse HEAD)" \
+    --title "$NAME $VERSION" --notes "$NAME $VERSION"
+fi
 echo "Released $VERSION (sha256 $SHA)"
 
 # The GitHub release is NOT the release. The storefront reads catalog.json, and
