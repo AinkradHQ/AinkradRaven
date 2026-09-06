@@ -65,7 +65,10 @@ extension RavenRuntime {
         syncTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.syncOnce()
-                try? await Task.sleep(for: .seconds(120))
+                // Jitter: `Task.sleep` has no tolerance, so spread the wakeup
+                // over a 20s window rather than waking every client on the
+                // same 120s boundary.
+                try? await Task.sleep(for: .seconds(120 + Double.random(in: 0...20)))
             }
         }
     }
