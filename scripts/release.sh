@@ -38,6 +38,41 @@ BUNDLE="build/Build/Products/Release/RavenPlugin.bundle"
 rm -rf dist && mkdir -p dist
 # Archive so the extracted tree contains RavenPlugin.bundle at its root
 # (PluginInstaller accepts root-is-bundle and .bundle-child layouts).
+# --- sign ------------------------------------------------------------------
+# Signed BEFORE zipping, deliberately: the catalog verifies the sha256 of the
+# uploaded zip, so signing after packaging would ship an unsigned bundle whose
+# checksum still matched perfectly.
+#
+# WHY this is not optional any more. The host's
+# `PluginTrust.policyForCurrentBuild()` demands a Developer-ID signature on
+# every plugin as soon as THE HOST ITSELF carries one. While the host was
+# ad-hoc it fell back to `DevModeSignaturePolicy` and accepted anything --
+# which is why these scripts never signed. A Developer-ID host plus an ad-hoc
+# plugin means the plugin is REJECTED before `Bundle.load()`, and Ainkrad looks
+# like it simply has no apps.
+if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+  echo "> Signing with: ${SIGN_IDENTITY}"
+  # Inside-out: nested code-bearing bundles first, then the plugin itself.
+  # `--deep` is intentionally avoided (Apple discourages it).
+  while IFS= read -r -d '' item; do
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$item"
+  done < <(find "$BUNDLE/Contents" \( -name '*.dylib' -o -name '*.framework' -o -name '*.bundle' \) -print0 2>/dev/null)
+  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$BUNDLE"
+  codesign --verify --strict --verbose=2 "$BUNDLE"
+  # Assert it is a DEVELOPER ID signature -- not ad-hoc, not Apple Development.
+  # The host checks this exact authority, so a wrong identity here ships a
+  # plugin that installs cleanly and then never loads, with no error a user
+  # could act on.
+  codesign -dv --verbose=4 "$BUNDLE" 2>&1 | grep -q 'Authority=Developer ID Application:' || {
+    echo "error: ${BUNDLE} is not Developer-ID signed -- the host will reject it" >&2
+    exit 1
+  }
+else
+  echo "warning: SIGN_IDENTITY is unset -- packaging an UNSIGNED plugin." >&2
+  echo "         A Developer-ID-signed host REJECTS unsigned plugins, so this" >&2
+  echo "         build will appear to install and then never load." >&2
+fi
+
 /usr/bin/ditto -c -k --keepParent "$BUNDLE" "dist/${ID}.bundle.zip"
 SHA="$(shasum -a 256 "dist/${ID}.bundle.zip" | awk '{print $1}')"
 
