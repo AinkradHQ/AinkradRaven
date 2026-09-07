@@ -215,7 +215,11 @@ public enum ComposeAdvice {
         case 0: return ""
         case 1: return labels[0]
         case 2: return "\(labels[0]) and \(labels[1])"
-        default: return labels.dropLast().joined(separator: ", ") + " and " + labels.last!
+        default:
+            // `default:` here implies count >= 3, so `labels.last` cannot be nil —
+            // made total anyway so no future reader has to re-derive that.
+            guard let last = labels.last else { return "" }
+            return labels.dropLast().joined(separator: ", ") + " and " + last
         }
     }
 }

@@ -182,6 +182,10 @@ enum SMIME {
             var result: CFTypeRef?
             guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
                   let ref = result else { return nil }
+            guard CFGetTypeID(ref) == SecIdentityGetTypeID() else {
+                Log.auth.error("Keychain returned a non-identity for an identity query")
+                return nil
+            }
             return (ref as! SecIdentity)
         }
         guard !email.isEmpty else { return nil }
