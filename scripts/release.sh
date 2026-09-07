@@ -63,10 +63,19 @@ if [[ -n "${SIGN_IDENTITY:-}" ]]; then
   # The host checks this exact authority, so a wrong identity here ships a
   # plugin that installs cleanly and then never loads, with no error a user
   # could act on.
-  codesign -dv --verbose=4 "$BUNDLE" 2>&1 | grep -q 'Authority=Developer ID Application:' || {
-    echo "error: ${BUNDLE} is not Developer-ID signed -- the host will reject it" >&2
-    exit 1
-  }
+  # Captured into a variable rather than piped into `grep -q`. Under
+  # `set -o pipefail` that pipeline FAILS EVEN WHEN THE MATCH SUCCEEDS: grep -q
+  # exits the instant it matches, SIGPIPEs codesign, and pipefail reports the
+  # dead writer. The first version of this check did exactly that and rejected
+  # a correctly-signed bundle.
+  SIG_DESC="$(codesign -dv --verbose=4 "$BUNDLE" 2>&1 || true)"
+  case "$SIG_DESC" in
+    *"Authority=Developer ID Application:"*) ;;
+    *)
+      echo "error: ${BUNDLE} is not Developer-ID signed -- the host will reject it" >&2
+      exit 1
+      ;;
+  esac
 else
   echo "warning: SIGN_IDENTITY is unset -- packaging an UNSIGNED plugin." >&2
   echo "         A Developer-ID-signed host REJECTS unsigned plugins, so this" >&2
