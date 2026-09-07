@@ -94,7 +94,7 @@ API_VERSION="$(/usr/libexec/PlistBuddy -c 'Print AinkradAPIVersion' "$BUNDLE/Con
 cat > dist/ainkrad-plugin.json <<JSON
 { "id": "$ID", "name": "$NAME", "icon": "$ICON", "description": "$DESC", "apiVersion": $API_VERSION, "sha256": "$SHA",
   "author": "Ahmed M. Elhalaby", "longDescription": $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$LONG_DESC"),
-  "links": [{ "title": "Source", "url": "https://github.com/AhmedMElhalaby/AinkradRaven" }] }
+  "links": [{ "title": "Source", "url": "https://github.com/AinkradHQ/AinkradRaven" }] }
 JSON
 
 # `--target` is NOT optional. Without it `gh release create` tags the
@@ -125,7 +125,7 @@ echo "Released $VERSION (sha256 $SHA)"
 # invisible in the app for three days because the catalog still served v0.6.0.
 # Updating the catalog is part of releasing, not a chore to remember afterwards.
 SOURCE_REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-CATALOG_REPO="AhmedMElhalaby/AinkradCatalog"
+CATALOG_REPO="AinkradHQ/AinkradCatalog"
 CATALOG_DIR="$(mktemp -d)"
 trap 'rm -rf "$CATALOG_DIR"' EXIT
 

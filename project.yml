@@ -13,7 +13,7 @@ settings:
     EAGER_LINKING: NO
 packages:
   AinkradAppKit:
-    url: https://github.com/AhmedMElhalaby/AinkradAppKit
+    url: https://github.com/AinkradHQ/AinkradAppKit
     # At or BEHIND the revision the host's build checks out, never ahead.
     # Verify, never copy:
     #   git -C ../Ainkrad/build/SourcePackages/checkouts/AinkradAppKit rev-parse HEAD
