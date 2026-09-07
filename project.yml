@@ -25,7 +25,7 @@ packages:
     # removed, or merely given a defaulted parameter, re-mangles its symbol and
     # kills `Bundle.load()` for a plugin still linking the old one. See
     # AinkradQuest's project.yml for the full rule and the check commands.
-    revision: 6cd1599a602e0a7d20f5d9d87b08c547417f3a4e
+    revision: 91ed630a24dc187f8988c104d16a640d3ee7562c
 targets:
   RavenFeature:
     type: library.static
