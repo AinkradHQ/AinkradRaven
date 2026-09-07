@@ -11,6 +11,12 @@ enum RFC2047 {
     /// `=?charset?encoding?` delimiters.
     private static let maxEncodedWordLength = 75
 
+    /// Compiled once. The pattern is a compile-time constant and cannot fail to
+    /// compile, so `try!` here is total — but building an NSRegularExpression on
+    /// every call is not free, and `decode` runs per header.
+    private static let encodedWordRegex = try! NSRegularExpression(
+        pattern: "=\\?UTF-8\\?B\\?([A-Za-z0-9+/=]*)\\?=", options: [.caseInsensitive])
+
     /// Encodes `text` as one or more folded encoded-words if it contains any
     /// non-ASCII byte; returns `text` unchanged if it is pure ASCII (encoding
     /// an ASCII-only value is legal but needlessly ugly in some clients).
@@ -62,10 +68,8 @@ enum RFC2047 {
     /// round-trips; not required by any send path today.
     static func decode(_ header: String) -> String {
         guard header.contains("=?") else { return header }
-        let regex = try! NSRegularExpression(
-            pattern: "=\\?UTF-8\\?B\\?([A-Za-z0-9+/=]*)\\?=", options: [.caseInsensitive])
         let ns = header as NSString
-        let matches = regex.matches(in: header, range: NSRange(location: 0, length: ns.length))
+        let matches = Self.encodedWordRegex.matches(in: header, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return header }
 
         var pieces: [String] = []
