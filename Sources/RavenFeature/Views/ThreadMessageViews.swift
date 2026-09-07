@@ -308,7 +308,11 @@ struct AttachmentChipRow: View {
         panel.nameFieldStringValue = suggestedName
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            try? data.write(to: url)
+            do {
+                try data.write(to: url)
+            } catch {
+                Log.mime.error("Failed to write attachment (\(data.count, privacy: .public) bytes) to \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 }
