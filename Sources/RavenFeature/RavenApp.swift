@@ -40,7 +40,7 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
     }
 
     public static func makeRootView(host: HostServices) -> AnyView {
-        AnyView(RavenShell(runtime: runtime(host: host)))
+        makeRootView(host: host, mode: .advanced)
     }
 
     /// The window's own background fill — the hook that makes the title bar
@@ -133,5 +133,18 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
 extension RavenApp: AinkradAppTeardown {
     public static func teardown(instance: PluginInstanceID) {
         runtimes.remove(instance)?.teardown()
+    }
+}
+
+/// Generation 11: Raven's basic mode reads mail. Composing is advanced.
+extension RavenApp: AinkradAppModes {
+    public static func makeRootView(host: HostServices, mode: PluginMode) -> AnyView {
+        switch mode {
+        case .basic:    return AnyView(RavenBasicView(runtime: runtime(host: host)))
+        case .advanced: return AnyView(RavenShell(runtime: runtime(host: host)))
+        // Resilient enum: fall back to advanced, never to a stripped view for a
+        // mode this build does not understand.
+        @unknown default: return AnyView(RavenShell(runtime: runtime(host: host)))
+        }
     }
 }
