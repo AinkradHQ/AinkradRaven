@@ -55,6 +55,12 @@ public struct RavenShell: View {
         GeometryReader { proxy in
             split(availableWidth: proxy.size.width)
         }
+        // Pick up a Reply pressed in BASIC mode. Basic has no composer, so it
+        // escalates and leaves the request on the runtime — the one object both
+        // modes share. Without this the escalation silently dropped it.
+        .onAppear {
+            if let pending = runtime.takePendingCompose() { composing = pending }
+        }
         // Sage's `open_compose` action lands a draft in the publisher; raising
         // the overlay is the shell's job because the shell owns `composing`.
         // `.new`, not a reply: an agent-drafted message carries its own

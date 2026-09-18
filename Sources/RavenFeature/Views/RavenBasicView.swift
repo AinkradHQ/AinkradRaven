@@ -41,13 +41,16 @@ struct RavenBasicView: View {
                 }
                 .padding(.horizontal, AinkradSpacing.sm)
                 ThreadSurface(model: runtime.model, runtime: runtime,
-                              // Reply escalates rather than opening a composer
-                              // basic has no room for. The context is dropped
-                              // deliberately: advanced re-derives it from the
-                              // selected thread, and carrying a half-built
-                              // ComposeContext across a mode switch would be a
-                              // second source of truth for the same thing.
-                              onCompose: { _ in setPaneMode(.advanced) })
+                              // Reply escalates, and CARRIES the request. An
+                              // earlier version dropped the context on the
+                              // claim that advanced would re-derive it — it
+                              // does not: `RavenShell.composing` starts nil, so
+                              // Reply landed you in the advanced inbox with no
+                              // composer and nothing to say why.
+                              onCompose: { context in
+                                  runtime.pendingCompose = context
+                                  setPaneMode(.advanced)
+                              })
                     .frame(maxWidth: .infinity)
             }
         }
