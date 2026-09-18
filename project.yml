@@ -27,7 +27,8 @@ packages:
     # AinkradQuest's project.yml for the full rule and the check commands.
     # c315110: generation 11 -- Basic Mode. NOT releasable until an installed
     # host is generation 11.
-    revision: c315110481461b1b2f14c129401b72d25107aab3
+    # 43868c9: AinkradSurfaceSettings -- the shared Open as / Open in rows.
+    revision: 43868c968b8c4111f7cfa7d05fd903fcc9277d63
 targets:
   RavenFeature:
     type: library.static

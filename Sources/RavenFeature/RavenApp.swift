@@ -88,7 +88,8 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
     /// surface cannot silently lose a setting the catalog has — but the catalog
     /// is the real surface, and this is what a generation-7 host gets.
     public static func makeSettingsView(host: HostServices) -> AnyView {
-        AnyView(RavenSettingsView(runtime: runtime(host: host)))
+        AnyView(RavenSettingsView(runtime: runtime(host: host),
+                                  presentation: host.presentation, modeControl: host.mode))
     }
 
     /// Raven's settings published as descriptors so the host can index them,
