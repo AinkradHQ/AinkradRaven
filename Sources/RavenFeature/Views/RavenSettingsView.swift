@@ -22,6 +22,8 @@ import AinkradAppKitUI
 /// setting, it gains it in the group view, and both surfaces get it.
 public struct RavenSettingsView: View {
     let runtime: RavenRuntime
+    let presentation: any PluginPresentationControl
+    let modeControl: any PluginModeControl
 
     /// Collapsed by default: with credentials baked into the app (the shipped
     /// case) there is nothing in here at all, and even without them it is a
@@ -34,7 +36,13 @@ public struct RavenSettingsView: View {
     @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradTypography) private var typo
 
-    public init(runtime: RavenRuntime) { self.runtime = runtime }
+    public init(runtime: RavenRuntime,
+                presentation: any PluginPresentationControl,
+                modeControl: any PluginModeControl) {
+        self.runtime = runtime
+        self.presentation = presentation
+        self.modeControl = modeControl
+    }
 
     public var body: some View {
         ScrollView {
@@ -43,6 +51,17 @@ public struct RavenSettingsView: View {
                 // first for the same reason: it is the only thing in settings
                 // that can mean a message did not go out.
                 OutboxAttentionGroup(runtime: runtime)
+                // Below the attention queue, above accounts: nothing outranks
+                // "a message did not go out", but how Raven opens outranks the
+                // per-account detail.
+                AinkradSettingsPanel(
+                    title: "Surface",
+                    hint: "How the host opens Raven, and how much of it you get."
+                ) {
+                    AinkradSurfaceSettings(appName: "Raven",
+                                           presentation: presentation,
+                                           mode: modeControl)
+                }
                 AinkradSettingsPanel(
                     title: "Accounts",
                     hint: "Each connected mailbox, its sync state, and the signature appended "

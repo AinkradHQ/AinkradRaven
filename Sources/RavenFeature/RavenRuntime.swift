@@ -57,6 +57,26 @@ import AinkradAppKit
     /// See `RavenSettingsDraft`.
     public let settingsDraft = RavenSettingsDraft()
 
+    /// A compose the user asked for in BASIC mode, waiting for advanced to
+    /// pick it up.
+    ///
+    /// Basic has no composer, so Reply escalates to advanced. Without this the
+    /// escalation LOST the request: `RavenShell.composing` starts nil, so you
+    /// pressed Reply and got the advanced inbox with no composer — a button
+    /// that visibly did nothing.
+    ///
+    /// Lives on the runtime because the runtime is the one thing both modes
+    /// share; the two root views do not outlive each other. Consumed once by
+    /// whichever shell mounts next, the same shape as the host's own pending
+    /// launch payload.
+    public var pendingCompose: ComposeContext?
+
+    /// Takes and clears the pending compose, if any.
+    public func takePendingCompose() -> ComposeContext? {
+        defer { pendingCompose = nil }
+        return pendingCompose
+    }
+
     /// Internal, not private, because every extension listed in this type's
     /// documentation reads `host.documents`/`host.log` through it. Still
     /// invisible outside `RavenFeature`.

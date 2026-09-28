@@ -6,7 +6,7 @@
 # paste a client id/secret.
 #
 # Both the source JSON and the generated Swift file are gitignored — see
-# .gitignore and README.md. This script is deliberately run BEFORE
+# .gitignore and the workspace doc Docs/Reference/ainkradraven-readme.md. This script is deliberately run BEFORE
 # `xcodegen generate` (from the Makefile's `generate` target, not as an Xcode
 # build phase): xcodegen's `sources:` list is captured as whatever files
 # exist in Sources/RavenFeature at generate time, so the generated file has

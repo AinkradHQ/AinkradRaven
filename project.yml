@@ -25,7 +25,10 @@ packages:
     # removed, or merely given a defaulted parameter, re-mangles its symbol and
     # kills `Bundle.load()` for a plugin still linking the old one. See
     # AinkradQuest's project.yml for the full rule and the check commands.
-    revision: 91ed630a24dc187f8988c104d16a640d3ee7562c
+    # c315110: generation 11 -- Basic Mode. NOT releasable until an installed
+    # host is generation 11.
+    # 43868c9: AinkradSurfaceSettings -- the shared Open as / Open in rows.
+    revision: 8682286ead7081a57e2a1e10ae8b294fdbad9b09
 targets:
   RavenFeature:
     type: library.static

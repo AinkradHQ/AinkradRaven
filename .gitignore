@@ -11,7 +11,7 @@ oauth-client*.json
 
 # Generated from Config/oauth-client.json by
 # scripts/generate-oauth-credentials.sh — never committed, since a real
-# build bakes the actual client secret into it. See README.md.
+# build bakes the actual client secret into it. See the workspace doc Docs/Reference/ainkradraven-readme.md.
 Sources/RavenFeature/Generated/BakedOAuthCredentials.swift
 
 # Belt-and-braces: raw (unredacted) Gmail fixture captures live at
