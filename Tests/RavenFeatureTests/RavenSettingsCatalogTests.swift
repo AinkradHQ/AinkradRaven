@@ -34,7 +34,19 @@ import AinkradAppKit
     @Test("The five named groups are present, in tab order")
     func groupsAreTheOnesSpecified() {
         #expect(page().groups.map(\.title)
-                == ["Accounts", "Sending", "Rules", "Privacy", "Transparency"])
+                == ["Accounts", "Surface", "Sending", "Rules", "Privacy", "Transparency"])
+    }
+
+    @Test("Open as and Open in are declared, so Raven can be set to open in basic mode")
+    func surfaceRowsAreDeclared() {
+        // The regression: `RavenSettingsView` had these rows, but the host
+        // renders THIS catalog, which did not — Raven had no Open in at all.
+        let surface = page().groups.first { $0.title == "Surface" }
+        let labels = surface?.fields.map(\.label) ?? []
+        #expect(labels == ["Open as", "Open in"])
+        for field in surface?.fields ?? [] {
+            if case .select = field.kind {} else { Issue.record("\(field.label) is not a select") }
+        }
     }
 
     @Test("No group is titled Appearance, because the host appends its own")

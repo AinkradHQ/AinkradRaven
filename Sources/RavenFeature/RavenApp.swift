@@ -105,7 +105,8 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
     public static func settingsCatalog(host: HostServices) -> SettingsPage? {
         let runtime = runtime(host: host)
         return RavenSettingsCatalog.page(runtime: runtime, draft: runtime.settingsDraft,
-                                        theme: host.theme)
+                                        theme: host.theme,
+                                        presentation: host.presentation, mode: host.mode)
     }
 
     public static func makeMCPServer(host: HostServices) -> MCPAppServer {
