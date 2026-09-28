@@ -28,34 +28,29 @@ import AinkradAppKit
         // `SettingsPageView.usesTabs` is the host-side rule, so assert against
         // it rather than against a copy of the number.
         #expect(SettingsPageView.usesTabs(page: page))
-        #expect(page.groups.count >= 5)
+        #expect(page.groups.count >= 4)
     }
 
-    @Test("The five named groups are present, in tab order")
+    @Test("The named groups are present, in tab order")
     func groupsAreTheOnesSpecified() {
         #expect(page().groups.map(\.title)
-                == ["Accounts", "Surface", "Sending", "Rules", "Privacy", "Transparency"])
+                == ["Accounts", "Sending", "Rules", "Privacy", "Appearance"])
     }
 
-    @Test("Open as and Open in are declared, so Raven can be set to open in basic mode")
-    func surfaceRowsAreDeclared() {
-        // The regression: `RavenSettingsView` had these rows, but the host
-        // renders THIS catalog, which did not — Raven had no Open in at all.
-        let surface = page().groups.first { $0.title == "Surface" }
-        let labels = surface?.fields.map(\.label) ?? []
-        #expect(labels == ["Open as", "Open in"])
-        for field in surface?.fields ?? [] {
-            if case .select = field.kind {} else { Issue.record("\(field.label) is not a select") }
-        }
+    /// Open as / Open in come from the host now, at the top of the Appearance
+    /// tab it builds; a Surface group here would be a second copy.
+    @Test("No Surface group — the host owns how Raven opens")
+    func noSurfaceGroup() {
+        #expect(!page().groups.contains { $0.title == "Surface" })
+        #expect(!page().allFields.contains { $0.label == "Open as" || $0.label == "Open in" })
     }
 
-    @Test("No group is titled Appearance, because the host appends its own")
-    func noDuplicateAppearanceTab() {
-        // `AppSettingsCatalog` appends a host-owned "Appearance" group (its
-        // per-app blur toggle) to every plugin page. A group of ours with the
-        // same title becomes a second identically-labelled tab, which is
-        // unnavigable — hence "Transparency".
-        #expect(!page().groups.contains { $0.title == "Appearance" })
+    /// Titled "Appearance" so the host MERGES it into its own Appearance tab
+    /// (one tab, not two); the opacity slider is its only row.
+    @Test("The opacity slider is Raven's Appearance group")
+    func opacityIsTheAppearanceGroup() {
+        let appearance = page().groups.first { $0.title == "Appearance" }
+        #expect(appearance?.fields.map(\.label) == ["Surface opacity"])
     }
 
     @Test("Group titles are unique, so every tab is distinguishable")
