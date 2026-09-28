@@ -61,7 +61,9 @@ enum RavenSettingsCatalog {
     /// The declared groups, in tab order. Five of them, so the host's tab bar
     /// engages with room to spare even before it appends its own sixth.
     static func page(runtime: RavenRuntime, draft: RavenSettingsDraft,
-                     theme: HostTheme) -> SettingsPage {
+                     theme: HostTheme,
+                     presentation: any PluginPresentationControl,
+                     mode: any PluginModeControl) -> SettingsPage {
         SettingsPage(
             // `path`, `title`, `icon`, `group`, `order` and `appID` are all
             // overridden by `AppSettingsCatalog` (it uses the registered app's
@@ -75,6 +77,7 @@ enum RavenSettingsCatalog {
             order: 0,
             groups: [
                 accounts(runtime: runtime, draft: draft, theme: theme),
+                surface(presentation: presentation, mode: mode),
                 sending(runtime: runtime),
                 rules(runtime: runtime, theme: theme),
                 privacy(runtime: runtime, theme: theme),
@@ -364,6 +367,53 @@ enum RavenSettingsCatalog {
     /// environment rather than the one this plugin was given. In practice those
     /// are usually the same theme, which is exactly what would make the
     /// omission ship unnoticed and then break the day they diverge.
+    // MARK: Surface
+
+    /// Open as / Open in. `RavenSettingsView` always had them; this catalog —
+    /// the surface the host actually renders — did not, so Raven was the one
+    /// app with no way to choose basic mode. After Accounts, not before it:
+    /// the attention queue is Accounts' first field and must stay first.
+    ///
+    /// Declared fields, not the kit view in a `.custom`, with the same labels
+    /// and help as the host's `BuiltInSurfaceSettings` and `AinkradSurfaceSettings`.
+    private static func surface(presentation: any PluginPresentationControl,
+                                mode: any PluginModeControl) -> SettingsGroup {
+        let root = SettingsPath(["surface"])
+        return SettingsGroup(
+            path: root,
+            title: "Surface",
+            footerNote: "How the host opens Raven, and how much of it you get.",
+            fields: [
+                SettingsField(
+                    path: root.appending("presentation"),
+                    label: "Open as",
+                    help: "Applies the next time Raven opens.",
+                    keywords: ["pane", "overlay", "surface"],
+                    kind: .select(
+                        options: [SettingsOption(id: PluginPresentation.pane.rawValue, title: "Pane"),
+                                  SettingsOption(id: PluginPresentation.overlay.rawValue,
+                                                 title: "Overlay")],
+                        selection: Binding(
+                            get: { presentation.current.rawValue },
+                            set: { if let p = PluginPresentation(rawValue: $0) { presentation.set(p) } })),
+                    reset: { presentation.reset() }),
+                SettingsField(
+                    path: root.appending("mode"),
+                    label: "Open in",
+                    help: "Basic shows only what Raven is usually opened for. "
+                        + "Applies the next time it opens; you can switch a pane at any "
+                        + "time without changing this.",
+                    keywords: ["basic", "advanced", "mode", "simple"],
+                    kind: .select(
+                        options: [SettingsOption(id: PluginMode.basic.rawValue, title: "Basic"),
+                                  SettingsOption(id: PluginMode.advanced.rawValue, title: "Advanced")],
+                        selection: Binding(
+                            get: { mode.current.rawValue },
+                            set: { if let m = PluginMode(rawValue: $0) { mode.set(m) } })),
+                    reset: { mode.reset() })
+            ])
+    }
+
     private static func pane(_ view: some View, theme: HostTheme) -> AnyView {
         AnyView(view.ainkradHostTheme(theme))
     }
