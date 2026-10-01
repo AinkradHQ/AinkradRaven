@@ -88,4 +88,51 @@ import Foundation
             _ = try router.writableProvider(for: "am1")
         }
     }
+
+    @Test("concurrent reads share one import")
+    func concurrentReadsShareOneImport() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try writeEmlx(rfc822: """
+        Subject: Original\r
+        From: alice@example.com\r
+        Message-ID: <a1@example.com>\r
+        Date: Mon, 1 Jan 2024 10:00:00 +0000\r
+        \r
+        First message.\r
+        """, isRead: true, to: dir.appendingPathComponent("1.emlx"))
+
+        try writeEmlx(rfc822: """
+        Subject: Re: Original\r
+        From: bob@example.com\r
+        Message-ID: <a2@example.com>\r
+        In-Reply-To: <a1@example.com>\r
+        References: <a1@example.com>\r
+        Date: Mon, 1 Jan 2024 11:00:00 +0000\r
+        \r
+        Reply message.\r
+        """, isRead: false, to: dir.appendingPathComponent("2.emlx"))
+
+        let provider = AppleMailProvider(accountID: "am1", directory: dir)
+        try await withThrowingTaskGroup(of: (Int, Int).self) { group in
+            for i in 0..<32 {
+                if i % 2 == 0 {
+                    group.addTask {
+                        let page = try await provider.fetchThreads(since: .distantPast, pageToken: nil)
+                        return (page.threads.count, page.threads.first?.messages.count ?? -1)
+                    }
+                } else {
+                    group.addTask {
+                        let threads = try await provider.searchThreads(query: "original", limit: 10)
+                        return (threads.count, threads.first?.messages.count ?? -1)
+                    }
+                }
+            }
+            for try await (threadCount, messageCount) in group {
+                #expect(threadCount == 1)
+                #expect(messageCount == 2)
+            }
+        }
+    }
 }
