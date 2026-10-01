@@ -6,22 +6,23 @@ import Foundation
 /// transport to send or mutate through — so every write path refuses,
 /// gated by `capabilities`, exactly as `MailProviderRouter.writableProvider`
 /// expects of any `.readOnly` conformer.
-public final class AppleMailProvider: MailProvider, @unchecked Sendable {
-    public let accountID: String
-    public let capabilities: MailProviderCapabilities = .readOnly
+public actor AppleMailProvider: MailProvider {
+    public nonisolated let accountID: String
+    public nonisolated let capabilities: MailProviderCapabilities = .readOnly
 
     /// Built lazily on first use rather than in `init`: `AppleMailImporter`
     /// is `@MainActor` (it mirrors `SyncEngine`'s own actor-isolated progress
-    /// state), but `AppleMailProvider` itself is not — every `MailProvider`
-    /// conformer is plain `Sendable`, callable off the main actor — so
-    /// constructing the importer has to happen from an `async` context that
-    /// can hop, never from this `init`.
+    /// state), so constructing the importer has to happen from an `async`
+    /// context that can hop, never from this `init`.
     private let providedImporter: AppleMailImporter?
     private let directory: URL
-    /// The full imported+threaded state, cached after the first read so
-    /// repeated calls (`fetchThread`, `fetchBody`, `searchThreads`) don't
-    /// re-walk the directory. `nil` until `ensureImported()` runs once.
-    private var cachedThreads: [MailThread]?
+    /// The in-flight (or completed) import, shared by every concurrent read
+    /// so repeated calls (`fetchThread`, `fetchBody`, `searchThreads`) don't
+    /// re-walk the directory. `nil` until the first read creates it, and
+    /// reset to `nil` on error so a failed import is retried on next call.
+    /// Actor isolation alone would still allow two imports via reentrancy;
+    /// awaiting one cached task prevents that.
+    private var importTask: Task<[MailThread], Error>?
 
     public init(accountID: String, directory: URL, importer: AppleMailImporter? = nil) {
         self.accountID = accountID
@@ -30,16 +31,37 @@ public final class AppleMailProvider: MailProvider, @unchecked Sendable {
     }
 
     private func ensureImported() async throws -> [MailThread] {
-        if let cachedThreads { return cachedThreads }
-        let importer: AppleMailImporter
-        if let providedImporter {
-            importer = providedImporter
-        } else {
-            importer = await AppleMailImporter(accountID: accountID)
+        if let cached = importTask {
+            do {
+                return try await cached.value
+            } catch {
+                // Only the task this caller awaited may be cleared. Several
+                // callers await the same failing task; the first to resume
+                // resets it, and a later one must not clear the replacement
+                // task a caller in between has already started.
+                if importTask == cached { importTask = nil }
+                throw error
+            }
         }
-        let threads = try await importer.importAll(from: directory)
-        cachedThreads = threads
-        return threads
+        let directory = self.directory
+        let accountID = self.accountID
+        let providedImporter = self.providedImporter
+        let task = Task<[MailThread], Error> {
+            let importer: AppleMailImporter
+            if let providedImporter {
+                importer = providedImporter
+            } else {
+                importer = await AppleMailImporter(accountID: accountID)
+            }
+            return try await importer.importAll(from: directory)
+        }
+        self.importTask = task
+        do {
+            return try await task.value
+        } catch {
+            if importTask == task { importTask = nil }
+            throw error
+        }
     }
 
     // MARK: Read paths
