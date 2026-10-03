@@ -16,8 +16,10 @@ export DEVELOPER_DIR
 HOST_BUNDLE_ID ?= com.ainkrad.app
 DEV_PLUGINS := $(HOME)/Library/Application Support/$(HOST_BUNDLE_ID)/Cache/DevPlugins
 
+.PHONY: generate build sideload test dev-auth dev-fixtures release
+
 generate: ; ./scripts/generate-oauth-credentials.sh && xcodegen generate
-build: generate ; xcodebuild -scheme RavenPlugin -configuration Debug -derivedDataPath build -destination 'platform=macOS' build
+build: lint generate ; xcodebuild -scheme RavenPlugin -configuration Debug -derivedDataPath build -destination 'platform=macOS' build
 sideload: build
 	mkdir -p "$(DEV_PLUGINS)"
 	rm -rf "$(DEV_PLUGINS)/RavenPlugin.bundle"
@@ -40,7 +42,7 @@ sideload: build
 TEST_TIMEOUT ?= 480
 TIMEOUT := $(shell command -v timeout 2>/dev/null)
 XCTEST := xcodebuild -scheme RavenPlugin -configuration Debug -derivedDataPath build -destination 'platform=macOS' test
-test: generate
+test: lint generate
 	@if [ -n "$(TIMEOUT)" ]; then \
 		$(TIMEOUT) $(TEST_TIMEOUT) $(XCTEST); \
 		status=$$?; \
@@ -68,3 +70,5 @@ dev-auth: generate ; xcodebuild -scheme RavenDevAuth -configuration Debug -deriv
 # via `make dev-auth`. Never run unattended in CI.
 dev-fixtures: generate ; xcodebuild -scheme RavenDevAuth -configuration Debug -derivedDataPath build -destination 'platform=macOS' build && build/Build/Products/Debug/RavenDevAuth --capture-fixtures
 release: ; ./scripts/release.sh $(V)
+
+include scripts/guardrails.mk
