@@ -1,3 +1,4 @@
+// design-lint: allow-file print dev-only CLI writes to stdout
 import Foundation
 import RavenFeature
 import AinkradAppKit

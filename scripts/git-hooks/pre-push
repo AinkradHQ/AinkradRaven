@@ -1,0 +1,26 @@
+#!/bin/bash
+# Synced from AinkradAppKit/scripts — installed by `make hooks`. Refuses a push that regresses
+# the lint ratchet, formatting, or tests. Bypass (`--no-verify`) is visible in the PR, not silent.
+set -uo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"   # GUI git clients (Git Mage) push with a bare PATH
+cd "$(git rev-parse --show-toplevel)" || exit 1
+zero=0000000000000000000000000000000000000000; head=$(git rev-parse HEAD); pushing=0
+while read -r _ lsha _ _; do
+  [ "$lsha" = "$zero" ] && continue                                    # a delete: nothing to check
+  [ "$lsha" = "$head" ] || { echo "pre-push: checks run on HEAD — check out the branch you push"; exit 1; }
+  pushing=1
+done
+[ "$pushing" = 1 ] || exit 0
+[ -z "$(git status --porcelain --untracked-files=no)" ] || {
+  echo "pre-push: uncommitted changes — the checks would not see what you push. Commit or stash."; exit 1; }
+base=$(git merge-base HEAD origin/development 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null || true)
+step() { echo "▸ pre-push: $*"; "$@" || { echo "✗ pre-push refused: $* failed"; exit 1; }; }
+step ./scripts/design-lint.sh --check
+step ./scripts/design-lint.sh --check-raise "$base"
+step make format-check
+if [ "${AINKRAD_PREPUSH_SKIP_TESTS:-}" = 1 ]; then
+  printf '%s\n' "==================================================" \
+    "  TESTS SKIPPED (AINKRAD_PREPUSH_SKIP_TESTS=1) — NOT A PASS" \
+    "=================================================="
+elif grep -qE '^test:' Makefile; then step make test
+else echo "▸ pre-push: no test target — tests SKIPPED"; fi
