@@ -124,8 +124,19 @@ struct GraphNotConfiguredTests {
     @Test("an unconfigured Graph account does not stop other accounts attaching")
     func otherAccountsKeepWorking() async throws {
         let host = FakeHostServices()
+        // The Gmail sibling needs its OWN credentials saved: since the
+        // provider factory was introduced (42b08bf) a Gmail account with no
+        // client builds to `notAuthenticated`, exactly like Graph with no
+        // registration — so without this both accounts fail and the test
+        // observes `[]` instead of `["a1"]`. It only ever passed with baked
+        // credentials present (`Config/oauth-client.json` on the machine
+        // where 961bd1e added it). `saveGmailCredentials` is the same seam
+        // `ProviderFactoryTests` uses, so this never depends on them.
+        ProviderFactory(host: host, securityScopedBookmarks: false)
+            .saveGmailCredentials(clientID: "client-id", clientSecret: "client-secret")
         let runtime = RavenRuntime(host: host)
         defer { runtime.teardown() }
+        #expect(runtime.providerFactory.hasGmailCredentials)
         try runtime.store.saveAccount(account("g1", kind: .graph))
         try runtime.store.saveAccount(account("a1", kind: .gmail))
 
