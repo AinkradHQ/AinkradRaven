@@ -91,7 +91,7 @@ extension ComposeSurface {
             ccChips = rebuild(ccChips, result.cc)
             bccChips = rebuild(bccChips, result.bcc)
         case .attachFiles:
-            attachments.append(contentsOf: ComposeAttachmentPicker.pick())
+            attachFiles()
         }
     }
 
