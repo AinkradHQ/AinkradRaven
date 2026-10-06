@@ -263,21 +263,30 @@ struct ComposeFieldWrap<Content: View>: View {
     }
 }
 
-/// `AinkradTextField`'s chrome — the kit's `field` role: its chamfer, fill and
-/// resting edge — so a chip field and the Subject field beside it are one
-/// family by construction rather than by copied numbers.
+/// `AinkradTextField`'s chamfer and resting edge — the kit's `field` role —
+/// so a chip field and the Subject field beside it share a shape and edge.
+///
+/// The fill is NOT the field role's surfaceElevated 0.5. Over a compose panel
+/// that itself sits on the scrim, a fixed fill composites to a well darker than
+/// the modal holding it. `cardFillOpacity(isRead: false)` is the same lift a
+/// hovered inbox row and an unread message card spend, so the field reads as
+/// raised without being a slab.
 ///
 /// Resting state only. The kit field brightens its edge while focused, but
 /// focus here lives in the chip field's own `TextField`, which this wrapper
 /// cannot see; a focus binding on the kit field is a kit gap (ledger).
 struct ComposeFieldChrome: ViewModifier {
+    @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradSkin) private var skin
+    @Environment(\.ravenAppearance) private var appearance
 
     func body(content: Content) -> some View {
         let field = skin.roles.field
         let shape = AinkradSkinShape(token: field.shape)
         content
-            .background(shape.fill(skin.color(field.fill)))
+            .background(
+                shape.fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)))
+            )
             .overlay(
                 shape.strokeBorder(skin.color(field.stroke.color), lineWidth: field.stroke.width.resolve([])))
     }
