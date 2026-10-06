@@ -28,36 +28,30 @@ import Testing
     /// guessed `"Archive"`/`"Trash"` instead of reading the persisted directory
     /// would produce a plausible-looking mutation aimed at mailboxes this account
     /// does not have, and every folder assertion here would fail.
-    final class OpenerSpy: @unchecked Sendable {
-        private let lock = NSLock()
-        private var calls: [(settings: IMAPAccountSettings, username: String)] = []
+    final class OpenerSpy: Sendable {
+        private let calls = Locked<[(settings: IMAPAccountSettings, username: String)]>([])
+        private let failureValue = Locked<(any Error)?>(nil)
+        private let directoryValue = Locked<IMAPMailboxDirectory?>(nil)
+
         /// When set, every open fails with this instead of succeeding.
-        var failure: (any Error)?
+        var failure: (any Error)? {
+            get { failureValue.value }
+            set { failureValue.withLock { $0 = newValue } }
+        }
         /// What the scripted server `LIST`s. Settable so a test can model a folder
         /// the user creates AFTER the account was added — the case where the
         /// persisted directory and the live one drift apart.
-        var directory: IMAPMailboxDirectory?
+        var directory: IMAPMailboxDirectory? {
+            get { directoryValue.value }
+            set { directoryValue.withLock { $0 = newValue } }
+        }
 
-        var callCount: Int {
-            lock.lock()
-            defer { lock.unlock() }
-            return calls.count
-        }
-        var lastSettings: IMAPAccountSettings? {
-            lock.lock()
-            defer { lock.unlock() }
-            return calls.last?.settings
-        }
-        var lastUsername: String? {
-            lock.lock()
-            defer { lock.unlock() }
-            return calls.last?.username
-        }
+        var callCount: Int { calls.value.count }
+        var lastSettings: IMAPAccountSettings? { calls.value.last?.settings }
+        var lastUsername: String? { calls.value.last?.username }
 
         func record(_ settings: IMAPAccountSettings, _ username: String) {
-            lock.lock()
-            calls.append((settings, username))
-            lock.unlock()
+            calls.withLock { $0.append((settings, username)) }
         }
     }
 

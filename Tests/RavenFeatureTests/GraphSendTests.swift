@@ -374,13 +374,17 @@ struct GraphSendTests {
     func aFailedDraftCreationIsRetried() async throws {
         let recorded = RecordedRequests()
         let created = try graphFixture("graph-created-draft")
-        let failFirst = OneShotFlag()
+        let failFirst = Locked(true)
         StubURLProtocol.handler = { request in
             recorded.record(request)
             if request.url?.absoluteString.hasSuffix("/send") == true {
                 return (202, [:], Data())
             }
-            if failFirst.take() { return (503, [:], Data(#"{"error":{}}"#.utf8)) }
+            let fail = failFirst.withLock { first in
+                defer { first = false }
+                return first
+            }
+            if fail { return (503, [:], Data(#"{"error":{}}"#.utf8)) }
             return (201, [:], created)
         }
         defer { teardown() }
@@ -445,20 +449,5 @@ struct GraphSendTests {
         let hosts = Set(recorded.all.compactMap { URL(string: $0.url)?.host })
         #expect(hosts == ["graph.microsoft.com"])
         #expect(recorded.all.count == 2)
-    }
-}
-
-/// A flag that is true exactly once, for a stub that must fail one request and then
-/// behave. `@unchecked Sendable` for the same reason `SeenRequests` is: it is read
-/// from inside a `URLProtocol` handler, off the main actor.
-final class OneShotFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var used = false
-    func take() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if used { return false }
-        used = true
-        return true
     }
 }
