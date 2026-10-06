@@ -179,11 +179,13 @@ public struct ThreadSurface: View {
                     icon: "arrowshape.turn.up.right"
                 ) { compose(.forward, thread) }
 
-                Divider().frame(height: 18).padding(.horizontal, AinkradSpacing.xs)
-
+                // No divider between the composing and the state actions
+                // (decision 18: no separator lines). A wider gap carries the
+                // grouping instead.
                 AinkradIconButton(systemName: "archivebox", size: 26, tooltip: "Archive (e)") {
                     model.archive([thread.id])
                 }
+                .padding(.leading, AinkradSpacing.sm)
                 AinkradIconButton(
                     systemName: isStarred(thread) ? "star.fill" : "star", size: 26,
                     tooltip: isStarred(thread) ? "Unstar" : "Star"
