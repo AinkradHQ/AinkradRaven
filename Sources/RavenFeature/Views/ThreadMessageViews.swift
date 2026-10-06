@@ -34,9 +34,7 @@ struct MessageRow: View {
                     .font(AinkradFontResolver.font(.body, weight: .medium, typography: typo))
                     .foregroundStyle(theme.foreground)
                 Spacer(minLength: AinkradSpacing.sm)
-                Text(message.date.formatted(date: .abbreviated, time: .shortened))
-                    .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.55))
+                AinkradCaption(message.date.formatted(date: .abbreviated, time: .shortened))
             }
 
             content
@@ -402,9 +400,7 @@ struct CalendarInviteCard: View {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(text)
-            .font(AinkradFontResolver.font(.caption, typography: typo))
-            .foregroundStyle(theme.foreground.opacity(0.6))
+        AinkradCaption(text)
             .fixedSize(horizontal: false, vertical: true)
     }
 

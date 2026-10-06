@@ -63,9 +63,7 @@ struct SendingSettingsGroup: View {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(text)
-            .font(AinkradFontResolver.font(.caption, typography: typo))
-            .foregroundStyle(theme.foreground.opacity(0.6))
+        AinkradCaption(text)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: AinkradSettingsPanel<EmptyView>.hintReadingWidth, alignment: .leading)
     }

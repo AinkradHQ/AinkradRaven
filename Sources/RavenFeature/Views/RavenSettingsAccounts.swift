@@ -218,12 +218,9 @@ struct RavenAccountsPane: View {
                 }
                 Spacer(minLength: AinkradSpacing.sm)
                 if let lastSyncedAt = account.lastSyncedAt {
-                    Text(
+                    AinkradCaption(
                         "Last synced "
-                            + lastSyncedAt.formatted(date: .abbreviated, time: .shortened)
-                    )
-                    .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.55))
+                            + lastSyncedAt.formatted(date: .abbreviated, time: .shortened))
                 }
             }
             .padding(.leading, AinkradSpacing.lg)

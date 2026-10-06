@@ -154,9 +154,7 @@ public struct RavenSettingsView: View {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(text)
-            .font(AinkradFontResolver.font(.caption, typography: typo))
-            .foregroundStyle(theme.foreground.opacity(0.55))
+        AinkradCaption(text)
             .fixedSize(horizontal: false, vertical: true)
     }
 }

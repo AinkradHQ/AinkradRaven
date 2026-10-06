@@ -213,20 +213,15 @@ struct RecipientDetail: View {
             if !chip.isValid {
                 AinkradBanner(message: "Not a valid address", status: .danger)
             } else if let candidate {
-                Text(
+                AinkradCaption(
                     "On \(candidate.frequency) thread\(candidate.frequency == 1 ? "" : "s") "
                         + "you have loaded, most recently "
-                        + MailDateLabel.short(for: candidate.mostRecent)
-                )
-                .font(AinkradFontResolver.font(.caption, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(0.55))
+                        + MailDateLabel.short(for: candidate.mostRecent))
             } else {
                 // Said plainly rather than left blank: "you have never mailed
                 // this person" is the single most useful thing to know before
                 // sending, and it is what `LookalikeAddress` acts on too.
-                Text("You have not mailed this address before.")
-                    .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.55))
+                AinkradCaption("You have not mailed this address before.")
             }
         }
         .frame(maxWidth: 260, alignment: .leading)
