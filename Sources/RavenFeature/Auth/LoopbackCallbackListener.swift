@@ -1,3 +1,4 @@
+// design-lint: allow-file hex-color,radius-literal the OAuth callback page is HTML and CSS served to the browser, not SwiftUI
 import Foundation
 import Network
 
