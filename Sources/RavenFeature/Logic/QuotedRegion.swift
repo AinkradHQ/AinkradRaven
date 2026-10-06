@@ -45,7 +45,8 @@ public enum QuotedRegion {
         let (visible, quoted) = QuoteTrimmer.split(text)
         guard let quoted else { return Split(body: text, attribution: nil, quotedLines: nil) }
 
-        var lines = quoted
+        var lines =
+            quoted
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
             .components(separatedBy: "\n")

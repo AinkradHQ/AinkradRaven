@@ -17,10 +17,15 @@ public struct MessageBody: Codable, Equatable, Sendable {
     /// support shipped, so no other behavior changes.
     public let signatureStatus: SignatureStatus
 
-    public init(messageID: String, plainText: String, html: String?, icsText: String? = nil,
-                signatureStatus: SignatureStatus = .unsigned) {
-        self.messageID = messageID; self.plainText = plainText; self.html = html
-        self.icsText = icsText; self.signatureStatus = signatureStatus
+    public init(
+        messageID: String, plainText: String, html: String?, icsText: String? = nil,
+        signatureStatus: SignatureStatus = .unsigned
+    ) {
+        self.messageID = messageID
+        self.plainText = plainText
+        self.html = html
+        self.icsText = icsText
+        self.signatureStatus = signatureStatus
     }
 
     public init(from decoder: Decoder) throws {
@@ -80,8 +85,9 @@ public struct MessageBody: Codable, Equatable, Sendable {
     func imapMailboxDirectory(accountID: String) -> IMAPMailboxDirectory?
 
     /// Records the mailbox set a `LIST` returned for `accountID`.
-    func saveIMAPMailboxDirectory(_ directory: IMAPMailboxDirectory,
-                                  accountID: String) throws
+    func saveIMAPMailboxDirectory(
+        _ directory: IMAPMailboxDirectory,
+        accountID: String) throws
 
     /// The `label_with_reason` records this account holds inside the 90-day
     /// window, newest first; `threadID` narrows them to one thread.

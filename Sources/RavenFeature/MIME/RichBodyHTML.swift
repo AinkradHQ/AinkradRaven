@@ -66,8 +66,9 @@ enum RichBodyHTML {
         // rebased before they can address it. Anything else silently shifts
         // every run by the number of leading whitespace characters.
         let typedStart = utf16Offset(ofFirst: quote.body, in: withoutSignature)
-        let typedSpans = rebase(body.spans, start: typedStart,
-                                length: quote.body.utf16.count)
+        let typedSpans = rebase(
+            body.spans, start: typedStart,
+            length: quote.body.utf16.count)
 
         var html = render(quote.body, spans: typedSpans)
         if let signature {
@@ -77,7 +78,8 @@ enum RichBodyHTML {
             if let attribution = quote.attribution {
                 html += "<p>\(MarkdownToHTML.escape(attribution))</p>"
             }
-            html += "<blockquote>"
+            html +=
+                "<blockquote>"
                 + MarkdownToHTML.literalLines(quotedLines.joined(separator: "\n"))
                 + "</blockquote>"
         }
@@ -98,8 +100,9 @@ enum RichBodyHTML {
             while end < lines.count && blockKind(for: lines[end], spans: spans) == kind {
                 end += 1
             }
-            html += renderGroup(Array(lines[index..<end]), kind: kind,
-                                units: units, spans: spans)
+            html += renderGroup(
+                Array(lines[index..<end]), kind: kind,
+                units: units, spans: spans)
             index = end
         }
         return html
@@ -180,8 +183,10 @@ enum RichBodyHTML {
         }
     }
 
-    private static func renderGroup(_ lines: [Line], kind: Block?,
-                                    units: [UInt16], spans: [RichBody.Span]) -> String {
+    private static func renderGroup(
+        _ lines: [Line], kind: Block?,
+        units: [UInt16], spans: [RichBody.Span]
+    ) -> String {
         guard let kind else { return paragraphs(lines, units: units, spans: spans) }
         let (open, close) = blockTags(for: kind)
         let inner: String
@@ -198,8 +203,10 @@ enum RichBodyHTML {
     /// them; a blank line separates paragraphs. Line breaks are preserved
     /// because the user pressed Return — unlike Markdown, where a single
     /// newline is a soft break the parser folds away.
-    private static func paragraphs(_ lines: [Line], units: [UInt16],
-                                   spans: [RichBody.Span]) -> String {
+    private static func paragraphs(
+        _ lines: [Line], units: [UInt16],
+        spans: [RichBody.Span]
+    ) -> String {
         var html = ""
         var current: [String] = []
         func flush() {
@@ -242,8 +249,10 @@ enum RichBodyHTML {
         }
     }
 
-    private static func inline(_ line: Line, units: [UInt16],
-                               spans: [RichBody.Span]) -> String {
+    private static func inline(
+        _ line: Line, units: [UInt16],
+        spans: [RichBody.Span]
+    ) -> String {
         let length = line.end - line.start
         guard length > 0 else { return "" }
         var attributes = [Attributes](repeating: Attributes(), count: length)
@@ -261,8 +270,9 @@ enum RichBodyHTML {
         while runStart < length {
             var runEnd = runStart + 1
             while runEnd < length && attributes[runEnd] == attributes[runStart] { runEnd += 1 }
-            let text = String(decoding: units[(line.start + runStart)..<(line.start + runEnd)],
-                              as: UTF16.self)
+            let text = String(
+                decoding: units[(line.start + runStart)..<(line.start + runEnd)],
+                as: UTF16.self)
             html += wrap(MarkdownToHTML.escape(text), in: attributes[runStart])
             runStart = runEnd
         }
@@ -313,7 +323,8 @@ enum RichBodyHTML {
     /// cannot match inside it.
     private static func utf16Offset(ofFirst needle: String, in haystack: String) -> Int {
         guard !needle.isEmpty,
-              let range = haystack.range(of: needle) else { return 0 }
+            let range = haystack.range(of: needle)
+        else { return 0 }
         return range.lowerBound.utf16Offset(in: haystack)
     }
 
@@ -321,8 +332,10 @@ enum RichBodyHTML {
     /// `start`. A run that only partly overlaps is kept for the part that does;
     /// one that does not overlap at all is dropped, so formatting inside a
     /// quoted trailer or a signature cannot leak into the typed body's markup.
-    private static func rebase(_ spans: [RichBody.Span], start: Int,
-                               length: Int) -> [RichBody.Span] {
+    private static func rebase(
+        _ spans: [RichBody.Span], start: Int,
+        length: Int
+    ) -> [RichBody.Span] {
         spans.compactMap { span in
             let from = max(span.start, start)
             let to = min(span.start + span.length, start + length)

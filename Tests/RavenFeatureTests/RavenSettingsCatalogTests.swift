@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Published settings catalog")
@@ -13,8 +14,9 @@ import AinkradAppKit
         // fallen back to the `{ nil }` default extension.
         guard let page = RavenApp.settingsCatalog(host: host) else {
             Issue.record("RavenApp published no settings catalog")
-            return SettingsPage(path: SettingsPath([]), title: "", icon: "",
-                                group: .installedApps, order: 0, groups: [])
+            return SettingsPage(
+                path: SettingsPath([]), title: "", icon: "",
+                group: .installedApps, order: 0, groups: [])
         }
         return page
     }
@@ -33,7 +35,8 @@ import AinkradAppKit
 
     @Test("The named groups are present, in tab order")
     func groupsAreTheOnesSpecified() {
-        #expect(page().groups.map(\.title)
+        #expect(
+            page().groups.map(\.title)
                 == ["Accounts", "Sending", "Rules", "Privacy", "Appearance"])
     }
 
@@ -99,10 +102,11 @@ import AinkradAppKit
         // attention queue (two lists of entries with per-entry discard), the
         // account list (variable-length, live badges, per-account destructive
         // action), the rules editor, and the image allow-list.
-        #expect(customLabels.sorted() == [
-            "Connected accounts", "Filter rules", "Needs your attention",
-            "Senders allowed to load images"
-        ])
+        #expect(
+            customLabels.sorted() == [
+                "Connected accounts", "Filter rules", "Needs your attention",
+                "Senders allowed to load images",
+            ])
     }
 
     @Test("Transparency and the undo window are declarative, never custom")
@@ -138,8 +142,9 @@ import AinkradAppKit
             }
             // A group is allowed to have no footerNote only when a `.custom`
             // pane is drawing its own explanation (Rules, Privacy).
-            #expect(group.footerNote != nil || hasPane,
-                    "group '\(group.title)' explains itself nowhere")
+            #expect(
+                group.footerNote != nil || hasPane,
+                "group '\(group.title)' explains itself nowhere")
             // Labels stay short; the "why would I change this" paragraph
             // belongs in footerNote.
             for field in group.fields {
@@ -167,7 +172,8 @@ import AinkradAppKit
         let runtime = RavenApp.runtime(host: host)
         let field = try #require(page(host).allFields.first { $0.label == "Undo window" })
         guard case .slider(let range, let step, let value) = field.kind else {
-            Issue.record("Undo window is not a slider"); return
+            Issue.record("Undo window is not a slider")
+            return
         }
         // Zero has to remain reachable — it is the documented "send immediately,
         // no undo" setting.
@@ -190,7 +196,8 @@ import AinkradAppKit
         let runtime = RavenApp.runtime(host: host)
         let field = try #require(page(host).allFields.first { $0.label == "Surface opacity" })
         guard case .slider(let range, _, let value) = field.kind else {
-            Issue.record("Surface opacity is not a slider"); return
+            Issue.record("Surface opacity is not a slider")
+            return
         }
         // The slider is not merely clamped on read — the range it OFFERS
         // already excludes the illegible band, so the control cannot express
@@ -200,7 +207,8 @@ import AinkradAppKit
         value.wrappedValue = range.lowerBound
         #expect(runtime.appearanceStore.appearance.surfaceOpacity == range.lowerBound)
         field.reset?()
-        #expect(runtime.appearanceStore.appearance.surfaceOpacity
+        #expect(
+            runtime.appearanceStore.appearance.surfaceOpacity
                 == RavenAppearance.defaultSurfaceOpacity)
     }
 
@@ -208,19 +216,24 @@ import AinkradAppKit
     func signaturesStayPerAccount() throws {
         let host = FakeHostServices()
         let runtime = RavenApp.runtime(host: host)
-        try runtime.store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                                 address: "one@example.com",
-                                                 displayName: "One"))
-        try runtime.store.saveAccount(MailAccount(id: "a2", provider: .gmail,
-                                                 address: "two@example.com",
-                                                 displayName: "Two"))
+        try runtime.store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "one@example.com",
+                displayName: "One"))
+        try runtime.store.saveAccount(
+            MailAccount(
+                id: "a2", provider: .gmail,
+                address: "two@example.com",
+                displayName: "Two"))
 
         let fields = page(host).allFields.filter { $0.label.hasPrefix("Signature") }
         #expect(fields.count == 2)
 
         let first = try #require(fields.first { $0.label.contains("one@example.com") })
         guard case .text(let binding) = first.kind else {
-            Issue.record("Signature is not a text field"); return
+            Issue.record("Signature is not a text field")
+            return
         }
         binding.wrappedValue = "Sent from one"
         // The bug this guards: a shared binding writing one account's signature
@@ -236,12 +249,16 @@ import AinkradAppKit
     func readOnlyAccountsHaveNoSignature() throws {
         let host = FakeHostServices()
         let runtime = RavenApp.runtime(host: host)
-        try runtime.store.saveAccount(MailAccount(id: "imported", provider: .gmail,
-                                                 address: "old@example.com",
-                                                 displayName: "Imported"))
-        try runtime.store.saveAccount(MailAccount(id: "live", provider: .gmail,
-                                                 address: "live@example.com",
-                                                 displayName: "Live"))
+        try runtime.store.saveAccount(
+            MailAccount(
+                id: "imported", provider: .gmail,
+                address: "old@example.com",
+                displayName: "Imported"))
+        try runtime.store.saveAccount(
+            MailAccount(
+                id: "live", provider: .gmail,
+                address: "live@example.com",
+                displayName: "Live"))
         // Read-only is a property of the ATTACHED PROVIDER, not of the stored
         // account — an Apple Mail import has no transport. Only the imported
         // account gets one, so this also proves the filter is per-account and
@@ -262,7 +279,8 @@ import AinkradAppKit
         // Whichever way this build was made, the gate must agree with why:
         // baked-in credentials mean Connect works, nothing saved means it does
         // not. Enabled-but-guaranteed-to-fail is the state being avoided.
-        #expect(runtime.canConnectAccount
+        #expect(
+            runtime.canConnectAccount
                 == (runtime.isCredentialsBaked || runtime.hasCredentials))
     }
 }

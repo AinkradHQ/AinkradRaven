@@ -31,9 +31,10 @@ extension LabelVocabulary {
     /// the outbox persists and the provider applies. Order is preserved so the
     /// rendered strings are stable and directly assertable.
     public func render(_ mutation: FlagMutation) -> LabelMutation {
-        LabelMutation(threadIDs: mutation.threadIDs,
-                      add: mutation.add.compactMap(label(for:)),
-                      remove: mutation.remove.compactMap(label(for:)))
+        LabelMutation(
+            threadIDs: mutation.threadIDs,
+            add: mutation.add.compactMap(label(for:)),
+            remove: mutation.remove.compactMap(label(for:)))
     }
 
     /// The canonical reading of a stored label list. This is how read/starred
@@ -203,8 +204,10 @@ public enum LabelVocabularyResolver {
     /// id the persisted mailbox directory is keyed by. Everything else routes to the
     /// kind-only overload above, unchanged.
     @MainActor
-    public static func vocabulary(forAccountID accountID: String?,
-                                  store: MailStore) -> LabelVocabulary? {
+    public static func vocabulary(
+        forAccountID accountID: String?,
+        store: MailStore
+    ) -> LabelVocabulary? {
         guard let accountID else { return nil }
         guard let account = store.accounts().first(where: { $0.id == accountID }) else { return nil }
         if account.provider == .imap {

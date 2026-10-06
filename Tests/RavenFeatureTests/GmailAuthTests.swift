@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 // What remains here after Task 4 is Gmail's *configuration* — the endpoint, the
@@ -15,9 +16,10 @@ struct GmailAuthTests {
     func authorizationURL() throws {
         let verifier = PKCE.codeVerifier()
         let state = PKCE.randomState()
-        let url = GmailAuth.authorizationURL(clientID: "cid.apps.googleusercontent.com",
-                                             redirectURI: "http://127.0.0.1:7654",
-                                             verifier: verifier, state: state)
+        let url = GmailAuth.authorizationURL(
+            clientID: "cid.apps.googleusercontent.com",
+            redirectURI: "http://127.0.0.1:7654",
+            verifier: verifier, state: state)
         let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
 

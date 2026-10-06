@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 13: IMAP's two kinds of provider string, and the read-flag inversion.
@@ -84,8 +85,9 @@ struct IMAPVocabularyTests {
         #expect(vocabulary.label(for: .starred) == "\\Flagged")
         #expect(vocabulary.label(for: .archive) == nil)
         #expect(vocabulary.label(for: .inbox) == nil)
-        #expect(vocabulary.render(ThreadAction.archive.mutation(threadIDs: ["t"]))
-            == LabelMutation(threadIDs: ["t"], add: [], remove: []))
+        #expect(
+            vocabulary.render(ThreadAction.archive.mutation(threadIDs: ["t"]))
+                == LabelMutation(threadIDs: ["t"], add: [], remove: []))
         #expect(LabelVocabularyResolver.vocabulary(for: .imap) == nil)
     }
 }

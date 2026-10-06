@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 public enum RavenApp: AinkradApp, AinkradAppMCP {
     /// Must match `AinkradAppID` in Info.plist — the host keys documents and
@@ -88,8 +88,10 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
     /// surface cannot silently lose a setting the catalog has — but the catalog
     /// is the real surface, and this is what a generation-7 host gets.
     public static func makeSettingsView(host: HostServices) -> AnyView {
-        AnyView(RavenSettingsView(runtime: runtime(host: host),
-                                  presentation: host.presentation, modeControl: host.mode))
+        AnyView(
+            RavenSettingsView(
+                runtime: runtime(host: host),
+                presentation: host.presentation, modeControl: host.mode))
     }
 
     /// Raven's settings published as descriptors so the host can index them,
@@ -104,16 +106,18 @@ public enum RavenApp: AinkradApp, AinkradAppMCP {
     /// `makeSettingsView` — see `RavenSettingsCatalog.pane`.
     public static func settingsCatalog(host: HostServices) -> SettingsPage? {
         let runtime = runtime(host: host)
-        return RavenSettingsCatalog.page(runtime: runtime, draft: runtime.settingsDraft,
-                                        theme: host.theme)
+        return RavenSettingsCatalog.page(
+            runtime: runtime, draft: runtime.settingsDraft,
+            theme: host.theme)
     }
 
     public static func makeMCPServer(host: HostServices) -> MCPAppServer {
         let runtime = runtime(host: host)
         return RavenMCPServer.make(appID: id) { operation, arguments in
-            await RavenMCPOperations.run(operation, arguments: arguments,
-                                        store: runtime.store, outbox: runtime.outbox,
-                                        providers: runtime.providers)
+            await RavenMCPOperations.run(
+                operation, arguments: arguments,
+                store: runtime.store, outbox: runtime.outbox,
+                providers: runtime.providers)
         }.server
     }
 }
@@ -141,7 +145,7 @@ extension RavenApp: AinkradAppTeardown {
 extension RavenApp: AinkradAppModes {
     public static func makeRootView(host: HostServices, mode: PluginMode) -> AnyView {
         switch mode {
-        case .basic:    return AnyView(RavenBasicView(runtime: runtime(host: host)))
+        case .basic: return AnyView(RavenBasicView(runtime: runtime(host: host)))
         case .advanced: return AnyView(RavenShell(runtime: runtime(host: host)))
         // Resilient enum: fall back to advanced, never to a stripped view for a
         // mode this build does not understand.

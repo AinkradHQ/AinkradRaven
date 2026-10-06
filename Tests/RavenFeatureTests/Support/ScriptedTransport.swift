@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import RavenFeature
 
 /// A `MailTransport` that answers from a script instead of a socket, so every
@@ -87,8 +88,10 @@ actor ScriptedTransport: MailTransport {
     /// Number of `send(_:)` calls before the first `startTLS()`.
     private(set) var upgradeSendIndex: Int?
 
-    init(chunkPlan: ChunkPlan = .whole,
-         idleReads: IdleReadBehavior = .throwScriptExhausted) {
+    init(
+        chunkPlan: ChunkPlan = .whole,
+        idleReads: IdleReadBehavior = .throwScriptExhausted
+    ) {
         self.chunkPlan = chunkPlan
         self.idleReadBehavior = idleReads
     }
@@ -109,14 +112,20 @@ actor ScriptedTransport: MailTransport {
     /// Answers with `data` the first time a sent payload contains `needle`.
     /// Rules are matched in the order they were added; each is consumed unless
     /// `repeatable`.
-    func respond(to needle: String, with data: Data,
-                 plan: ChunkPlan? = nil, repeatable: Bool = false) {
-        rules.append(Rule(needle: needle, response: data,
-                          plan: plan ?? chunkPlan, isRepeatable: repeatable))
+    func respond(
+        to needle: String, with data: Data,
+        plan: ChunkPlan? = nil, repeatable: Bool = false
+    ) {
+        rules.append(
+            Rule(
+                needle: needle, response: data,
+                plan: plan ?? chunkPlan, isRepeatable: repeatable))
     }
 
-    func respond(to needle: String, with text: String,
-                 plan: ChunkPlan? = nil, repeatable: Bool = false) {
+    func respond(
+        to needle: String, with text: String,
+        plan: ChunkPlan? = nil, repeatable: Bool = false
+    ) {
         respond(to: needle, with: Data(text.utf8), plan: plan, repeatable: repeatable)
     }
 
@@ -264,10 +273,10 @@ actor ScriptedTransport: MailTransport {
     }
 }
 
-private extension String {
+extension String {
     /// Lossy on purpose: recorded bytes are only ever used for assertions and
     /// failure messages, and a `nil` here would hide the actual payload.
-    init(decoding data: Data) {
+    fileprivate init(decoding data: Data) {
         self = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
     }
 }

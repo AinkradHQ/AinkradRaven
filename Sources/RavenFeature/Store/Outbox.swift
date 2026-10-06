@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Mutations apply to the store immediately and land here for transmission, so
 /// the UI is never blocked on the network. A failed entry retries; one that
@@ -108,22 +108,28 @@ extension MutationOutbox {
     /// this outbox is willing to drain goes through `provider`, and an entry
     /// stamped for an account other than `accountID` is refused (see
     /// `provider(forEntryAccount:)`).
-    public convenience init(documents: PluginDocumentStore, provider: MailProvider,
-                            maxAttempts: Int = 5, accountID: String? = nil) {
-        self.init(documents: documents, router: MailProviderRouter(single: provider),
-                  maxAttempts: maxAttempts, accountID: accountID)
+    public convenience init(
+        documents: PluginDocumentStore, provider: MailProvider,
+        maxAttempts: Int = 5, accountID: String? = nil
+    ) {
+        self.init(
+            documents: documents, router: MailProviderRouter(single: provider),
+            maxAttempts: maxAttempts, accountID: accountID)
     }
 
-    public init(documents: PluginDocumentStore, router: MailProviderRouter,
-                maxAttempts: Int = 5, accountID: String? = nil) {
+    public init(
+        documents: PluginDocumentStore, router: MailProviderRouter,
+        maxAttempts: Int = 5, accountID: String? = nil
+    ) {
         self.documents = documents
         self.router = router
         self.maxAttempts = maxAttempts
         self.accountID = accountID
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
-        let loaded = OutboxQueueCodec.load(documents.data(forKey: DocumentKeys.outbox),
-                                           decoder: decoder)
+        let loaded = OutboxQueueCodec.load(
+            documents.data(forKey: DocumentKeys.outbox),
+            decoder: decoder)
         entries = loaded.entries
         unreadableEntryCount = loaded.unreadableEntryCount
         queueDocumentUnreadable = loaded.documentUnreadable
@@ -174,14 +180,14 @@ extension MutationOutbox {
         for index in entries.indices {
             let entry = entries[index]
             guard entry.accountID == nil, !entry.isDeadLettered, !entry.needsReview,
-                  entry.inFlightAt == nil, provider(forEntryAccount: nil) == nil
+                entry.inFlightAt == nil, provider(forEntryAccount: nil) == nil
             else { continue }
             entries[index].needsReview = true
             if entries[index].lastError == nil {
-                entries[index].lastError = "This operation has no attributed account, and no " +
-                    "connected account is an unambiguous default. Held for manual review rather " +
-                    "than guessed at, since guessing wrong would send or apply it against the " +
-                    "wrong mailbox."
+                entries[index].lastError =
+                    "This operation has no attributed account, and no "
+                    + "connected account is an unambiguous default. Held for manual review rather "
+                    + "than guessed at, since guessing wrong would send or apply it against the " + "wrong mailbox."
             }
             changed = true
         }
@@ -238,8 +244,10 @@ extension MutationOutbox {
     /// default. A send therefore cannot be re-attributed to a different
     /// mailbox by whatever happens to be attached when it is queued.
     @discardableResult
-    public func enqueue(_ operation: OutboxEntry.Operation,
-                        accountID explicit: String? = nil) throws -> UUID {
+    public func enqueue(
+        _ operation: OutboxEntry.Operation,
+        accountID explicit: String? = nil
+    ) throws -> UUID {
         try enqueue(operation, accountID: explicit, holdUntil: nil, sendAt: nil, draftID: nil)
     }
 
@@ -252,14 +260,17 @@ extension MutationOutbox {
     /// `drain()` can clean up the right draft whenever this entry eventually
     /// transmits, however long after this call returns.
     @discardableResult
-    public func enqueue(_ operation: OutboxEntry.Operation, accountID explicit: String?,
-                        holdUntil: Date?, sendAt: Date?, draftID: String?) throws -> UUID {
+    public func enqueue(
+        _ operation: OutboxEntry.Operation, accountID explicit: String?,
+        holdUntil: Date?, sendAt: Date?, draftID: String?
+    ) throws -> UUID {
         var stamp = explicit ?? accountID
         if case .send(let message) = operation, let composed = message.accountID {
             stamp = composed
         }
-        let entry = OutboxEntry(operation: operation, accountID: stamp,
-                                holdUntil: holdUntil, sendAt: sendAt, draftID: draftID)
+        let entry = OutboxEntry(
+            operation: operation, accountID: stamp,
+            holdUntil: holdUntil, sendAt: sendAt, draftID: draftID)
         entries.append(entry)
         persistRecordingFailure()
         scheduleWake()
@@ -338,7 +349,10 @@ extension MutationOutbox {
         // transmitted, failed and backed off, or nothing was eligible at
         // all — since any of those can change which entry (if any) is now
         // the earliest still waiting on a future `holdUntil`/`sendAt`.
-        defer { isDraining = false; scheduleWake() }
+        defer {
+            isDraining = false
+            scheduleWake()
+        }
         for entry in pending() {
             // Resolved per entry, never once per pass: two accounts' entries
             // can sit in the same queue and each must leave through its own
@@ -458,7 +472,8 @@ extension MutationOutbox {
     private func earliestDueDate() -> Date? {
         entries.compactMap { entry -> Date? in
             guard !entry.isDeadLettered, !entry.needsReview, entry.inFlightAt == nil,
-                  provider(forEntryAccount: entry.accountID) != nil else { return nil }
+                provider(forEntryAccount: entry.accountID) != nil
+            else { return nil }
             return [entry.holdUntil, entry.sendAt].compactMap { $0 }.max()
         }.min()
     }
@@ -486,8 +501,9 @@ extension MutationOutbox {
             }
         }
         wakeWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, due.timeIntervalSinceNow),
-                                      execute: workItem)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(0, due.timeIntervalSinceNow),
+            execute: workItem)
     }
 
     /// Cancels the pending wake, same discipline as `RavenRuntime.teardown()`

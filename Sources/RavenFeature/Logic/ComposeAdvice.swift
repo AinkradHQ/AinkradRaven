@@ -20,12 +20,17 @@ public struct ComposeDraftFacts: Equatable, Sendable {
     /// `RecipientSuggestions.candidates` — the same corpus autocomplete uses.
     public var knownContacts: [RecipientSuggestions.Candidate]
 
-    public init(to: [MailAddress] = [], cc: [MailAddress] = [], bcc: [MailAddress] = [],
-                subject: String = "", bodyText: String = "", hasAttachments: Bool = false,
-                ownAddress: String? = nil, replyAllParticipants: [MailAddress]? = nil,
-                knownContacts: [RecipientSuggestions.Candidate] = []) {
-        self.to = to; self.cc = cc; self.bcc = bcc
-        self.subject = subject; self.bodyText = bodyText
+    public init(
+        to: [MailAddress] = [], cc: [MailAddress] = [], bcc: [MailAddress] = [],
+        subject: String = "", bodyText: String = "", hasAttachments: Bool = false,
+        ownAddress: String? = nil, replyAllParticipants: [MailAddress]? = nil,
+        knownContacts: [RecipientSuggestions.Candidate] = []
+    ) {
+        self.to = to
+        self.cc = cc
+        self.bcc = bcc
+        self.subject = subject
+        self.bodyText = bodyText
         self.hasAttachments = hasAttachments
         self.ownAddress = ownAddress
         self.replyAllParticipants = replyAllParticipants
@@ -81,10 +86,14 @@ public struct ComposeFinding: Equatable, Sendable, Identifiable {
     public let message: String
     public let correction: ComposeCorrection?
 
-    public init(kind: Kind, severity: Severity, message: String,
-                correction: ComposeCorrection? = nil) {
-        self.kind = kind; self.severity = severity
-        self.message = message; self.correction = correction
+    public init(
+        kind: Kind, severity: Severity, message: String,
+        correction: ComposeCorrection? = nil
+    ) {
+        self.kind = kind
+        self.severity = severity
+        self.message = message
+        self.correction = correction
     }
 }
 
@@ -119,31 +128,35 @@ public enum ComposeAdvice {
 
     static func recipientFindings(_ draft: ComposeDraftFacts) -> [ComposeFinding] {
         var out: [ComposeFinding] = []
-        let deduped = RecipientDedupe.apply(to: draft.to, cc: draft.cc, bcc: draft.bcc,
-                                            ownAddress: draft.ownAddress)
+        let deduped = RecipientDedupe.apply(
+            to: draft.to, cc: draft.cc, bcc: draft.bcc,
+            ownAddress: draft.ownAddress)
         if !deduped.duplicates.isEmpty {
             let names = list(deduped.duplicates)
-            out.append(ComposeFinding(
-                kind: .duplicateRecipients, severity: .notice,
-                message: "\(names) appears more than once across To, Cc and Bcc.",
-                correction: .dedupeRecipients))
+            out.append(
+                ComposeFinding(
+                    kind: .duplicateRecipients, severity: .notice,
+                    message: "\(names) appears more than once across To, Cc and Bcc.",
+                    correction: .dedupeRecipients))
         }
         if !deduped.selfAddressed.isEmpty {
-            out.append(ComposeFinding(
-                kind: .selfRecipient, severity: .notice,
-                message: "You are on this message's recipient list. You will get a copy in " +
-                         "Sent either way.",
-                correction: .dedupeRecipients))
+            out.append(
+                ComposeFinding(
+                    kind: .selfRecipient, severity: .notice,
+                    message: "You are on this message's recipient list. You will get a copy in " + "Sent either way.",
+                    correction: .dedupeRecipients))
         }
         // Look-alikes: every field, since a Bcc typo is the one nobody sees.
-        let lookalikes = LookalikeAddress.matches(in: draft.allRecipients,
-                                                  candidates: draft.knownContacts)
+        let lookalikes = LookalikeAddress.matches(
+            in: draft.allRecipients,
+            candidates: draft.knownContacts)
         if let first = lookalikes.first {
-            out.append(ComposeFinding(
-                kind: .lookalikeAddress, severity: .confirm,
-                message: "\(first.typed.email) is \(first.distance == 1 ? "one character" : "two characters") " +
-                         "away from \(first.suggestion.email), who you mail often. Did you mean them?",
-                correction: .replaceRecipient(from: first.typed, with: first.suggestion)))
+            out.append(
+                ComposeFinding(
+                    kind: .lookalikeAddress, severity: .confirm,
+                    message: "\(first.typed.email) is \(first.distance == 1 ? "one character" : "two characters") "
+                        + "away from \(first.suggestion.email), who you mail often. Did you mean them?",
+                    correction: .replaceRecipient(from: first.typed, with: first.suggestion)))
         }
         return out
     }
@@ -155,23 +168,26 @@ public enum ComposeAdvice {
         var out: [ComposeFinding] = []
         let recipientCount = draft.to.count + draft.cc.count + draft.bcc.count
         if recipientCount > wideReplyAllThreshold {
-            out.append(ComposeFinding(
-                kind: .wideReplyAll, severity: .confirm,
-                message: "This reply goes to \(recipientCount) people. Reply-all sends it to " +
-                         "everyone on the thread, not just the sender."))
+            out.append(
+                ComposeFinding(
+                    kind: .wideReplyAll, severity: .confirm,
+                    message: "This reply goes to \(recipientCount) people. Reply-all sends it to "
+                        + "everyone on the thread, not just the sender."))
         }
         // Anyone in the recipient list who was never on the original message.
         // Adding someone to a reply-all forwards the whole quoted conversation
         // to a person who was not part of it — the version of this mistake that
         // actually leaks information rather than just annoying people.
-        let known = Set(original.map { $0.email.lowercased() }
-            + [draft.ownAddress?.lowercased()].compactMap { $0 })
+        let known = Set(
+            original.map { $0.email.lowercased() }
+                + [draft.ownAddress?.lowercased()].compactMap { $0 })
         let added = draft.allRecipients.filter { !known.contains($0.email.lowercased()) }
         if !added.isEmpty {
-            out.append(ComposeFinding(
-                kind: .replyAllAddsRecipients, severity: .confirm,
-                message: "\(list(added)) \(added.count == 1 ? "was" : "were") not on the original " +
-                         "thread, and the quoted conversation below goes to them too."))
+            out.append(
+                ComposeFinding(
+                    kind: .replyAllAddsRecipients, severity: .confirm,
+                    message: "\(list(added)) \(added.count == 1 ? "was" : "were") not on the original "
+                        + "thread, and the quoted conversation below goes to them too."))
         }
         return out
     }
@@ -185,26 +201,30 @@ public enum ComposeAdvice {
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         if !draft.hasAttachments, AttachmentIntent.claimsAttachment(in: draft.bodyText) {
-            out.append(ComposeFinding(
-                kind: .attachmentIntentWithoutAttachment, severity: .confirm,
-                message: "Your message mentions an attachment, but nothing is attached.",
-                correction: .attachFiles))
+            out.append(
+                ComposeFinding(
+                    kind: .attachmentIntentWithoutAttachment, severity: .confirm,
+                    message: "Your message mentions an attachment, but nothing is attached.",
+                    correction: .attachFiles))
         }
         if subjectIsEmpty {
-            out.append(ComposeFinding(
-                kind: .emptySubject, severity: .confirm,
-                message: "This message has no subject."))
+            out.append(
+                ComposeFinding(
+                    kind: .emptySubject, severity: .confirm,
+                    message: "This message has no subject."))
             if let suggestion = SubjectSuggestion.suggest(from: draft.bodyText) {
-                out.append(ComposeFinding(
-                    kind: .subjectSuggestion, severity: .notice,
-                    message: "Use “\(suggestion)” as the subject?",
-                    correction: .useSubject(suggestion)))
+                out.append(
+                    ComposeFinding(
+                        kind: .subjectSuggestion, severity: .notice,
+                        message: "Use “\(suggestion)” as the subject?",
+                        correction: .useSubject(suggestion)))
             }
         }
         if bodyIsEmpty {
-            out.append(ComposeFinding(
-                kind: .emptyBody, severity: .confirm,
-                message: "This message has no body text."))
+            out.append(
+                ComposeFinding(
+                    kind: .emptyBody, severity: .confirm,
+                    message: "This message has no body text."))
         }
         return out
     }

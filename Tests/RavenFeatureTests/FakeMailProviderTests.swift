@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("FakeMailProvider")
@@ -19,11 +20,14 @@ struct FakeMailProviderTests {
     func searchThreadsReturnsCannedResults() async throws {
         let provider = FakeMailProvider()
         provider.searchResults = (0..<5).map { index in
-            MailThread(id: "t\(index)", accountID: "a1", messages: [
-                MailMessage(id: "m\(index)", threadID: "t\(index)",
-                            from: MailAddress(email: "a@x.com"), subject: "s",
-                            date: Date(), labelIDs: [], snippet: "")
-            ])
+            MailThread(
+                id: "t\(index)", accountID: "a1",
+                messages: [
+                    MailMessage(
+                        id: "m\(index)", threadID: "t\(index)",
+                        from: MailAddress(email: "a@x.com"), subject: "s",
+                        date: Date(), labelIDs: [], snippet: "")
+                ])
         }
 
         let results = try await provider.searchThreads(query: "anything", limit: 3)

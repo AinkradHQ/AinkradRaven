@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 // Moved verbatim out of `GmailAuthTests` when the loopback listener was
@@ -44,9 +45,11 @@ struct CallbackRequestParserTests {
 
     @Test("the first line is extracted regardless of CRLF vs LF line endings")
     func firstLineExtraction() {
-        #expect(CallbackRequestParser.firstLine(of: "GET /?code=a HTTP/1.1\r\nHost: x\r\n\r\n")
+        #expect(
+            CallbackRequestParser.firstLine(of: "GET /?code=a HTTP/1.1\r\nHost: x\r\n\r\n")
                 == "GET /?code=a HTTP/1.1")
-        #expect(CallbackRequestParser.firstLine(of: "GET /?code=a HTTP/1.1\nHost: x\n\n")
+        #expect(
+            CallbackRequestParser.firstLine(of: "GET /?code=a HTTP/1.1\nHost: x\n\n")
                 == "GET /?code=a HTTP/1.1")
         #expect(CallbackRequestParser.firstLine(of: "") == nil)
     }
@@ -85,8 +88,16 @@ struct OneShotResumeGuardTests {
     private final class Counter: @unchecked Sendable {
         private let lock = NSLock()
         private var value = 0
-        func increment() { lock.lock(); value += 1; lock.unlock() }
-        var current: Int { lock.lock(); defer { lock.unlock() }; return value }
+        func increment() {
+            lock.lock()
+            value += 1
+            lock.unlock()
+        }
+        var current: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
     }
 
     @Test("only the first of many concurrent fires invokes the completion")
@@ -134,8 +145,16 @@ struct LoopbackCallbackListenerLifetimeTests {
     private final class Box: @unchecked Sendable {
         private let lock = NSLock()
         private var value: UInt16?
-        func set(_ new: UInt16) { lock.lock(); value = new; lock.unlock() }
-        var current: UInt16? { lock.lock(); defer { lock.unlock() }; return value }
+        func set(_ new: UInt16) {
+            lock.lock()
+            value = new
+            lock.unlock()
+        }
+        var current: UInt16? {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
     }
 
     @Test("the listener binds, reports its port, and times out with a definite error")
@@ -194,8 +213,10 @@ struct LoopbackCallbackPageTests {
 
     @Test("the page is self-contained — a loopback socket cannot serve linked assets")
     func selfContained() {
-        for page in [LoopbackCallbackListener.callbackPage(success: true),
-                     LoopbackCallbackListener.callbackPage(success: false)] {
+        for page in [
+            LoopbackCallbackListener.callbackPage(success: true),
+            LoopbackCallbackListener.callbackPage(success: false),
+        ] {
             #expect(page.contains("<link") == false)
             #expect(page.contains("src=") == false)
             #expect(page.contains("http://") == false)
@@ -205,8 +226,10 @@ struct LoopbackCallbackPageTests {
 
     @Test("the page names no single provider — one listener serves every account kind")
     func providerNeutralCopy() {
-        for page in [LoopbackCallbackListener.callbackPage(success: true),
-                     LoopbackCallbackListener.callbackPage(success: false)] {
+        for page in [
+            LoopbackCallbackListener.callbackPage(success: true),
+            LoopbackCallbackListener.callbackPage(success: false),
+        ] {
             #expect(page.lowercased().contains("gmail") == false)
             #expect(page.lowercased().contains("google") == false)
         }

@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Fails every `enqueue` — used to exercise the path where the local store
@@ -23,25 +24,32 @@ import Foundation
 @MainActor struct InboxViewModelTests {
     private func makeModel() throws -> (RavenViewModel, DocumentMailStore) {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
-                                          displayName: "Me", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "me@x.com",
+                displayName: "Me", state: .ready))
         return (RavenViewModel(store: store), store)
     }
 
     private func thread(_ id: String, subject: String, unread: Bool, date: Date) -> MailThread {
-        MailThread(id: id, accountID: "a1", messages: [
-            MailMessage(id: "m-\(id)", threadID: id, from: MailAddress(email: "b@x.com"),
-                        subject: subject, date: date, isRead: !unread,
-                        labelIDs: unread ? ["INBOX", "UNREAD"] : ["INBOX"], snippet: "s")
-        ])
+        MailThread(
+            id: id, accountID: "a1",
+            messages: [
+                MailMessage(
+                    id: "m-\(id)", threadID: id, from: MailAddress(email: "b@x.com"),
+                    subject: subject, date: date, isRead: !unread,
+                    labelIDs: unread ? ["INBOX", "UNREAD"] : ["INBOX"], snippet: "s")
+            ])
     }
 
     @Test("reload lists threads newest first")
     func ordersByDate() throws {
         let (model, store) = try makeModel()
         let now = Date()
-        try store.upsertThread(thread("old", subject: "Old", unread: false,
-                                      date: now.addingTimeInterval(-3600)))
+        try store.upsertThread(
+            thread(
+                "old", subject: "Old", unread: false,
+                date: now.addingTimeInterval(-3600)))
         try store.upsertThread(thread("new", subject: "New", unread: false, date: now))
         model.reload()
         #expect(model.visibleThreads.map(\.id) == ["new", "old"])
@@ -72,8 +80,10 @@ import Foundation
     @Test("selecting an unread thread also queues the read on the outbox, not just the local store")
     func selectionEnqueuesOutboxMutation() throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
-                                          displayName: "Me", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "me@x.com",
+                displayName: "Me", state: .ready))
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
         let model = RavenViewModel(store: store, outbox: outbox)
         let now = Date()
@@ -94,8 +104,10 @@ import Foundation
     @Test("re-selecting an already-read thread does not queue a redundant mutation")
     func reselectingReadThreadDoesNotEnqueue() throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
-                                          displayName: "Me", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "me@x.com",
+                displayName: "Me", state: .ready))
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
         let model = RavenViewModel(store: store, outbox: outbox)
         let now = Date()
@@ -175,8 +187,10 @@ import Foundation
     @Test("archiving a multi-selection enqueues ONE mutation carrying every id")
     func archiveSelectionEnqueuesOneMutation() throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
-                                          displayName: "Me", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "me@x.com",
+                displayName: "Me", state: .ready))
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
         let model = RavenViewModel(store: store, outbox: outbox)
         let now = Date()
@@ -238,8 +252,10 @@ import Foundation
     @Test("a failed enqueue leaves the local mutation applied but surfaces a per-row error, not silent success")
     func failedEnqueueSurfacesRowError() throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
-                                          displayName: "Me", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "me@x.com",
+                displayName: "Me", state: .ready))
         let outbox = FailingOutbox()
         let model = RavenViewModel(store: store, outbox: outbox)
         let now = Date()
@@ -258,8 +274,10 @@ import Foundation
     @Test("a subsequent successful mutation clears a previously surfaced row error")
     func successClearsRowError() throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
-                                          displayName: "Me", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "me@x.com",
+                displayName: "Me", state: .ready))
         let outbox = FailingOutbox()
         let model = RavenViewModel(store: store, outbox: outbox)
         let now = Date()

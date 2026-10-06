@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The recipient block: From, To, and Cc/Bcc behind a disclosure.
 ///
@@ -45,18 +45,23 @@ struct ComposeRecipients: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
             fromRow
-            RecipientChipField(label: "To", chips: $toChips, candidates: candidates,
-                               onIsolate: isolate)
-            AinkradDisclosureGroup(title: "Cc & Bcc", isExpanded: $isExpanded,
-                                   hitCount: isExpanded ? 0 : copyCount) {
+            RecipientChipField(
+                label: "To", chips: $toChips, candidates: candidates,
+                onIsolate: isolate)
+            AinkradDisclosureGroup(
+                title: "Cc & Bcc", isExpanded: $isExpanded,
+                hitCount: isExpanded ? 0 : copyCount
+            ) {
                 VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
                     RecipientChipField(label: "Cc", chips: $ccChips, candidates: candidates)
                     RecipientChipField(label: "Bcc", chips: $bccChips, candidates: candidates)
-                    Text("Bcc recipients get the message. The To and Cc recipients never see "
-                         + "that they were included.")
-                        .font(AinkradFontResolver.font(.caption, typography: typo))
-                        .foregroundStyle(theme.foreground.opacity(0.5))
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Bcc recipients get the message. The To and Cc recipients never see "
+                            + "that they were included."
+                    )
+                    .font(AinkradFontResolver.font(.caption, typography: typo))
+                    .foregroundStyle(theme.foreground.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             // Never leave a typed recipient behind a closed chevron. Runs on
@@ -78,7 +83,8 @@ struct ComposeRecipients: View {
         if context.thread == nil, runtime.accounts.count > 1 {
             ComposeFromPicker(runtime: runtime, selection: $selectedFromAccountID)
         } else if let thread = context.thread,
-                  let address = runtime.ownAddress(for: thread.accountID) {
+            let address = runtime.ownAddress(for: thread.accountID)
+        {
             ComposeFieldWrap(label: "From") {
                 Text(address)
                     .font(AinkradFontResolver.font(.caption, typography: typo))

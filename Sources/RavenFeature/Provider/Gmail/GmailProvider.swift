@@ -20,10 +20,13 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
         self.session = session
     }
 
-    private func get<T: Decodable>(_ type: T.Type, path: String,
-                                   query: [URLQueryItem] = []) async throws -> T {
-        var components = URLComponents(url: base.appendingPathComponent(path),
-                                       resolvingAgainstBaseURL: false)!
+    private func get<T: Decodable>(
+        _ type: T.Type, path: String,
+        query: [URLQueryItem] = []
+    ) async throws -> T {
+        var components = URLComponents(
+            url: base.appendingPathComponent(path),
+            resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
         var request = URLRequest(url: components.url!)
         let token = try await auth.accessToken(accountID: accountID)
@@ -31,8 +34,10 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
         return try await perform(type, request: request)
     }
 
-    private func post<T: Decodable>(_ type: T.Type, path: String,
-                                    body: [String: Any]) async throws -> T {
+    private func post<T: Decodable>(
+        _ type: T.Type, path: String,
+        body: [String: Any]
+    ) async throws -> T {
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "POST"
         let token = try await auth.accessToken(accountID: accountID)
@@ -60,8 +65,10 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
     ///    lastError`, which is written to a document; a Gmail error body can
     ///    echo request context (e.g. malformed query parameters), so it must
     ///    never reach that field.
-    private func perform<T: Decodable>(_ type: T.Type, request: URLRequest,
-                                       threadIDForNotFound: String? = nil) async throws -> T {
+    private func perform<T: Decodable>(
+        _ type: T.Type, request: URLRequest,
+        threadIDForNotFound: String? = nil
+    ) async throws -> T {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw MailError.providerFailed(status: -1, message: "no response")
@@ -77,8 +84,9 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
             throw MailError.rateLimited(retryAfter: retry)
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw MailError.providerFailed(status: http.statusCode,
-                                           message: "Gmail API request failed")
+            throw MailError.providerFailed(
+                status: http.statusCode,
+                message: "Gmail API request failed")
         }
         guard let decoded = try? JSONDecoder().decode(type, from: data) else {
             throw MailError.decodingFailed(String(describing: type))
@@ -96,8 +104,10 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
     private static let maxConcurrentThreadFetches = 5
 
     public func fetchThreads(since: Date, pageToken: String?) async throws -> ThreadPage {
-        var query = [URLQueryItem(name: "q", value: "after:\(Int(since.timeIntervalSince1970))"),
-                     URLQueryItem(name: "maxResults", value: "50")]
+        var query = [
+            URLQueryItem(name: "q", value: "after:\(Int(since.timeIntervalSince1970))"),
+            URLQueryItem(name: "maxResults", value: "50"),
+        ]
         if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
         let list = try await get(GmailListDTO.self, path: "threads", query: query)
         let references = list.threads ?? []
@@ -152,8 +162,9 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
     }
 
     public func fetchThread(id: String) async throws -> MailThread {
-        var components = URLComponents(url: base.appendingPathComponent("threads/\(id)"),
-                                       resolvingAgainstBaseURL: false)!
+        var components = URLComponents(
+            url: base.appendingPathComponent("threads/\(id)"),
+            resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "format", value: "metadata")]
         var request = URLRequest(url: components.url!)
         let token = try await auth.accessToken(accountID: accountID)
@@ -163,13 +174,15 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
     }
 
     public func fetchDelta(cursor: String) async throws -> MailDelta {
-        let dto = try await get(GmailHistoryDTO.self, path: "history",
-                                query: [URLQueryItem(name: "startHistoryId", value: cursor)])
+        let dto = try await get(
+            GmailHistoryDTO.self, path: "history",
+            query: [URLQueryItem(name: "startHistoryId", value: cursor)])
         var changed = Set<String>()
         var removed = Set<String>()
         for entry in dto.history ?? [] {
             for reference in (entry.messagesAdded ?? []) + (entry.labelsAdded ?? [])
-                + (entry.labelsRemoved ?? []) {
+                + (entry.labelsRemoved ?? [])
+            {
                 changed.insert(reference.message.threadId)
             }
             for reference in entry.messagesDeleted ?? [] {
@@ -181,23 +194,27 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
         // empty delta, not an error, and the cursor still advances to
         // whatever `historyId` came back (or is held at `cursor` if even
         // that is missing).
-        return MailDelta(changedThreadIDs: Array(changed.subtracting(removed)),
-                         removedThreadIDs: Array(removed),
-                         newCursor: dto.historyId ?? cursor)
+        return MailDelta(
+            changedThreadIDs: Array(changed.subtracting(removed)),
+            removedThreadIDs: Array(removed),
+            newCursor: dto.historyId ?? cursor)
     }
 
     public func fetchBody(messageID: String) async throws -> MessageBody {
-        let dto = try await get(GmailMessageDTO.self, path: "messages/\(messageID)",
-                                query: [URLQueryItem(name: "format", value: "full")])
+        let dto = try await get(
+            GmailMessageDTO.self, path: "messages/\(messageID)",
+            query: [URLQueryItem(name: "format", value: "full")])
         return GmailMapping.body(dto)
     }
 
     public func fetchAttachment(messageID: String, attachmentID: String) async throws -> Data {
         struct AttachmentDTO: Decodable { let data: String? }
-        let dto = try await get(AttachmentDTO.self,
-                                path: "messages/\(messageID)/attachments/\(attachmentID)")
+        let dto = try await get(
+            AttachmentDTO.self,
+            path: "messages/\(messageID)/attachments/\(attachmentID)")
         guard let encoded = dto.data,
-              let decoded = GmailMapping.decodeAttachmentBase64URL(encoded) else {
+            let decoded = GmailMapping.decodeAttachmentBase64URL(encoded)
+        else {
             throw MailError.decodingFailed("attachment \(attachmentID)")
         }
         return decoded
@@ -210,9 +227,12 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
     public func applyLabels(_ mutation: LabelMutation) async throws {
         struct Empty: Decodable {}
         for id in mutation.threadIDs {
-            _ = try await post(Empty.self, path: "threads/\(id)/modify",
-                               body: ["addLabelIds": mutation.add,
-                                      "removeLabelIds": mutation.remove])
+            _ = try await post(
+                Empty.self, path: "threads/\(id)/modify",
+                body: [
+                    "addLabelIds": mutation.add,
+                    "removeLabelIds": mutation.remove,
+                ])
         }
     }
 
@@ -248,8 +268,10 @@ public final class GmailProvider: MailProvider, @unchecked Sendable {
         repeat {
             let remaining = limit - results.count
             guard remaining > 0 else { break }
-            var queryItems = [URLQueryItem(name: "q", value: query),
-                              URLQueryItem(name: "maxResults", value: "\(min(50, remaining))")]
+            var queryItems = [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "maxResults", value: "\(min(50, remaining))"),
+            ]
             if let pageToken { queryItems.append(URLQueryItem(name: "pageToken", value: pageToken)) }
             let list = try await get(GmailListDTO.self, path: "threads", query: queryItems)
             for reference in list.threads ?? [] {

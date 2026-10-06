@@ -25,14 +25,18 @@ public enum InboxFilter {
     /// The labels are read through a `LabelVocabulary` rather than compared to
     /// Gmail's spelling, so the same filter is correct for a backend whose
     /// inbox is a folder rather than a label.
-    public static func isInInbox(_ summary: ThreadSummary,
-                                vocabulary: LabelVocabulary = defaultLabelVocabulary) -> Bool {
+    public static func isInInbox(
+        _ summary: ThreadSummary,
+        vocabulary: LabelVocabulary = defaultLabelVocabulary
+    ) -> Bool {
         let flags = vocabulary.flags(from: summary.labelIDs)
         return flags.contains(.inbox) && !flags.contains(.trash) && !flags.contains(.spam)
     }
 
-    public static func apply(_ summaries: [ThreadSummary],
-                            vocabulary: LabelVocabulary = defaultLabelVocabulary) -> [ThreadSummary] {
+    public static func apply(
+        _ summaries: [ThreadSummary],
+        vocabulary: LabelVocabulary = defaultLabelVocabulary
+    ) -> [ThreadSummary] {
         summaries.filter { isInInbox($0, vocabulary: vocabulary) }
     }
 }

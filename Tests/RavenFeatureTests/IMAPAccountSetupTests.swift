@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 16's *rules*: the well-known defaults, the boundary refusals, and the
@@ -38,9 +39,11 @@ struct IMAPAccountSetupTests {
         // wrong for whichever mode did not own it. Asserted rather than left to
         // the four literals above, so a future edit that collapses them fails here
         // and not only in a user's mailbox.
-        #expect(IMAPAccountSetup.TLSMode.implicit.defaultIMAPPort
+        #expect(
+            IMAPAccountSetup.TLSMode.implicit.defaultIMAPPort
                 != IMAPAccountSetup.TLSMode.startTLS.defaultIMAPPort)
-        #expect(IMAPAccountSetup.TLSMode.implicit.defaultSMTPPort
+        #expect(
+            IMAPAccountSetup.TLSMode.implicit.defaultSMTPPort
                 != IMAPAccountSetup.TLSMode.startTLS.defaultSMTPPort)
     }
 
@@ -61,7 +64,8 @@ struct IMAPAccountSetupTests {
         // The two hosts are genuinely different servers — a preset that derived
         // one from the other would aim submissions at the IMAP server.
         #expect(icloud?.imapHost != icloud?.smtpHost)
-        #expect(IMAPAccountSetup.preset(forAddress: "A@FastMail.COM")?.imapHost
+        #expect(
+            IMAPAccountSetup.preset(forAddress: "A@FastMail.COM")?.imapHost
                 == "imap.fastmail.com")
         // Self-hosted is the case this whole feature exists for, and it has no
         // preset. `nil`, not an error and not a guess.
@@ -111,7 +115,8 @@ struct IMAPAccountSetupTests {
 
         let failure = try #require(
             IMAPAccountSetup.validate(draft, password: "").failureValue)
-        #expect(Set(failure.issues.map(\.field))
+        #expect(
+            Set(failure.issues.map(\.field))
                 == Set([.address, .imapHost, .imapPort, .smtpHost, .smtpPort, .password]))
     }
 
@@ -156,10 +161,12 @@ struct IMAPAccountSetupTests {
     @Test("the username defaults to the address and an explicit one overrides it")
     func usernameDefaulting() throws {
         var draft = goodDraft()
-        #expect(try #require(IMAPAccountSetup.validate(draft, password: "pw").successValue)
+        #expect(
+            try #require(IMAPAccountSetup.validate(draft, password: "pw").successValue)
                 .settings.username == "a@example.test")
         draft.username = "login-name"
-        #expect(try #require(IMAPAccountSetup.validate(draft, password: "pw").successValue)
+        #expect(
+            try #require(IMAPAccountSetup.validate(draft, password: "pw").successValue)
                 .settings.username == "login-name")
     }
 
@@ -179,9 +186,10 @@ struct IMAPAccountSetupTests {
     func addressFillsTheDefaults() {
         var draft = IMAPAccountSetup.Draft()
         draft.mode = .startTLS
-        let filled = IMAPAccountSetup.applyingAddress("a@fastmail.com", to: draft,
-                                                      hostsAreCustom: false,
-                                                      portsAreCustom: false)
+        let filled = IMAPAccountSetup.applyingAddress(
+            "a@fastmail.com", to: draft,
+            hostsAreCustom: false,
+            portsAreCustom: false)
         #expect(filled.imapHost == "imap.fastmail.com")
         #expect(filled.smtpHost == "smtp.fastmail.com")
         #expect(filled.imapPort == "143")
@@ -198,9 +206,10 @@ struct IMAPAccountSetupTests {
 
         // The exact reported case: a typo fixed in an address whose domain IS
         // known, over servers the user supplied.
-        let edited = IMAPAccountSetup.applyingAddress("a@fastmail.com", to: draft,
-                                                      hostsAreCustom: true,
-                                                      portsAreCustom: true)
+        let edited = IMAPAccountSetup.applyingAddress(
+            "a@fastmail.com", to: draft,
+            hostsAreCustom: true,
+            portsAreCustom: true)
         #expect(edited.address == "a@fastmail.com")
         #expect(edited.imapHost == "mail.example.test")
         #expect(edited.smtpHost == "relay.example.test")
@@ -212,9 +221,10 @@ struct IMAPAccountSetupTests {
     func unknownDomainLeavesServersAlone() {
         var draft = IMAPAccountSetup.Draft()
         draft.imapHost = "mail.example.test"
-        let edited = IMAPAccountSetup.applyingAddress("a@self-hosted.test", to: draft,
-                                                      hostsAreCustom: false,
-                                                      portsAreCustom: false)
+        let edited = IMAPAccountSetup.applyingAddress(
+            "a@self-hosted.test", to: draft,
+            hostsAreCustom: false,
+            portsAreCustom: false)
         #expect(edited.imapHost == "mail.example.test")
     }
 
@@ -223,8 +233,9 @@ struct IMAPAccountSetupTests {
         var draft = IMAPAccountSetup.Draft()
         draft.imapPort = "993"
         draft.smtpPort = "465"
-        let switched = IMAPAccountSetup.applyingMode(.startTLS, to: draft,
-                                                     portsAreCustom: false)
+        let switched = IMAPAccountSetup.applyingMode(
+            .startTLS, to: draft,
+            portsAreCustom: false)
         #expect(switched.imapPort == "143")
         #expect(switched.smtpPort == "587")
 
@@ -239,7 +250,8 @@ struct IMAPAccountSetupTests {
     @Test("auth, TLS and host failures are three categories, not one error string")
     func classificationIsTyped() {
         // Auth: the server was reached and secured and said no.
-        #expect(IMAPAccountSetup.classify(IMAPAuthError.rejected("Invalid credentials"))
+        #expect(
+            IMAPAccountSetup.classify(IMAPAuthError.rejected("Invalid credentials"))
                 == .auth("Invalid credentials"))
         #expect(IMAPAccountSetup.classify(IMAPAuthError.plaintextLoginDisabled).isAuth)
         #expect(IMAPAccountSetup.classify(IMAPAuthError.mechanismUnavailable("XOAUTH2")).isAuth)
@@ -259,8 +271,10 @@ struct IMAPAccountSetupTests {
         #expect(IMAPAccountSetup.classify(MailTransportError.tlsFailed("bad cert")).isTLS)
         #expect(IMAPAccountSetup.classify(MailTransportError.tlsUpgradeUnsupported).isTLS)
         // …including when it arrives wrapped by the session.
-        #expect(IMAPAccountSetup.classify(
-            IMAPSessionError.transportFailure(.tlsFailed("bad cert"))).isTLS)
+        #expect(
+            IMAPAccountSetup.classify(
+                IMAPSessionError.transportFailure(.tlsFailed("bad cert"))
+            ).isTLS)
 
         // Host: nothing usable was ever reached.
         #expect(IMAPAccountSetup.classify(MailTransportError.connectionFailed("refused")).isHost)
@@ -301,8 +315,10 @@ struct IMAPAccountSetupTests {
     /// these files SHOULD discuss the invariant in prose, so only code counts.
     @Test("the setup rules and the form have no document-store dependency to leak through")
     func setupCannotReachDocuments() throws {
-        for path in ["Sources/RavenFeature/Provider/IMAP/IMAPAccountSetup.swift",
-                     "Sources/RavenFeature/Views/RavenSettingsIMAPForm.swift"] {
+        for path in [
+            "Sources/RavenFeature/Provider/IMAP/IMAPAccountSetup.swift",
+            "Sources/RavenFeature/Views/RavenSettingsIMAPForm.swift",
+        ] {
             let code = try SourceTripwire.codeOnly(path)
             #expect(!code.contains("PluginDocumentStore"), "\(path)")
             #expect(!code.contains("host.documents"), "\(path)")
@@ -318,7 +334,8 @@ struct IMAPAccountSetupTests {
     /// reads the user's stored choice and no longer names a constant.
     @Test("openSession takes its TLS mode from the settings, not a constant")
     func openSessionUsesTheStoredTLSMode() throws {
-        let code = try SourceTripwire
+        let code =
+            try SourceTripwire
             .codeOnly("Sources/RavenFeature/Provider/IMAP/IMAPProviderSession.swift")
         #expect(code.contains("NetworkTransport(endpoint: settings.endpoint)"))
         #expect(code.contains("IMAPAuthenticator(session: session, security: settings.tls)"))
@@ -331,10 +348,16 @@ struct IMAPAccountSetupTests {
         let settings = IMAPAccountSettings(
             host: "imap.example.test", port: 143, username: "u", tls: .explicit,
             smtp: SMTPAccountSettings(host: "smtp.example.test", port: 587, tls: .explicit))
-        #expect(settings.endpoint == MailTransportEndpoint(host: "imap.example.test",
-                                                           port: 143, tls: .explicit))
-        #expect(settings.smtpEndpoint == MailTransportEndpoint(host: "smtp.example.test",
-                                                               port: 587, tls: .explicit))
+        #expect(
+            settings.endpoint
+                == MailTransportEndpoint(
+                    host: "imap.example.test",
+                    port: 143, tls: .explicit))
+        #expect(
+            settings.smtpEndpoint
+                == MailTransportEndpoint(
+                    host: "smtp.example.test",
+                    port: 587, tls: .explicit))
     }
 
     /// The forward-compatibility half, which the backward one below cannot cover:
@@ -344,10 +367,11 @@ struct IMAPAccountSetupTests {
     /// listed and nothing explaining why it will not connect.
     @Test("a settings document naming a TLS mode this build has never heard of still loads")
     func unknownTLSModeDoesNotStrandTheAccount() throws {
-        let future = Data((#"{"host":"imap.example.test","port":993,"username":"u","#
-                           + #""tls":"requireTLS13","#
-                           + #""smtp":{"host":"smtp.example.test","port":465,"#
-                           + #""tls":"requireTLS13"}}"#).utf8)
+        let future = Data(
+            (#"{"host":"imap.example.test","port":993,"username":"u","#
+                + #""tls":"requireTLS13","#
+                + #""smtp":{"host":"smtp.example.test","port":465,"#
+                + #""tls":"requireTLS13"}}"#).utf8)
         let settings = try JSONDecoder().decode(IMAPAccountSettings.self, from: future)
 
         // The account is still buildable — host, port and username all survived.
@@ -378,27 +402,45 @@ struct IMAPAccountSetupTests {
 // MARK: - Small readers, so the assertions above read as assertions
 
 extension Result {
-    var successValue: Success? { if case .success(let value) = self { return value }; return nil }
-    var failureValue: Failure? { if case .failure(let error) = self { return error }; return nil }
+    var successValue: Success? {
+        if case .success(let value) = self { return value }
+        return nil
+    }
+    var failureValue: Failure? {
+        if case .failure(let error) = self { return error }
+        return nil
+    }
 }
 
 extension IMAPAccountSetup.ConnectionFailure {
-    var isAuth: Bool { if case .auth = self { return true }; return false }
-    var isTLS: Bool { if case .tls = self { return true }; return false }
-    var isHost: Bool { if case .host = self { return true }; return false }
+    var isAuth: Bool {
+        if case .auth = self { return true }
+        return false
+    }
+    var isTLS: Bool {
+        if case .tls = self { return true }
+        return false
+    }
+    var isHost: Bool {
+        if case .host = self { return true }
+        return false
+    }
 }
 
 /// Reads a source file with `//` comments stripped, so prose that discusses an
 /// invariant cannot satisfy — or trip — an assertion about the code.
 enum SourceTripwire {
-    static func codeOnly(_ repoRelativePath: String,
-                         file: StaticString = #filePath) throws -> String {
+    static func codeOnly(
+        _ repoRelativePath: String,
+        file: StaticString = #filePath
+    ) throws -> String {
         let root = URL(fileURLWithPath: "\(file)")
-            .deletingLastPathComponent()      // RavenFeatureTests
-            .deletingLastPathComponent()      // Tests
-            .deletingLastPathComponent()      // repo root
-        let source = try String(contentsOf: root.appending(path: repoRelativePath),
-                                encoding: .utf8)
+            .deletingLastPathComponent()  // RavenFeatureTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // repo root
+        let source = try String(
+            contentsOf: root.appending(path: repoRelativePath),
+            encoding: .utf8)
         return source.split(separator: "\n", omittingEmptySubsequences: false)
             .map { line -> String in
                 guard let comment = line.range(of: "//") else { return String(line) }

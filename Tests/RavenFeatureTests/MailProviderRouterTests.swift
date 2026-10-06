@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Router-level enforcement of `MailProviderCapabilities` — the chokepoint
@@ -44,8 +45,11 @@ import Foundation
         readOnly.capabilities = .readOnly
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: readOnly, maxAttempts: 1)
 
-        try outbox.enqueue(.send(OutgoingMessage(to: [MailAddress(email: "a@b.com")],
-                                                  subject: "s", bodyText: "b")))
+        try outbox.enqueue(
+            .send(
+                OutgoingMessage(
+                    to: [MailAddress(email: "a@b.com")],
+                    subject: "s", bodyText: "b")))
         await outbox.drain()
 
         #expect(readOnly.sentMessages.isEmpty)

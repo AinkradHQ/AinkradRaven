@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 13: thread identity, and the merge a linking message causes.
@@ -58,8 +59,10 @@ struct IMAPThreadAssemblerTests {
 
     @Test("the id is the root Message-ID's hash, and the root is not the newest message")
     func threadIDComesFromTheRoot() throws {
-        let assembled = try #require(Self.assembler.assemble(
-            try IMAPProviderHarness.inputs("imap-provider-fetch-linked")).first)
+        let assembled = try #require(
+            Self.assembler.assemble(
+                try IMAPProviderHarness.inputs("imap-provider-fetch-linked")
+            ).first)
         #expect(assembled.thread.id == Self.m1ThreadID)
         // The linking message m3 is both the newest and the highest UID, so an
         // implementation keyed on either would produce m3's hash. Pinning the
@@ -87,8 +90,10 @@ struct IMAPThreadAssemblerTests {
             try IMAPProviderHarness.inputs("imap-provider-fetch-two-threads"))
         let loser = try #require(before.first { $0.thread.id != Self.m1ThreadID }).thread.id
 
-        let after = try #require(Self.assembler.assemble(
-            try IMAPProviderHarness.inputs("imap-provider-fetch-linked")).first)
+        let after = try #require(
+            Self.assembler.assemble(
+                try IMAPProviderHarness.inputs("imap-provider-fetch-linked")
+            ).first)
         #expect(after.thread.messages.count == 3)
         #expect(after.candidateLosingIDs.contains(loser))
         // The surviving id must NOT be in its own losing list, or the merge would
@@ -99,9 +104,9 @@ struct IMAPThreadAssemblerTests {
     @Test("a message with no Message-ID is keyed synthetically, never by its UID")
     func missingMessageIDDoesNotFallBackToTheUID() throws {
         let wire = """
-        * 1 FETCH (UID 41 FLAGS () ENVELOPE ("Sat, 01 Aug 2026 09:00:00 +0000" \
-        "Subject 9" (("Name A" NIL "a" "example.test")) NIL NIL NIL NIL NIL NIL NIL))\r\n
-        """
+            * 1 FETCH (UID 41 FLAGS () ENVELOPE ("Sat, 01 Aug 2026 09:00:00 +0000" \
+            "Subject 9" (("Name A" NIL "a" "example.test")) NIL NIL NIL NIL NIL NIL NIL))\r\n
+            """
         let fetched = try IMAPFetchWire.parsedLine(wire)
         let low = IMAPThreadAssembler.Input(
             locator: IMAPMessageLocator(mailbox: "INBOX", uidValidity: 7, uid: 41),
@@ -124,8 +129,9 @@ struct IMAPThreadAssemblerTests {
         // Dovecot's maildir++ layout uses `.` as the hierarchy delimiter, so a
         // mailbox name containing the field separator is the normal case, not an
         // edge one. A naive `split(".")` decode reads this as a different mailbox.
-        let locator = IMAPMessageLocator(mailbox: "INBOX.Folder A.Sub",
-                                        uidValidity: 7, uid: 12)
+        let locator = IMAPMessageLocator(
+            mailbox: "INBOX.Folder A.Sub",
+            uidValidity: 7, uid: 12)
         let decoded = try #require(IMAPMessageLocator(encoded: locator.encoded))
         #expect(decoded == locator)
     }
@@ -158,8 +164,10 @@ struct IMAPThreadAssemblerTests {
             assembler.assemble(try IMAPProviderHarness.inputs("imap-provider-fetch-two-threads")),
             to: store)
         let months = ["2026-07", "2026-08"]
-        #expect(Set(store.summaries(accountID: IMAPProviderHarness.accountID, months: months)
-            .map(\.id)) == [Self.m1ThreadID, Self.m2ThreadID])
+        #expect(
+            Set(
+                store.summaries(accountID: IMAPProviderHarness.accountID, months: months)
+                    .map(\.id)) == [Self.m1ThreadID, Self.m2ThreadID])
         #expect(store.thread(Self.m2ThreadID) != nil)
 
         try IMAPThreadAssembler.commit(
@@ -174,8 +182,9 @@ struct IMAPThreadAssemblerTests {
         // would show.
         let rows = store.summaries(accountID: IMAPProviderHarness.accountID, months: months)
         #expect(rows.map(\.id) == [Self.m1ThreadID])
-        let julyKey = DocumentKeys.index(accountID: IMAPProviderHarness.accountID,
-                                        month: "2026-07")
+        let julyKey = DocumentKeys.index(
+            accountID: IMAPProviderHarness.accountID,
+            month: "2026-07")
         let july = try JSONDecoder.iso8601.decode(
             [ThreadSummary].self, from: try #require(documents.data(forKey: julyKey)))
         #expect(july.isEmpty)
@@ -199,8 +208,11 @@ struct IMAPThreadAssemblerTests {
         #expect(store.mergeCount == 0)
         #expect(store.upsertCount == 1)
         #expect(store.thread(Self.m1ThreadID)?.messages.count == 3)
-        #expect(store.summaries(accountID: IMAPProviderHarness.accountID,
-                                months: ["2026-07", "2026-08"]).map(\.id) == [Self.m1ThreadID])
+        #expect(
+            store.summaries(
+                accountID: IMAPProviderHarness.accountID,
+                months: ["2026-07", "2026-08"]
+            ).map(\.id) == [Self.m1ThreadID])
     }
 
     @MainActor
@@ -227,8 +239,10 @@ struct IMAPThreadAssemblerTests {
         // carrying a text part and an `image/png` with `Content-Disposition: inline`
         // and NO filename — the normal shape of an HTML newsletter's images. Gmail
         // shows a paperclip; the old `!attachments.isEmpty` rule did not.
-        let assembled = try #require(Self.assembler.assemble(
-            try IMAPProviderHarness.inputs("imap-provider-fetch-linked")).first)
+        let assembled = try #require(
+            Self.assembler.assemble(
+                try IMAPProviderHarness.inputs("imap-provider-fetch-linked")
+            ).first)
         let message = try #require(assembled.thread.messages.first { $0.subject == "Subject 3" })
         #expect(message.hasAttachments)
         // And it is still not in the saveable list, because the UI cannot offer to

@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Persists which senders' remote images the user has explicitly chosen to
 /// auto-load, so that choice survives closing and reopening the message (and
@@ -58,7 +58,8 @@ public enum RemoteImageAllowList {
 
     private static func allowed(documents: PluginDocumentStore) -> Set<String> {
         guard let data = documents.data(forKey: DocumentKeys.remoteImageAllowList),
-              let list = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+            let list = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
         return Set(list)
     }
 }

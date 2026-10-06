@@ -64,12 +64,14 @@ public enum GmailMapping {
         guard let payload else { return [] }
         var results: [MailAttachment] = []
         if let filename = payload.filename, !filename.isEmpty,
-           let attachmentID = payload.body?.attachmentId {
-            results.append(MailAttachment(
-                attachmentID: attachmentID,
-                filename: filename,
-                mimeType: payload.mimeType ?? "application/octet-stream",
-                size: payload.body?.size ?? 0))
+            let attachmentID = payload.body?.attachmentId
+        {
+            results.append(
+                MailAttachment(
+                    attachmentID: attachmentID,
+                    filename: filename,
+                    mimeType: payload.mimeType ?? "application/octet-stream",
+                    size: payload.body?.size ?? 0))
         }
         for part in payload.parts ?? [] {
             results.append(contentsOf: attachments(part))
@@ -88,17 +90,20 @@ public enum GmailMapping {
             guard let payload else { return }
             let decoded = payload.body?.data.flatMap(decodeBase64URL)
             let mime = payload.mimeType ?? ""
-            if mime.hasPrefix("text/plain") { plain = plain ?? decoded }
-            else if mime.hasPrefix("text/html") { html = html ?? decoded }
-            else if mime.hasPrefix("text/calendar") || mime.hasPrefix("application/ics") {
+            if mime.hasPrefix("text/plain") {
+                plain = plain ?? decoded
+            } else if mime.hasPrefix("text/html") {
+                html = html ?? decoded
+            } else if mime.hasPrefix("text/calendar") || mime.hasPrefix("application/ics") {
                 ics = ics ?? decoded
             }
             payload.parts?.forEach(walk)
         }
         walk(dto.payload)
         let text = plain ?? html.map(BodySanitizer.plainText(fromHTML:)) ?? ""
-        return MessageBody(messageID: dto.id, plainText: text, html: html, icsText: ics,
-                           signatureStatus: signatureStatus(dto.payload))
+        return MessageBody(
+            messageID: dto.id, plainText: text, html: html, icsText: ics,
+            signatureStatus: signatureStatus(dto.payload))
     }
 
     /// `.unsigned` unless `payload` is a two-child `multipart/signed`
@@ -121,7 +126,8 @@ public enum GmailMapping {
     /// signature at all".
     private static func signatureStatus(_ payload: GmailMessageDTO.Payload?) -> SignatureStatus {
         guard let payload, (payload.mimeType ?? "").hasPrefix("multipart/signed"),
-              let children = payload.parts, children.count == 2 else {
+            let children = payload.parts, children.count == 2
+        else {
             return .unsigned
         }
         func isSignaturePart(_ part: GmailMessageDTO.Payload) -> Bool {
@@ -129,21 +135,24 @@ public enum GmailMapping {
                 || (part.mimeType ?? "").hasPrefix("application/x-pkcs7-signature")
         }
         guard let signaturePart = children.first(where: isSignaturePart),
-              let contentPart = children.first(where: { !isSignaturePart($0) }),
-              let signatureEncoded = signaturePart.body?.data,
-              let signature = decodeAttachmentBase64URL(signatureEncoded) else {
+            let contentPart = children.first(where: { !isSignaturePart($0) }),
+            let signatureEncoded = signaturePart.body?.data,
+            let signature = decodeAttachmentBase64URL(signatureEncoded)
+        else {
             return .signedInvalid
         }
         // A `multipart/*` signed-content child cannot be canonicalized from
         // Gmail's decomposed JSON — see the doc comment above.
         guard contentPart.parts == nil || contentPart.parts?.isEmpty == true,
-              let bodyEncoded = contentPart.body?.data,
-              let decodedBody = decodeAttachmentBase64URL(bodyEncoded) else {
+            let bodyEncoded = contentPart.body?.data,
+            let decodedBody = decodeAttachmentBase64URL(bodyEncoded)
+        else {
             return .signedInvalid
         }
-        let contentTypeHeader = contentPart.headers.first {
-            $0.name.caseInsensitiveCompare("Content-Type") == .orderedSame
-        }?.value ?? contentPart.mimeType ?? ""
+        let contentTypeHeader =
+            contentPart.headers.first {
+                $0.name.caseInsensitiveCompare("Content-Type") == .orderedSame
+            }?.value ?? contentPart.mimeType ?? ""
         let canonical = Data("Content-Type: \(contentTypeHeader)\r\n\r\n".utf8) + decodedBody
         return SMIME.verify(signedContent: canonical, signature: signature)
     }
@@ -172,7 +181,8 @@ public enum GmailMapping {
     /// returning raw `Data` — for binary attachment bytes, which are not
     /// necessarily valid UTF-8 text.
     public static func decodeAttachmentBase64URL(_ encoded: String) -> Data? {
-        var normalized = encoded
+        var normalized =
+            encoded
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
         while normalized.count % 4 != 0 { normalized.append("=") }
@@ -182,7 +192,10 @@ public enum GmailMapping {
     private static func hasAttachment(_ payload: GmailMessageDTO.Payload?) -> Bool {
         guard let payload else { return false }
         if let mime = payload.mimeType,
-           !mime.hasPrefix("text/"), !mime.hasPrefix("multipart/") { return true }
+            !mime.hasPrefix("text/"), !mime.hasPrefix("multipart/")
+        {
+            return true
+        }
         return payload.parts?.contains(where: { hasAttachment($0) }) ?? false
     }
 }

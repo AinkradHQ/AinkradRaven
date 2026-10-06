@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 13: `IMAPProvider.fetchDelta` — the per-mailbox walk, the union, and the two
@@ -35,16 +36,24 @@ struct IMAPProviderDeltaTests {
             .init("SELECT \"Folder B\"", "imap-provider-select-empty"),
             .init("SELECT \"Folder C\"", "imap-provider-select-empty"),
         ])
-        guard await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "fetchThreads",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                }) != nil
+        else { return }
 
         let seed = IMAPSyncCursor(mailboxes: [
-            "INBOX": IMAPMailboxSyncState(uidValidity: 7, uidNext: 20),
+            "INBOX": IMAPMailboxSyncState(uidValidity: 7, uidNext: 20)
         ])
-        guard let delta = await IMAPProviderHarness.expect("fetchDelta", {
-            try await provider.fetchDelta(cursor: seed.encoded())
-        }) else { return }
+        guard
+            let delta = await IMAPProviderHarness.expect(
+                "fetchDelta",
+                {
+                    try await provider.fetchDelta(cursor: seed.encoded())
+                })
+        else { return }
 
         #expect(delta.removedThreadIDs == [Self.m1Thread])
         #expect(delta.changedThreadIDs.isEmpty)
@@ -70,21 +79,29 @@ struct IMAPProviderDeltaTests {
             .init("UID SEARCH SINCE", "imap-provider-search-two"),
             .init("UID FETCH 11,10", "imap-provider-fetch-two-threads"),
         ])
-        guard await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "fetchThreads",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                }) != nil
+        else { return }
         await backfill.close()
 
         let (session, _) = try await IMAPDeltaHarness.session(
-            capabilities: "IMAP4rev1", steps: [
+            capabilities: "IMAP4rev1",
+            steps: [
                 .init("SELECT \"INBOX\"", "imap-provider-select"),
                 .init("UID FETCH 20:*", "imap-provider-delta-expunge"),
                 .init("UID FETCH 1:19", "imap-delta-plain-rescan"),
             ])
         let strategy = IMAPDeltaStrategy(
             session: session, identity: await provider.index.identity(for: "INBOX"))
-        guard let result = await IMAPDeltaHarness.expectPass(strategy, from: IMAPSyncCursor(
-            mailboxes: ["INBOX": IMAPMailboxSyncState(uidValidity: 7, uidNext: 20)]))
+        guard
+            let result = await IMAPDeltaHarness.expectPass(
+                strategy,
+                from: IMAPSyncCursor(
+                    mailboxes: ["INBOX": IMAPMailboxSyncState(uidValidity: 7, uidNext: 20)]))
         else { return }
         #expect(result.delta.removedThreadIDs == [Self.m1Thread])
         #expect(result.delta.changedThreadIDs.isEmpty)
@@ -119,13 +136,21 @@ struct IMAPProviderDeltaTests {
             .init("UID FETCH 1:39", "imap-provider-rescan-30-changed"),
             .init("SELECT \"Folder C\"", "imap-provider-select-empty"),
         ])
-        guard let page = await IMAPProviderHarness.expect("page 1", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) else { return }
+        guard
+            let page = await IMAPProviderHarness.expect(
+                "page 1",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                })
+        else { return }
         #expect(page.threads.map(\.id) == [Self.m1Thread])
-        guard await IMAPProviderHarness.expect("page 2", {
-            try await provider.fetchThreads(since: Self.since, pageToken: "1:")
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "page 2",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: "1:")
+                }) != nil
+        else { return }
         // One thread, two folders — the premise the rest of the test rests on, asserted
         // rather than assumed.
         let locators = await provider.index.locators(threadID: Self.m1Thread)
@@ -135,9 +160,13 @@ struct IMAPProviderDeltaTests {
             "INBOX": IMAPMailboxSyncState(uidValidity: 7, uidNext: 20),
             "Folder B": IMAPMailboxSyncState(uidValidity: 7, uidNext: 40),
         ])
-        guard let delta = await IMAPProviderHarness.expect("fetchDelta", {
-            try await provider.fetchDelta(cursor: seed.encoded())
-        }) else { return }
+        guard
+            let delta = await IMAPProviderHarness.expect(
+                "fetchDelta",
+                {
+                    try await provider.fetchDelta(cursor: seed.encoded())
+                })
+        else { return }
         #expect(delta.removedThreadIDs == [Self.m1Thread])
         #expect(delta.changedThreadIDs.isEmpty)
         await session.close()
@@ -166,20 +195,32 @@ struct IMAPProviderDeltaTests {
             .init("UID FETCH 1:39", "imap-provider-rescan-folder-b"),
             .init("SELECT \"Folder C\"", "imap-provider-select-empty"),
         ])
-        guard await IMAPProviderHarness.expect("page 1", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) != nil else { return }
-        guard await IMAPProviderHarness.expect("page 2", {
-            try await provider.fetchThreads(since: Self.since, pageToken: "1:")
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "page 1",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                }) != nil
+        else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "page 2",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: "1:")
+                }) != nil
+        else { return }
 
         let seed = IMAPSyncCursor(mailboxes: [
             "INBOX": IMAPMailboxSyncState(uidValidity: 7, uidNext: 40),
             "Folder B": IMAPMailboxSyncState(uidValidity: 7, uidNext: 40),
         ])
-        guard let delta = await IMAPProviderHarness.expect("fetchDelta", {
-            try await provider.fetchDelta(cursor: seed.encoded())
-        }) else { return }
+        guard
+            let delta = await IMAPProviderHarness.expect(
+                "fetchDelta",
+                {
+                    try await provider.fetchDelta(cursor: seed.encoded())
+                })
+        else { return }
         #expect(delta.removedThreadIDs.isEmpty)
         #expect(delta.changedThreadIDs.isEmpty)
         await session.close()
@@ -197,15 +238,23 @@ struct IMAPProviderDeltaTests {
             .init("SELECT \"Folder B\"", "imap-provider-select-empty"),
             .init("SELECT \"Folder C\"", "imap-provider-select-empty"),
         ])
-        guard await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "fetchThreads",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                }) != nil
+        else { return }
         let seed = IMAPSyncCursor(mailboxes: [
-            "INBOX": IMAPMailboxSyncState(uidValidity: 7, uidNext: 20),
+            "INBOX": IMAPMailboxSyncState(uidValidity: 7, uidNext: 20)
         ])
-        guard let delta = await IMAPProviderHarness.expect("fetchDelta", {
-            try await provider.fetchDelta(cursor: seed.encoded())
-        }) else { return }
+        guard
+            let delta = await IMAPProviderHarness.expect(
+                "fetchDelta",
+                {
+                    try await provider.fetchDelta(cursor: seed.encoded())
+                })
+        else { return }
 
         #expect(delta.changedThreadIDs == [Self.m1Thread])
         #expect(delta.removedThreadIDs.isEmpty)
@@ -226,9 +275,13 @@ struct IMAPProviderDeltaTests {
             .init("SELECT \"Folder B\"", "imap-provider-select-empty"),
             .init("SELECT \"Folder C\"", "imap-provider-select-empty"),
         ])
-        guard let delta = await IMAPProviderHarness.expect("fetchDelta", {
-            try await provider.fetchDelta(cursor: "")
-        }) else { return }
+        guard
+            let delta = await IMAPProviderHarness.expect(
+                "fetchDelta",
+                {
+                    try await provider.fetchDelta(cursor: "")
+                })
+        else { return }
         let cursor = IMAPSyncCursor(encoded: delta.newCursor)
         // Per-mailbox positions, in the one string `MailAccount.syncCursor` already
         // is. A cursor holding only the last mailbox walked would re-walk the others

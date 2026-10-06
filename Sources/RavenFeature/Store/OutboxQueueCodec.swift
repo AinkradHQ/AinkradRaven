@@ -63,9 +63,10 @@ enum OutboxQueueCodec {
             return Load(entries: [], unreadableEntryCount: 0, documentUnreadable: true)
         }
         let entries = lenient.compactMap(\.entry).map(restoreInFlight)
-        return Load(entries: entries,
-                    unreadableEntryCount: lenient.count - entries.count,
-                    documentUnreadable: false)
+        return Load(
+            entries: entries,
+            unreadableEntryCount: lenient.count - entries.count,
+            documentUnreadable: false)
     }
 
     private static func restoreInFlight(_ entry: OutboxEntry) -> OutboxEntry {
@@ -74,9 +75,10 @@ enum OutboxQueueCodec {
         else { return entry }
         entry.needsReview = true
         if entry.lastError == nil {
-            entry.lastError = "A previous process exited while this operation was " +
-                "in flight; whether it reached the provider is unknown. Held for " +
-                "manual review rather than resent, to avoid a possible duplicate."
+            entry.lastError =
+                "A previous process exited while this operation was "
+                + "in flight; whether it reached the provider is unknown. Held for "
+                + "manual review rather than resent, to avoid a possible duplicate."
         }
         return entry
     }

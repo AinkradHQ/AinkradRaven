@@ -3,10 +3,12 @@ import Foundation
 public struct MailThread: Codable, Equatable, Sendable {
     public let id: String
     public let accountID: String
-    public var messages: [MailMessage]   // oldest first
+    public var messages: [MailMessage]  // oldest first
 
     public init(id: String, accountID: String, messages: [MailMessage]) {
-        self.id = id; self.accountID = accountID; self.messages = messages
+        self.id = id
+        self.accountID = accountID
+        self.messages = messages
     }
 
     public var subject: String { messages.first?.subject ?? "" }

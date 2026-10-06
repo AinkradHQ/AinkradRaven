@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Surface transparency")
@@ -12,11 +13,14 @@ import Foundation
         // The whole point of the clamp: whatever gets stored — a hand-edited
         // document, a future slider with a wider range, a decode of an older
         // schema — the value the views use never goes below the floor.
-        #expect(RavenAppearance(rawSurfaceOpacity: 0).surfaceOpacity
+        #expect(
+            RavenAppearance(rawSurfaceOpacity: 0).surfaceOpacity
                 == RavenAppearance.legibleRange.lowerBound)
-        #expect(RavenAppearance(rawSurfaceOpacity: -5).surfaceOpacity
+        #expect(
+            RavenAppearance(rawSurfaceOpacity: -5).surfaceOpacity
                 == RavenAppearance.legibleRange.lowerBound)
-        #expect(RavenAppearance(rawSurfaceOpacity: 0.1).surfaceOpacity
+        #expect(
+            RavenAppearance(rawSurfaceOpacity: 0.1).surfaceOpacity
                 == RavenAppearance.legibleRange.lowerBound)
     }
 
@@ -103,8 +107,11 @@ import Foundation
                 #expect(abs(total - appearance.cardTargetOpacity(isRead: isRead)) < 1e-12)
                 // And that target is the setting plus a small absolute lift,
                 // never the product of two independently chosen numbers.
-                #expect(total <= min(1, appearance.surfaceOpacity
-                                     + appearance.cardLift(isRead: isRead)) + 1e-12)
+                #expect(
+                    total <= min(
+                        1,
+                        appearance.surfaceOpacity
+                            + appearance.cardLift(isRead: isRead)) + 1e-12)
                 #expect(total >= appearance.surfaceOpacity - 1e-12)
             }
         }
@@ -114,8 +121,9 @@ import Foundation
     func modalCompositeAccountsForTheScrim() {
         for raw in [0.30, 0.42, 0.6, 0.8, 1.0] {
             let appearance = RavenAppearance(rawSurfaceOpacity: raw)
-            let total = RavenAppearance.composite(RavenAppearance.scrimOpacity,
-                                                  appearance.modalFillOpacity)
+            let total = RavenAppearance.composite(
+                RavenAppearance.scrimOpacity,
+                appearance.modalFillOpacity)
             // Either it reaches the target exactly, or the scrim alone already
             // exceeds it and the panel paints nothing.
             #expect(total >= appearance.modalTargetOpacity - 1e-12)
@@ -156,15 +164,18 @@ import Foundation
             for isRead in [true, false] {
                 let total = RavenAppearance.composite(
                     appearance.surfaceOpacity, appearance.cardFillOpacity(isRead: isRead))
-                #expect(total <= appearance.surfaceOpacity
+                #expect(
+                    total <= appearance.surfaceOpacity
                         + RavenAppearance.unreadCardLift + 1e-12)
             }
             // Unread still reads as heavier than read wherever there is room
             // left to be heavier in.
             if appearance.surfaceOpacity < 1 {
-                #expect(appearance.cardFillOpacity(isRead: false)
+                #expect(
+                    appearance.cardFillOpacity(isRead: false)
                         > appearance.cardFillOpacity(isRead: true))
-                #expect(appearance.cardBorderOpacity(isRead: false)
+                #expect(
+                    appearance.cardBorderOpacity(isRead: false)
                         > appearance.cardBorderOpacity(isRead: true))
             }
         }
@@ -253,9 +264,11 @@ struct RavenHeaderFillTests {
             // `RavenSurface` paints `background.opacity(surfaceOpacity)`. The
             // alpha the host puts in the title bar is therefore the clamped
             // setting, unscaled — no second number can drift from the first.
-            #expect(appearance.surfaceOpacity
-                    == min(max(raw, RavenAppearance.legibleRange.lowerBound),
-                           RavenAppearance.legibleRange.upperBound))
+            #expect(
+                appearance.surfaceOpacity
+                    == min(
+                        max(raw, RavenAppearance.legibleRange.lowerBound),
+                        RavenAppearance.legibleRange.upperBound))
         }
     }
 

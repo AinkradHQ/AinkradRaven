@@ -110,9 +110,10 @@ enum LoopbackCallbackListener {
             // listener even reached `.ready`). `start(timeout:)` therefore
             // installs a strong self-reference that keeps the coordinator
             // alive on its own; `finish(_:)` clears it. See `selfRetain`.
-            let coordinator = Coordinator(expectedState: expectedState,
-                                           openBrowser: openBrowser,
-                                           continuation: continuation)
+            let coordinator = Coordinator(
+                expectedState: expectedState,
+                openBrowser: openBrowser,
+                continuation: continuation)
             coordinator.start(timeout: timeout)
         }
     }
@@ -133,77 +134,79 @@ enum LoopbackCallbackListener {
     static func callbackPage(success: Bool) -> String {
         let accent = success ? "#7c5cff" : "#ff5c7c"
         let title = success ? "Signed in" : "Sign-in failed"
-        let body = success
+        let body =
+            success
             ? "Raven is connected to your mail account. You can close this tab — your inbox is already syncing."
             : "Raven could not complete the sign-in. You can close this tab and try connecting again from Raven's settings."
-        let mark = success
+        let mark =
+            success
             ? #"<path d="M20 32 L28 40 L44 24" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>"#
             : #"<path d="M24 24 L40 40 M40 24 L24 40" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>"#
 
         return """
-        <!doctype html>
-        <html lang="en">
-        <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>\(title) — Raven</title>
-        <style>
-          :root {
-            --accent: \(accent);
-            --bg: #0b0b12;
-            --panel: #14141f;
-            --line: #262637;
-            --text: #ececf5;
-            --muted: #9a9ab0;
-          }
-          @media (prefers-color-scheme: light) {
-            :root {
-              --bg: #f4f4f8; --panel: #ffffff; --line: #e2e2ec;
-              --text: #16161f; --muted: #5d5d70;
-            }
-          }
-          * { box-sizing: border-box; }
-          body {
-            margin: 0; min-height: 100vh; display: grid; place-items: center;
-            padding: 24px; background: var(--bg); color: var(--text);
-            font: 15px/1.6 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
-            -webkit-font-smoothing: antialiased;
-          }
-          .card {
-            width: min(440px, 100%); padding: 40px 36px; text-align: center;
-            background: var(--panel); border: 1px solid var(--line);
-            /* Chamfered corners echo the host's HUD panels. */
-            clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
-            box-shadow: 0 24px 60px rgba(0,0,0,.35);
-          }
-          .mark {
-            width: 64px; height: 64px; margin: 0 auto 22px; display: grid; place-items: center;
-            color: var(--accent); border: 2px solid var(--accent); border-radius: 50%;
-            box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 12%, transparent);
-          }
-          h1 {
-            margin: 0 0 10px; font-size: 21px; font-weight: 650; letter-spacing: .2px;
-          }
-          p { margin: 0; color: var(--muted); }
-          .brand {
-            margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line);
-            font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
-          }
-          .brand b { color: var(--accent); font-weight: 650; }
-        </style>
-        </head>
-        <body>
-          <main class="card">
-            <div class="mark" aria-hidden="true">
-              <svg width="40" height="40" viewBox="0 0 64 64">\(mark)</svg>
-            </div>
-            <h1>\(title)</h1>
-            <p>\(body)</p>
-            <div class="brand"><b>Raven</b> · Ainkrad</div>
-          </main>
-        </body>
-        </html>
-        """
+            <!doctype html>
+            <html lang="en">
+            <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>\(title) — Raven</title>
+            <style>
+              :root {
+                --accent: \(accent);
+                --bg: #0b0b12;
+                --panel: #14141f;
+                --line: #262637;
+                --text: #ececf5;
+                --muted: #9a9ab0;
+              }
+              @media (prefers-color-scheme: light) {
+                :root {
+                  --bg: #f4f4f8; --panel: #ffffff; --line: #e2e2ec;
+                  --text: #16161f; --muted: #5d5d70;
+                }
+              }
+              * { box-sizing: border-box; }
+              body {
+                margin: 0; min-height: 100vh; display: grid; place-items: center;
+                padding: 24px; background: var(--bg); color: var(--text);
+                font: 15px/1.6 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+                -webkit-font-smoothing: antialiased;
+              }
+              .card {
+                width: min(440px, 100%); padding: 40px 36px; text-align: center;
+                background: var(--panel); border: 1px solid var(--line);
+                /* Chamfered corners echo the host's HUD panels. */
+                clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+                box-shadow: 0 24px 60px rgba(0,0,0,.35);
+              }
+              .mark {
+                width: 64px; height: 64px; margin: 0 auto 22px; display: grid; place-items: center;
+                color: var(--accent); border: 2px solid var(--accent); border-radius: 50%;
+                box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 12%, transparent);
+              }
+              h1 {
+                margin: 0 0 10px; font-size: 21px; font-weight: 650; letter-spacing: .2px;
+              }
+              p { margin: 0; color: var(--muted); }
+              .brand {
+                margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line);
+                font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+              }
+              .brand b { color: var(--accent); font-weight: 650; }
+            </style>
+            </head>
+            <body>
+              <main class="card">
+                <div class="mark" aria-hidden="true">
+                  <svg width="40" height="40" viewBox="0 0 64 64">\(mark)</svg>
+                </div>
+                <h1>\(title)</h1>
+                <p>\(body)</p>
+                <div class="brand"><b>Raven</b> · Ainkrad</div>
+              </main>
+            </body>
+            </html>
+            """
     }
 
     /// All mutable state and callback wiring for one authorization attempt.
@@ -238,9 +241,11 @@ enum LoopbackCallbackListener {
         /// Written and read only on `.main`, like all other state here.
         private var selfRetain: Coordinator?
 
-        init(expectedState: String,
-             openBrowser: @escaping @Sendable (UInt16) -> String,
-             continuation: CheckedContinuation<(code: String, redirectURI: String), Error>) {
+        init(
+            expectedState: String,
+            openBrowser: @escaping @Sendable (UInt16) -> String,
+            continuation: CheckedContinuation<(code: String, redirectURI: String), Error>
+        ) {
             self.expectedState = expectedState
             self.openBrowser = openBrowser
             self.resumeGuard = OneShotResumeGuard { result in
@@ -355,7 +360,8 @@ enum LoopbackCallbackListener {
                     return
                 }
                 guard let data, let text = String(data: data, encoding: .utf8),
-                      let line = CallbackRequestParser.firstLine(of: text) else {
+                    let line = CallbackRequestParser.firstLine(of: text)
+                else {
                     Self.respond(connection, success: false)
                     self.finish(.failure(ListenerError.malformedCallback))
                     return
@@ -400,15 +406,16 @@ enum LoopbackCallbackListener {
 
         private static func respond(_ connection: NWConnection, success: Bool) {
             let html = LoopbackCallbackListener.callbackPage(success: success)
-            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
+            let response =
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
             connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in })
         }
 
     }
 }
 
-private extension Duration {
-    var timeInterval: TimeInterval {
+extension Duration {
+    fileprivate var timeInterval: TimeInterval {
         let components = components
         return TimeInterval(components.seconds) + TimeInterval(components.attoseconds) / 1e18
     }

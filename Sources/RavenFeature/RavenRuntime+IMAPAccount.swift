@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Adding and testing an IMAP account — the runtime half of Task 16.
 ///
@@ -27,7 +27,8 @@ extension RavenRuntime {
     /// actually see mail", and an account whose `LIST` is empty cannot have a
     /// working archive or trash (see `LabelVocabularyResolver.imapVocabulary`).
     func testIMAPConnection(settings: IMAPAccountSettings, password: String) async
-        -> Result<Int, IMAPAccountSetup.ConnectionFailure> {
+        -> Result<Int, IMAPAccountSetup.ConnectionFailure>
+    {
         switch await providerFactory.probeIMAP(settings: settings, password: password) {
         case .success(let directory): return .success(directory.mailboxes.count)
         case .failure(let failure): return .failure(failure)
@@ -54,8 +55,10 @@ extension RavenRuntime {
     ///
     /// - Returns: the id of the account added.
     @discardableResult
-    func addIMAPAccount(address: String, settings: IMAPAccountSettings,
-                        password: String) async throws -> String {
+    func addIMAPAccount(
+        address: String, settings: IMAPAccountSettings,
+        password: String
+    ) async throws -> String {
         let directory: IMAPMailboxDirectory
         switch await providerFactory.probeIMAP(settings: settings, password: password) {
         case .success(let listed): directory = listed
@@ -63,12 +66,14 @@ extension RavenRuntime {
         }
 
         let accountID = ProviderFactory.imapAccountID(settings: settings)
-        try providerFactory.saveIMAPAccount(settings: settings, password: password,
-                                            accountID: accountID)
+        try providerFactory.saveIMAPAccount(
+            settings: settings, password: password,
+            accountID: accountID)
         try store.saveIMAPMailboxDirectory(directory, accountID: accountID)
 
-        let account = MailAccount(id: accountID, provider: .imap, address: address,
-                                  displayName: address, state: .syncing)
+        let account = MailAccount(
+            id: accountID, provider: .imap, address: address,
+            displayName: address, state: .syncing)
         try store.saveAccount(account)
         attach(provider: try providerFactory.makeProvider(for: account), accountID: accountID)
         // Same rule as `connectAccount`: adding a mailbox must not scope the Inbox

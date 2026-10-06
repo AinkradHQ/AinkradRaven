@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// One undecodable stored entry used to discard the WHOLE outbox — every
@@ -26,8 +27,9 @@ import Foundation
     }
 
     private func store(_ json: Any, into documents: InMemoryDocumentStore) throws {
-        documents.setData(try JSONSerialization.data(withJSONObject: json),
-                          forKey: DocumentKeys.outbox)
+        documents.setData(
+            try JSONSerialization.data(withJSONObject: json),
+            forKey: DocumentKeys.outbox)
     }
 
     @Test("an unreadable entry costs that entry only, not the whole queue")
@@ -59,10 +61,12 @@ import Foundation
     @Test("a held entry and one awaiting review survive an unreadable neighbour")
     func heldAndReviewEntriesSurvive() throws {
         let documents = InMemoryDocumentStore()
-        let held = OutboxEntry(operation: .send(aMessage("held")),
-                               holdUntil: Date().addingTimeInterval(600))
-        let inFlight = OutboxEntry(operation: .send(aMessage("unknown outcome")),
-                                   inFlightAt: Date())
+        let held = OutboxEntry(
+            operation: .send(aMessage("held")),
+            holdUntil: Date().addingTimeInterval(600))
+        let inFlight = OutboxEntry(
+            operation: .send(aMessage("unknown outcome")),
+            inFlightAt: Date())
         var objects: [Any] = try storedObjects([held, inFlight])
         objects.append(["operation": "nonsense"])
         try store(objects, into: documents)
@@ -104,10 +108,12 @@ import Foundation
     @Test("a wholly readable queue reports no unreadable entries")
     func cleanQueueCountsZero() throws {
         let documents = InMemoryDocumentStore()
-        try store(try storedObjects([OutboxEntry(operation: .send(aMessage("ok")))]),
-                  into: documents)
-        #expect(Outbox(documents: documents, provider: FakeMailProvider())
-            .unreadableEntryCount == 0)
+        try store(
+            try storedObjects([OutboxEntry(operation: .send(aMessage("ok")))]),
+            into: documents)
+        #expect(
+            Outbox(documents: documents, provider: FakeMailProvider())
+                .unreadableEntryCount == 0)
     }
 
     // MARK: The document itself is unreadable
@@ -133,8 +139,12 @@ import Foundation
     func objectEnvelopeIsFlagged() throws {
         let documents = InMemoryDocumentStore()
         // What a future build wrapping the queue in an envelope would store.
-        try store(["version": 2, "entries": try storedObjects(
-            [OutboxEntry(operation: .send(aMessage("lost")))])], into: documents)
+        try store(
+            [
+                "version": 2,
+                "entries": try storedObjects(
+                    [OutboxEntry(operation: .send(aMessage("lost")))]),
+            ], into: documents)
 
         let outbox = Outbox(documents: documents, provider: FakeMailProvider())
 
@@ -153,10 +163,12 @@ import Foundation
     @Test("a readable queue is not reported as an unreadable document")
     func readableDocumentIsNotFlagged() throws {
         let documents = InMemoryDocumentStore()
-        try store(try storedObjects([OutboxEntry(operation: .send(aMessage("ok")))]),
-                  into: documents)
-        #expect(!Outbox(documents: documents, provider: FakeMailProvider())
-            .queueDocumentUnreadable)
+        try store(
+            try storedObjects([OutboxEntry(operation: .send(aMessage("ok")))]),
+            into: documents)
+        #expect(
+            !Outbox(documents: documents, provider: FakeMailProvider())
+                .queueDocumentUnreadable)
     }
 
     @Test("the unreadable count reaches the runtime snapshot the Settings attention group reads")

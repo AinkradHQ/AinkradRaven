@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import RavenFeature
 
 /// Covers the scripted double itself. Everything above the transport seam is
@@ -97,7 +98,8 @@ struct ScriptedTransportTests {
         #expect(String(data: try await transport.read(), encoding: .utf8) == "* 3 EXISTS\r\nA2 OK\r\n")
 
         try await transport.send(Data("A1 CAPABILITY\r\n".utf8))
-        #expect(String(data: try await transport.read(), encoding: .utf8)
+        #expect(
+            String(data: try await transport.read(), encoding: .utf8)
                 == "* CAPABILITY IMAP4rev1\r\nA1 OK\r\n")
 
         // Each rule fired once and is gone; a repeat gets nothing rather than a

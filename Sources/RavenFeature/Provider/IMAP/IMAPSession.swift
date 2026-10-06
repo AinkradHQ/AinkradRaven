@@ -134,7 +134,10 @@ actor IMAPSession {
     /// The cached capability list, or nil when none has been learned yet. Nil is
     /// distinct from empty: it means "must ask", not "server supports nothing".
     var cachedCapabilities: Set<String>? { capabilityCache }
-    var isRunning: Bool { if case .running = state { return true }; return false }
+    var isRunning: Bool {
+        if case .running = state { return true }
+        return false
+    }
 
     // MARK: - Lifecycle
 
@@ -192,8 +195,9 @@ actor IMAPSession {
             allowNonSynchronizingLiterals: hasCapability("LITERAL+"))
         var remaining = plan.chunks
         let first = remaining.removeFirst()
-        inFlight[tag] = Record(tag: tag, command: command, remainingChunks: remaining,
-                               reactiveLines: command.reactiveContinuationLines)
+        inFlight[tag] = Record(
+            tag: tag, command: command, remainingChunks: remaining,
+            reactiveLines: command.reactiveContinuationLines)
         if !remaining.isEmpty { continuationOrder.append(tag) }
         do {
             try await transport.send(first)
@@ -248,8 +252,9 @@ actor IMAPSession {
         // the server awaits octets nobody will write and the `{n}` cannot be
         // withdrawn, so the stream is desynchronised whatever we do. Say so.
         if continuationOrder.contains(tag) {
-            await teardown(.protocolError(
-                "command \(tag) cancelled with an unwritten literal; the stream cannot be resynchronised"))
+            await teardown(
+                .protocolError(
+                    "command \(tag) cancelled with an unwritten literal; the stream cannot be resynchronised"))
             return
         }
         settle(tag: tag, result: .failure(CancellationError()))
@@ -374,7 +379,7 @@ actor IMAPSession {
             guard tokens.isEmpty else {
                 throw IMAPSessionError.protocolError("response line starts with a structural token")
             }
-            return // a bare CRLF: ignore rather than tear down
+            return  // a bare CRLF: ignore rather than tear down
         }
         switch lead {
         case "*":
@@ -465,7 +470,8 @@ actor IMAPSession {
             throw IMAPSessionError.protocolError("completion for unknown tag \(tag)")
         }
         guard let statusWord = rest.first?.stringValue,
-              let status = IMAPCommandStatus(rawValue: statusWord.uppercased()) else {
+            let status = IMAPCommandStatus(rawValue: statusWord.uppercased())
+        else {
             throw IMAPSessionError.protocolError(
                 "completion for \(tag) with no OK/NO/BAD: \(IMAPResponseText.render(rest))")
         }
@@ -482,8 +488,11 @@ actor IMAPSession {
         } else {
             // A NO/BAD is this command's failure and nobody else's: the other
             // in-flight commands keep running.
-            settle(tag: tag, result: .failure(IMAPSessionError.commandFailed(
-                tag: tag, status: status, text: response.text)))
+            settle(
+                tag: tag,
+                result: .failure(
+                    IMAPSessionError.commandFailed(
+                        tag: tag, status: status, text: response.text)))
         }
     }
 

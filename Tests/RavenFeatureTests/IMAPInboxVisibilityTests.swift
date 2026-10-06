@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The bug this suite exists for: a live Gmail account synced 500+ messages and the
@@ -25,9 +26,11 @@ import AinkradAppKit
     /// `LabelVocabularyResolver` needs before it will answer for `.imap` at all.
     private func store(inboxNamed inbox: String = "INBOX") throws -> DocumentMailStore {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: IMAPProviderHarness.accountID, provider: .imap,
-                                          address: "a@example.test", displayName: "IMAP",
-                                          state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: IMAPProviderHarness.accountID, provider: .imap,
+                address: "a@example.test", displayName: "IMAP",
+                state: .ready))
         try store.saveIMAPMailboxDirectory(
             IMAPMailboxDirectory([
                 // `\Inbox` rather than a bare `flag: .inbox`: `IMAPMailbox` persists
@@ -35,10 +38,12 @@ import AinkradAppKit
                 // a directory built with the flag set by hand loses it on the round
                 // trip through the store — and a name-only inbox is exactly what
                 // this test needs the server to have declared.
-                IMAPMailbox(name: inbox, delimiter: "/", attributes: ["\\Inbox"],
-                            flag: .inbox, isSpecialUseDeclared: true),
-                IMAPMailbox(name: "Archive", delimiter: "/", attributes: ["\\Archive"],
-                            flag: .archive, isSpecialUseDeclared: true),
+                IMAPMailbox(
+                    name: inbox, delimiter: "/", attributes: ["\\Inbox"],
+                    flag: .inbox, isSpecialUseDeclared: true),
+                IMAPMailbox(
+                    name: "Archive", delimiter: "/", attributes: ["\\Archive"],
+                    flag: .archive, isSpecialUseDeclared: true),
             ]),
             accountID: IMAPProviderHarness.accountID)
         return store
@@ -85,8 +90,10 @@ import AinkradAppKit
         // `(mailbox, uid)`, and "Archive" < "INBOX". Taking labels from the
         // surviving locator alone would file genuinely-inboxed mail under Archive
         // only — invisible again, for a new reason.
-        let inputs = try IMAPProviderHarness.inputs("imap-provider-fetch-linked",
-                                                    mailbox: "INBOX")
+        let inputs =
+            try IMAPProviderHarness.inputs(
+                "imap-provider-fetch-linked",
+                mailbox: "INBOX")
             + IMAPProviderHarness.inputs("imap-provider-fetch-linked", mailbox: "Archive")
         let assembled = Self.assembler.assemble(inputs)
         let messages = assembled.flatMap(\.self.thread.messages)
@@ -123,14 +130,18 @@ import AinkradAppKit
     @Test("Gmail's All Mail is not walked, so nothing is fetched twice")
     func everythingViewIsExcludedFromTheWalk() {
         let directory = IMAPMailboxDirectory([
-            IMAPMailbox(name: "INBOX", delimiter: "/", attributes: ["\\Inbox"],
-                        flag: .inbox, isSpecialUseDeclared: true),
-            IMAPMailbox(name: "[Gmail]", delimiter: "/", attributes: ["\\Noselect"],
-                        flag: .user("[Gmail]"), isSpecialUseDeclared: false),
-            IMAPMailbox(name: "[Gmail]/All Mail", delimiter: "/", attributes: ["\\All"],
-                        flag: .archive, isSpecialUseDeclared: true),
-            IMAPMailbox(name: "Archive", delimiter: "/", attributes: ["\\Archive"],
-                        flag: .archive, isSpecialUseDeclared: true),
+            IMAPMailbox(
+                name: "INBOX", delimiter: "/", attributes: ["\\Inbox"],
+                flag: .inbox, isSpecialUseDeclared: true),
+            IMAPMailbox(
+                name: "[Gmail]", delimiter: "/", attributes: ["\\Noselect"],
+                flag: .user("[Gmail]"), isSpecialUseDeclared: false),
+            IMAPMailbox(
+                name: "[Gmail]/All Mail", delimiter: "/", attributes: ["\\All"],
+                flag: .archive, isSpecialUseDeclared: true),
+            IMAPMailbox(
+                name: "Archive", delimiter: "/", attributes: ["\\Archive"],
+                flag: .archive, isSpecialUseDeclared: true),
         ])
         let walked = IMAPProvider.walkable(directory).map(\.name)
         #expect(walked == ["INBOX", "Archive"])
@@ -179,9 +190,10 @@ import AinkradAppKit
         // a page covers a mailbox, never the whole account. Replacing the document
         // with it would delete the rest on every sync.
         let partial = IMAPThreadAssembler.Assembled(
-            thread: MailThread(id: assembled[0].thread.id,
-                               accountID: assembled[0].thread.accountID,
-                               messages: [assembled[0].thread.messages[0]]),
+            thread: MailThread(
+                id: assembled[0].thread.id,
+                accountID: assembled[0].thread.accountID,
+                messages: [assembled[0].thread.messages[0]]),
             candidateLosingIDs: [])
         try IMAPThreadAssembler.commit([partial], to: store)
 
@@ -195,7 +207,9 @@ import AinkradAppKit
             try IMAPProviderHarness.inputs("imap-provider-fetch-linked", mailbox: "INBOX"))
         var unread = assembled[0].thread
         unread.messages = unread.messages.map { message in
-            var message = message; message.isRead = false; return message
+            var message = message
+            message.isRead = false
+            return message
         }
         try IMAPThreadAssembler.commit(
             [.init(thread: unread, candidateLosingIDs: [])], to: store)
@@ -204,7 +218,9 @@ import AinkradAppKit
         // server's current answer, or clearing unread would never stick.
         var read = assembled[0].thread
         read.messages = read.messages.map { message in
-            var message = message; message.isRead = true; return message
+            var message = message
+            message.isRead = true
+            return message
         }
         try IMAPThreadAssembler.commit(
             [.init(thread: read, candidateLosingIDs: [])], to: store)
@@ -215,9 +231,11 @@ import AinkradAppKit
     @Test("an IMAP account with no persisted directory contributes nothing rather than guessing")
     func unresolvableAccountIsRefusedNotFallenBackOn() throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: IMAPProviderHarness.accountID, provider: .imap,
-                                          address: "a@example.test", displayName: "IMAP",
-                                          state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: IMAPProviderHarness.accountID, provider: .imap,
+                address: "a@example.test", displayName: "IMAP",
+                state: .ready))
         // No `saveIMAPMailboxDirectory` — the resolver refuses, and a refusal must
         // not silently become Gmail's vocabulary.
         let assembled = Self.assembler.assemble(
@@ -227,7 +245,10 @@ import AinkradAppKit
         #expect(UnifiedInbox.inbox(store: store, months: months(for: dates.max() ?? Date())).isEmpty)
         // …while the unfiltered read still sees them, which is what makes the line
         // above a statement about the FILTER and not about the store being empty.
-        #expect(!UnifiedInbox.summaries(store: store,
-                                        months: months(for: dates.max() ?? Date())).isEmpty)
+        #expect(
+            !UnifiedInbox.summaries(
+                store: store,
+                months: months(for: dates.max() ?? Date())
+            ).isEmpty)
     }
 }

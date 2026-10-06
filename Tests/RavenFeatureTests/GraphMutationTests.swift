@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// `GraphVocabulary` + `GraphMutations.applyLabels`: the canonical flags of Task 2
@@ -30,7 +31,8 @@ struct GraphMutationTests {
     }
 
     private func apply(_ action: ThreadAction, threadIDs: [String] = ["AAQkCONV-1"])
-        async throws -> RecordedRequests {
+        async throws -> RecordedRequests
+    {
         try await apply(action.mutation(threadIDs: threadIDs))
     }
 
@@ -59,8 +61,9 @@ struct GraphMutationTests {
     /// quietly held one message, or none.
     @Test("the write fixture holds the two conversation members the writes address")
     func writeFixtureShape() throws {
-        let list = try JSONDecoder().decode(GraphMessageListDTO.self,
-                                            from: try graphFixture("graph-conversation-write"))
+        let list = try JSONDecoder().decode(
+            GraphMessageListDTO.self,
+            from: try graphFixture("graph-conversation-write"))
         let messages = try #require(list.value)
         #expect(messages.count == 2)
         #expect(messages.map(\.id) == ["AAMkMSG-1", "AAMkMSG-2"])
@@ -84,7 +87,8 @@ struct GraphMutationTests {
         #expect(entries[0].url.contains("$select=id,categories"))
         // One write per message, addressed by MESSAGE id — never by the
         // conversation id, which is not a message resource.
-        #expect(entries.dropFirst().map(\.path)
+        #expect(
+            entries.dropFirst().map(\.path)
                 == ["messages/AAMkMSG-1", "messages/AAMkMSG-2"])
     }
 
@@ -240,17 +244,20 @@ struct GraphMutationTests {
         // Archive-and-mark-read: one canonical mutation carrying both a property
         // and a folder change. Not expressible as a single `ThreadAction`, which is
         // why it is built from `FlagMutation` directly.
-        let recorded = try await apply(FlagMutation(threadIDs: ["AAQkCONV-1"],
-                                                    remove: [.inbox, .unread]))
+        let recorded = try await apply(
+            FlagMutation(
+                threadIDs: ["AAQkCONV-1"],
+                remove: [.inbox, .unread]))
 
         let entries = recorded.all
         #expect(entries.count == 5)
-        #expect(entries.dropFirst().map { "\($0.method) \($0.path)" } == [
-            "PATCH messages/AAMkMSG-1",
-            "POST messages/AAMkMSG-1/move",
-            "PATCH messages/AAMkMSG-2",
-            "POST messages/AAMkMSG-2/move",
-        ])
+        #expect(
+            entries.dropFirst().map { "\($0.method) \($0.path)" } == [
+                "PATCH messages/AAMkMSG-1",
+                "POST messages/AAMkMSG-1/move",
+                "PATCH messages/AAMkMSG-2",
+                "POST messages/AAMkMSG-2/move",
+            ])
         let patched = try #require(entries[1].json)
         #expect(patched["isRead"] as? Bool == true)
         let moved = try #require(entries[2].json)
@@ -284,8 +291,9 @@ struct GraphMutationTests {
         }
         defer { teardown() }
 
-        let rendered = GraphVocabulary().render(ThreadAction.star(true)
-            .mutation(threadIDs: ["AAQkGHOST"]))
+        let rendered = GraphVocabulary().render(
+            ThreadAction.star(true)
+                .mutation(threadIDs: ["AAQkGHOST"]))
         // Bounded like every other network-shaped await, including this one: a
         // `do/catch` site is exactly where Task 19's own deadline was missed.
         await #expect(throws: MailError.unknownThread("AAQkGHOST")) {

@@ -166,8 +166,10 @@ struct IMAPSyncCursor: Equatable, Sendable, Codable {
     /// Records a completed pass. Never called on a partial pass: M0's
     /// `syncDelta` correction is that a transient failure *holds* the cursor,
     /// and holding is expressed by not calling this.
-    mutating func advance(mailbox: String, uidValidity: UInt32,
-                          uidNext: UInt32, highestModSeq: UInt64? = nil) {
+    mutating func advance(
+        mailbox: String, uidValidity: UInt32,
+        uidNext: UInt32, highestModSeq: UInt64? = nil
+    ) {
         var state = mailboxes[mailbox] ?? IMAPMailboxSyncState(uidValidity: uidValidity)
         if state.uidValidity != uidValidity {
             state = IMAPMailboxSyncState(uidValidity: uidValidity)
@@ -197,9 +199,11 @@ struct IMAPSyncCursor: Equatable, Sendable, Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = (try? container.decodeIfPresent(Int.self, forKey: .version))
+        version =
+            (try? container.decodeIfPresent(Int.self, forKey: .version))
             .flatMap { $0 } ?? IMAPSyncCursor.currentVersion
-        let raw = (try? container.decodeIfPresent([String: LenientState].self, forKey: .mailboxes))
+        let raw =
+            (try? container.decodeIfPresent([String: LenientState].self, forKey: .mailboxes))
             .flatMap { $0 } ?? [:]
         mailboxes = raw.compactMapValues(\.state)
     }
@@ -224,7 +228,8 @@ struct IMAPSyncCursor: Equatable, Sendable, Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(self),
-              let text = String(data: data, encoding: .utf8) else {
+            let text = String(data: data, encoding: .utf8)
+        else {
             return "{}"
         }
         return text
@@ -236,8 +241,9 @@ struct IMAPSyncCursor: Equatable, Sendable, Codable {
     /// account instead.
     init(encoded string: String?) {
         guard let string, !string.isEmpty,
-              let data = string.data(using: .utf8),
-              let decoded = try? JSONDecoder().decode(IMAPSyncCursor.self, from: data) else {
+            let data = string.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode(IMAPSyncCursor.self, from: data)
+        else {
             self.init()
             return
         }

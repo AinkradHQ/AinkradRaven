@@ -26,7 +26,9 @@ public enum Signature {
         guard let range = composed.range(of: sigdash, options: .backwards) else {
             return (composed, nil)
         }
-        return (String(composed[composed.startIndex..<range.lowerBound]),
-                String(composed[range.upperBound...]))
+        return (
+            String(composed[composed.startIndex..<range.lowerBound]),
+            String(composed[range.upperBound...])
+        )
     }
 }

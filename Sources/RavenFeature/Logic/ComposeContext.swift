@@ -63,8 +63,10 @@ public enum ComposeContext: Equatable, Sendable {
     /// attributed to the thread's own account, never to the From picker, so a
     /// reply can never leave from a mailbox that was not part of the
     /// conversation.
-    public func stamp(_ message: OutgoingMessage,
-                      fallbackAccountID: String?) -> OutgoingMessage {
+    public func stamp(
+        _ message: OutgoingMessage,
+        fallbackAccountID: String?
+    ) -> OutgoingMessage {
         guard let thread else { return message.attributed(to: fallbackAccountID) }
         let threads = threadsOntoExistingConversation
         return OutgoingMessage(

@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Every WRITE tool body, plus the shared argument decoding and result shapes.
 /// Takes a store and an outbox — deliberately no provider, so a tool
@@ -64,16 +64,20 @@ public enum RavenMCPOperations {
     /// than a single provider because an archive search with no `account_id`
     /// must reach every connected account, not an arbitrary one.
     @MainActor
-    public static func run(_ operation: String, arguments: String,
-                           store: MailStore, outbox: Outbox,
-                           providers: MailProviderRouter? = nil) async -> AgentActionResult {
+    public static func run(
+        _ operation: String, arguments: String,
+        store: MailStore, outbox: Outbox,
+        providers: MailProviderRouter? = nil
+    ) async -> AgentActionResult {
         let args = decode(arguments)
 
         // The read half first. It answers `nil` for anything that is not one of
         // its tools, so there is still exactly one place an unknown operation
         // is reported.
-        if let read = await RavenMCPReadOperations.run(operation, args: args, store: store,
-                                                      providers: providers) {
+        if let read = await RavenMCPReadOperations.run(
+            operation, args: args, store: store,
+            providers: providers)
+        {
             return read
         }
 
@@ -82,12 +86,14 @@ public enum RavenMCPOperations {
             return await mutate(operation, args: args, store: store, outbox: outbox, providers: providers)
 
         case "label_with_reason":
-            return await labelWithReason(args: args, store: store, outbox: outbox,
-                                         providers: providers)
+            return await labelWithReason(
+                args: args, store: store, outbox: outbox,
+                providers: providers)
 
         case "create_draft":
             guard let to = (args["to"] as? [String])?.compactMap({ MailAddress(rfc5322: $0) }),
-                  !to.isEmpty else { return fail("to required.") }
+                !to.isEmpty
+            else { return fail("to required.") }
             // A draft must know which mailbox will send it: that decides the
             // signature and, at `send_draft`, the transmitting provider. A
             // reply within a thread takes the thread's account (there is only
@@ -100,14 +106,15 @@ public enum RavenMCPOperations {
                 }
                 draftAccount = explicit
             } else if let threadID = args["thread_id"] as? String,
-                      let thread = store.thread(threadID) {
+                let thread = store.thread(threadID)
+            {
                 draftAccount = thread.accountID
             } else {
                 let accounts = store.accounts()
                 guard accounts.count <= 1 else {
-                    return fail("Several accounts are connected, so account_id is required — " +
-                                "a draft has to know which mailbox will send it. Call " +
-                                "list_accounts for the ids.")
+                    return fail(
+                        "Several accounts are connected, so account_id is required — "
+                            + "a draft has to know which mailbox will send it. Call " + "list_accounts for the ids.")
                 }
                 draftAccount = accounts.first?.id
             }
@@ -117,7 +124,8 @@ public enum RavenMCPOperations {
             // `send_draft` discover it later — avoids a draft that silently
             // cannot go anywhere.
             if let draftAccount, let providers,
-               providers.provider(for: draftAccount)?.capabilities == .readOnly {
+                providers.provider(for: draftAccount)?.capabilities == .readOnly
+            {
                 return fail("Account \(draftAccount) is read-only (imported mail) and cannot send.")
             }
             let draft = OutgoingMessage(
@@ -139,12 +147,14 @@ public enum RavenMCPOperations {
         case "send_draft":
             guard let id = args["draft_id"] as? String else { return fail("draft_id required.") }
             guard let draft = DraftBox.shared.draft(id) else {
-                return fail("No draft \(id) exists. Drafts are held in memory only and do not " +
-                            "survive a restart, so this id may be stale — call create_draft " +
-                            "again rather than retrying send_draft with the same id.")
+                return fail(
+                    "No draft \(id) exists. Drafts are held in memory only and do not "
+                        + "survive a restart, so this id may be stale — call create_draft "
+                        + "again rather than retrying send_draft with the same id.")
             }
             if let accountID = draft.accountID, let providers,
-               providers.provider(for: accountID)?.capabilities == .readOnly {
+                providers.provider(for: accountID)?.capabilities == .readOnly
+            {
                 return fail("Account \(accountID) is read-only (imported mail) and cannot send.")
             }
             // `SendAttempt` owns the whole decision: queue, drain, classify
@@ -207,8 +217,10 @@ public enum RavenMCPOperations {
     /// recorded for a mutation that was refused would be a lie about what
     /// happened.
     @MainActor
-    private static func labelWithReason(args: [String: Any], store: MailStore, outbox: Outbox,
-                                        providers: MailProviderRouter?) async -> AgentActionResult {
+    private static func labelWithReason(
+        args: [String: Any], store: MailStore, outbox: Outbox,
+        providers: MailProviderRouter?
+    ) async -> AgentActionResult {
         // Validated at the boundary, before any thread is touched: an
         // over-long or blank reason is a caller bug, and applying the label
         // anyway would leave a labelled thread with no auditable why — the
@@ -217,8 +229,9 @@ public enum RavenMCPOperations {
             return fail("reason required — use the plain label tool if there is nothing to record.")
         }
         guard let reason = LabelReason.validated(rawReason) else {
-            return fail("reason must be non-blank and at most " +
-                        "\(LabelReason.maxReasonLength) characters; nothing was applied.")
+            return fail(
+                "reason must be non-blank and at most "
+                    + "\(LabelReason.maxReasonLength) characters; nothing was applied.")
         }
         guard let ids = args["thread_ids"] as? [String], !ids.isEmpty else {
             return fail("thread_ids required.")
@@ -229,13 +242,15 @@ public enum RavenMCPOperations {
         // application the caller was told nothing about.
         let unknown = ids.filter { store.thread($0) == nil }
         guard unknown.isEmpty else {
-            return fail("No thread(s) \(unknown.sorted().joined(separator: ", ")) in the store; " +
-                        "nothing was applied and no reason was recorded.")
+            return fail(
+                "No thread(s) \(unknown.sorted().joined(separator: ", ")) in the store; "
+                    + "nothing was applied and no reason was recorded.")
         }
         let add = args["add"] as? [String] ?? []
         let remove = args["remove"] as? [String] ?? []
-        let applied = await mutate("label", args: ["thread_ids": ids, "add": add, "remove": remove],
-                                   store: store, outbox: outbox, providers: providers)
+        let applied = await mutate(
+            "label", args: ["thread_ids": ids, "add": add, "remove": remove],
+            store: store, outbox: outbox, providers: providers)
         guard !applied.isError else { return applied }
 
         let recordedAt = Date()
@@ -243,38 +258,42 @@ public enum RavenMCPOperations {
             guard let accountID = store.thread(id)?.accountID else { continue }
             do {
                 try store.recordLabelReason(
-                    LabelReason(threadID: id, add: add, remove: remove,
-                                reason: reason, recordedAt: recordedAt),
+                    LabelReason(
+                        threadID: id, add: add, remove: remove,
+                        reason: reason, recordedAt: recordedAt),
                     accountID: accountID)
             } catch {
                 // The label IS applied and queued; saying otherwise would be
                 // the worse lie. Reported as an error so the caller knows the
                 // audit trail it asked for does not exist.
-                return fail("label applied and queued, but the reason could not be " +
-                            "recorded: \(error)")
+                return fail("label applied and queued, but the reason could not be " + "recorded: \(error)")
             }
         }
-        return ok(applied.text + "\nReason recorded locally for \(ids.count) thread(s); it is " +
-                  "never attached to a provider mutation and never leaves this machine.")
+        return ok(
+            applied.text + "\nReason recorded locally for \(ids.count) thread(s); it is "
+                + "never attached to a provider mutation and never leaves this machine.")
     }
 
     @MainActor
-    private static func mutate(_ operation: String, args: [String: Any],
-                               store: MailStore, outbox: Outbox,
-                               providers: MailProviderRouter? = nil) async -> AgentActionResult {
+    private static func mutate(
+        _ operation: String, args: [String: Any],
+        store: MailStore, outbox: Outbox,
+        providers: MailProviderRouter? = nil
+    ) async -> AgentActionResult {
         guard let ids = args["thread_ids"] as? [String], !ids.isEmpty else {
             return fail("thread_ids required.")
         }
         let action: ThreadAction
         switch operation {
         case "archive": action = .archive
-        case "trash":   action = .trash
-        case "star":    action = .star(true)
+        case "trash": action = .trash
+        case "star": action = .star(true)
         case "set_read":
             action = .setRead(args["read"] as? Bool ?? true)
         case "label":
-            action = .label(add: args["add"] as? [String] ?? [],
-                            remove: args["remove"] as? [String] ?? [])
+            action = .label(
+                add: args["add"] as? [String] ?? [],
+                remove: args["remove"] as? [String] ?? [])
         default:
             return fail("Unknown mutation \(operation).")
         }
@@ -294,15 +313,17 @@ public enum RavenMCPOperations {
         // applying a mutation to the store for a thread that can never sync
         // (Apple Mail import has no transport to carry it) would leave the
         // store permanently disagreeing with the account it imported from.
-        let readOnlyAccountIDs = Set(groups.compactMap(\.accountID).filter {
-            providers?.provider(for: $0)?.capabilities == .readOnly
-        })
+        let readOnlyAccountIDs = Set(
+            groups.compactMap(\.accountID).filter {
+                providers?.provider(for: $0)?.capabilities == .readOnly
+            })
         let writableGroups = groups.filter { group in
             group.accountID.map { !readOnlyAccountIDs.contains($0) } ?? true
         }
         guard !writableGroups.isEmpty else {
-            return fail("Account(s) \(readOnlyAccountIDs.sorted().joined(separator: ", ")) " +
-                        "are read-only (imported mail); \(operation) cannot be applied.")
+            return fail(
+                "Account(s) \(readOnlyAccountIDs.sorted().joined(separator: ", ")) "
+                    + "are read-only (imported mail); \(operation) cannot be applied.")
         }
         let writableIDs = Set(writableGroups.flatMap(\.ids))
         // Resolved and rendered per account, for the same reason `RavenViewModel`
@@ -311,8 +332,11 @@ public enum RavenMCPOperations {
         // cannot disagree about what is mutable.
         var unsupported: [String] = []
         for group in writableGroups {
-            guard let vocabulary = LabelVocabularyResolver.vocabulary(forAccountID: group.accountID,
-                                                                     store: store) else {
+            guard
+                let vocabulary = LabelVocabularyResolver.vocabulary(
+                    forAccountID: group.accountID,
+                    store: store)
+            else {
                 unsupported.append(group.accountID ?? "unknown")
                 continue
             }
@@ -325,12 +349,15 @@ public enum RavenMCPOperations {
             }
         }
         guard unsupported.count < writableGroups.count else {
-            return fail("Account(s) \(unsupported.sorted().joined(separator: ", ")) use a backend " +
-                        "this build cannot apply \(operation) to.")
+            return fail(
+                "Account(s) \(unsupported.sorted().joined(separator: ", ")) use a backend "
+                    + "this build cannot apply \(operation) to.")
         }
-        let skipped = readOnlyAccountIDs.isEmpty ? "" :
-            " (skipped read-only account(s) \(readOnlyAccountIDs.sorted().joined(separator: ", ")))"
-        return ok("\(operation) applied to \(writableIDs.count) thread(s) across " +
-                  "\(writableGroups.count) account(s); queued for sync.\(skipped)")
+        let skipped =
+            readOnlyAccountIDs.isEmpty
+            ? "" : " (skipped read-only account(s) \(readOnlyAccountIDs.sorted().joined(separator: ", ")))"
+        return ok(
+            "\(operation) applied to \(writableIDs.count) thread(s) across "
+                + "\(writableGroups.count) account(s); queued for sync.\(skipped)")
     }
 }

@@ -49,7 +49,9 @@ struct IMAPMessageLocator: Hashable, Sendable {
     let uid: UInt32
 
     init(mailbox: String, uidValidity: UInt32, uid: UInt32) {
-        self.mailbox = mailbox; self.uidValidity = uidValidity; self.uid = uid
+        self.mailbox = mailbox
+        self.uidValidity = uidValidity
+        self.uid = uid
     }
 
     /// `imap.<uidvalidity>.<uid>.<base64url(mailbox)>`.
@@ -73,8 +75,9 @@ struct IMAPMessageLocator: Hashable, Sendable {
     init?(encoded text: String) {
         let fields = text.split(separator: ".", omittingEmptySubsequences: false)
         guard fields.count == 4, fields[0] == "imap",
-              let uidValidity = UInt32(fields[1]), let uid = UInt32(fields[2]),
-              let name = Self.decodeName(String(fields[3])) else { return nil }
+            let uidValidity = UInt32(fields[1]), let uid = UInt32(fields[2]),
+            let name = Self.decodeName(String(fields[3]))
+        else { return nil }
         self.mailbox = name
         self.uidValidity = uidValidity
         self.uid = uid
@@ -144,8 +147,10 @@ struct IMAPThreadAssembler: Sendable {
     static func messageKey(_ fetched: IMAPFetchResponse) -> String {
         if let id = fetched.envelope?.messageID, !id.isEmpty { return id }
         let envelope = fetched.envelope
-        let parts = [envelope?.rawDate ?? "", envelope?.subject ?? "",
-                     envelope?.from.first?.email ?? ""]
+        let parts = [
+            envelope?.rawDate ?? "", envelope?.subject ?? "",
+            envelope?.from.first?.email ?? "",
+        ]
         return "synthetic-\(IMAPStableHash.hex(parts.joined(separator: "\u{1F}")))"
     }
 
@@ -207,9 +212,10 @@ struct IMAPThreadAssembler: Sendable {
         }
 
         let nodes = keysInOrder.map { key in
-            LocalThreading.Node(messageID: key,
-                                references: referencesByKey[key] ?? [],
-                                inReplyTo: nil)
+            LocalThreading.Node(
+                messageID: key,
+                references: referencesByKey[key] ?? [],
+                inReplyTo: nil)
         }
         // Sorted so the returned thread order is stable too — a page of threads
         // that reorders between two identical walks is indistinguishable, to a
@@ -221,12 +227,13 @@ struct IMAPThreadAssembler: Sendable {
             let threadID = Self.threadID(root: root)
             let messages = group.compactMap { key -> MailMessage? in
                 guard let input = byKey[key] else { return nil }
-                return IMAPFetchParser.message(input.fetched,
-                                               id: input.locator.encoded,
-                                               threadID: threadID,
-                                               labelIDs: (mailboxesByKey[key] ?? [
-                                                   input.locator.mailbox
-                                               ]).sorted())
+                return IMAPFetchParser.message(
+                    input.fetched,
+                    id: input.locator.encoded,
+                    threadID: threadID,
+                    labelIDs: (mailboxesByKey[key] ?? [
+                        input.locator.mailbox
+                    ]).sorted())
             }.sorted { ($0.date, $0.id) < ($1.date, $1.id) }
             guard !messages.isEmpty else { return nil }
             let losing = group.map(Self.threadID(root:)).filter { $0 != threadID }.sorted()
@@ -249,8 +256,10 @@ struct IMAPThreadAssembler: Sendable {
     /// A reference cycle (two messages citing each other, which malformed clients
     /// do produce) leaves no member unreferenced; the fallback is the least id in
     /// the group, so the thread still gets one stable id rather than none.
-    private static func root(of group: [String],
-                            references: [String: [String]]) -> String? {
+    private static func root(
+        of group: [String],
+        references: [String: [String]]
+    ) -> String? {
         let members = Set(group)
         let unreferenced = group.filter { key in
             (references[key] ?? []).allSatisfy { !members.contains($0) || $0 == key }

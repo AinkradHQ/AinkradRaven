@@ -65,7 +65,8 @@ public enum BodySanitizer {
         // and is left untouched so it still reads naturally.
         working = neutralizeResidualTagOpeners(working)
 
-        return working
+        return
+            working
             .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -131,8 +132,9 @@ public enum BodySanitizer {
     /// malformed `<script>` with no `</script>`), taking everything to the end
     /// of the document with it so the payload can't leak as text.
     private static func removeUnclosed(named tag: String, in html: String) -> String {
-        guard html.range(
-            of: "<\\s*/\\s*\(tag)\\s*>", options: [.regularExpression, .caseInsensitive]) == nil
+        guard
+            html.range(
+                of: "<\\s*/\\s*\(tag)\\s*>", options: [.regularExpression, .caseInsensitive]) == nil
         else { return html }
         return html.replacingOccurrences(
             of: "<\\s*\(tag)\\b[^>]*>[\\s\\S]*$", with: "",
@@ -146,8 +148,10 @@ public enum BodySanitizer {
     }
 
     private static func decodeEntities(_ text: String) -> String {
-        let entities = ["&amp;": "&", "&lt;": "<", "&gt;": ">",
-                        "&quot;": "\"", "&#39;": "'", "&nbsp;": " "]
+        let entities = [
+            "&amp;": "&", "&lt;": "<", "&gt;": ">",
+            "&quot;": "\"", "&#39;": "'", "&nbsp;": " ",
+        ]
         return entities.reduce(text) { partial, pair in
             partial.replacingOccurrences(of: pair.key, with: pair.value)
         }

@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Covers two of Compose's remaining M0 requirements that don't fit neatly
@@ -11,8 +12,9 @@ import Foundation
 @MainActor struct ComposeDraftAndSendPreservationTests {
     @Test("a draft saved through the DraftBox path (as create_draft via MCP would) is visible via DraftBox.all()")
     func draftFromMCPPathIsListed() throws {
-        let message = OutgoingMessage(to: [MailAddress(email: "bea@x.com", name: "Bea Smith")],
-                                      subject: "Q3 numbers", bodyText: "See attached.")
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "bea@x.com", name: "Bea Smith")],
+            subject: "Q3 numbers", bodyText: "See attached.")
         // This is exactly what `RavenMCPOperations`'s create_draft tool does:
         // save into the shared box with no id, letting DraftBox mint one.
         let id = try DraftBox.shared.save(message)
@@ -38,8 +40,9 @@ import Foundation
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(outgoing)
 
-        let result = try await SendAttempt.send(outgoing, draftID: draftID, outbox: outbox,
-                                                store: store, drain: outbox.drain)
+        let result = try await SendAttempt.send(
+            outgoing, draftID: draftID, outbox: outbox,
+            store: store, drain: outbox.drain)
 
         #expect(result.isSent == false)
         // Nothing about the chip-derived message was mutated by the failed

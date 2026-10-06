@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The scripted account `IMAPProviderTests` and `IMAPThreadAssemblerTests` drive.
@@ -20,8 +21,9 @@ enum IMAPProviderHarness {
     /// send a mailbox this account does not have, and every recorded-bytes
     /// assertion below would fail rather than passing on a lucky name.
     static func directory() throws -> IMAPMailboxDirectory {
-        IMAPMailboxDirectory(untagged: try IMAPFetchWire.untaggedResponses(
-            try IMAPFetchWire.fixture("imap-provider-list")))
+        IMAPMailboxDirectory(
+            untagged: try IMAPFetchWire.untaggedResponses(
+                try IMAPFetchWire.fixture("imap-provider-list")))
     }
 
     static let accountID = "acct-1"
@@ -57,19 +59,23 @@ enum IMAPProviderHarness {
     /// `storedLocators` defaults to empty, which is what a provider that has never
     /// walked genuinely knows. Tests that want the production fallback — the store
     /// answering for a thread the in-memory index has never seen — pass one.
-    static func provider(capabilities: String = "IMAP4rev1",
-                         steps: [IMAPDeltaHarness.Step],
-                         pageSize: Int = 50,
-                         closesOnRelease: Bool = false,
-                         storedLocators: @escaping @Sendable (String) async -> [IMAPMessageLocator]
-                             = { _ in [] }) async throws
-        -> (IMAPProvider, ScriptedTransport, IMAPSession, LeaseRecorder) {
+    static func provider(
+        capabilities: String = "IMAP4rev1",
+        steps: [IMAPDeltaHarness.Step],
+        pageSize: Int = 50,
+        closesOnRelease: Bool = false,
+        storedLocators: @escaping @Sendable (String) async -> [IMAPMessageLocator] = { _ in [] }
+    ) async throws
+        -> (IMAPProvider, ScriptedTransport, IMAPSession, LeaseRecorder)
+    {
         let (session, transport) = try await IMAPDeltaHarness.session(
             capabilities: capabilities, steps: steps)
         let working = IMAPWorkingSession(session: session, directory: try directory())
         let leases = LeaseRecorder()
-        let provider = IMAPProvider(accountID: accountID, pageSize: pageSize,
-                                    storedLocators: storedLocators) {
+        let provider = IMAPProvider(
+            accountID: accountID, pageSize: pageSize,
+            storedLocators: storedLocators
+        ) {
             await leases.noteAcquired()
             return IMAPSessionLease(working: working) {
                 await leases.noteReleased()
@@ -81,13 +87,16 @@ enum IMAPProviderHarness {
 
     /// The assembler inputs a fixture describes, as if fetched from `mailbox` at
     /// `uidValidity`.
-    static func inputs(_ fixture: String, mailbox: String = "INBOX",
-                       uidValidity: UInt32 = 7) throws -> [IMAPThreadAssembler.Input] {
+    static func inputs(
+        _ fixture: String, mailbox: String = "INBOX",
+        uidValidity: UInt32 = 7
+    ) throws -> [IMAPThreadAssembler.Input] {
         try IMAPFetchWire.parsed(fixture).compactMap { fetched in
             guard let uid = fetched.uid.flatMap({ UInt32(exactly: $0) }) else { return nil }
             return IMAPThreadAssembler.Input(
-                locator: IMAPMessageLocator(mailbox: mailbox, uidValidity: uidValidity,
-                                            uid: uid),
+                locator: IMAPMessageLocator(
+                    mailbox: mailbox, uidValidity: uidValidity,
+                    uid: uid),
                 fetched: fetched)
         }
     }
@@ -146,8 +155,10 @@ enum IMAPProviderHarness {
         func imapMailboxDirectory(accountID: String) -> IMAPMailboxDirectory? {
             inner.imapMailboxDirectory(accountID: accountID)
         }
-        func saveIMAPMailboxDirectory(_ directory: IMAPMailboxDirectory,
-                                      accountID: String) throws {
+        func saveIMAPMailboxDirectory(
+            _ directory: IMAPMailboxDirectory,
+            accountID: String
+        ) throws {
             try inner.saveIMAPMailboxDirectory(directory, accountID: accountID)
         }
     }
@@ -167,19 +178,20 @@ enum IMAPProviderHarness {
     /// only its size changed, and no passing test waits for it.
     private static func outcome<T: Sendable>(
         _ label: String, sourceLocation: SourceLocation,
-        _ body: @escaping @Sendable () async throws -> T) async -> Result<T, any Error>? {
+        _ body: @escaping @Sendable () async throws -> T
+    ) async -> Result<T, any Error>? {
         let box = ProviderOutcomeBox<T>()
         let task = Task {
-            do { await box.set(.success(try await body())) }
-            catch { await box.set(.failure(error)) }
+            do { await box.set(.success(try await body())) } catch { await box.set(.failure(error)) }
         }
         for _ in 0..<1_000 {
             if let value = await box.value { return value }
             try? await Task.sleep(for: .milliseconds(10))
         }
         task.cancel()
-        Issue.record("\(label) never resolved within 10s — the leaked-continuation shape",
-                     sourceLocation: sourceLocation)
+        Issue.record(
+            "\(label) never resolved within 10s — the leaked-continuation shape",
+            sourceLocation: sourceLocation)
         return nil
     }
 
@@ -191,9 +203,11 @@ enum IMAPProviderHarness {
     }
 
     /// Asserts a provider call succeeded within the deadline, and returns its value.
-    static func expect<T: Sendable>(_ label: String,
-                                    sourceLocation: SourceLocation = #_sourceLocation,
-                                    _ body: @escaping @Sendable () async throws -> T) async -> T? {
+    static func expect<T: Sendable>(
+        _ label: String,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        _ body: @escaping @Sendable () async throws -> T
+    ) async -> T? {
         guard let outcome = await outcome(label, sourceLocation: sourceLocation, body)
         else { return nil }
         switch outcome {
@@ -205,16 +219,20 @@ enum IMAPProviderHarness {
     }
 
     /// Asserts a provider call threw, within the deadline.
-    static func expectFailure<T: Sendable>(_ label: String,
-                                           sourceLocation: SourceLocation = #_sourceLocation,
-                                           _ body: @escaping @Sendable () async throws -> T) async
-        -> (any Error)? {
+    static func expectFailure<T: Sendable>(
+        _ label: String,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        _ body: @escaping @Sendable () async throws -> T
+    ) async
+        -> (any Error)?
+    {
         guard let outcome = await outcome(label, sourceLocation: sourceLocation, body)
         else { return nil }
         switch outcome {
         case .success:
-            Issue.record("\(label) was expected to fail but succeeded",
-                         sourceLocation: sourceLocation)
+            Issue.record(
+                "\(label) was expected to fail but succeeded",
+                sourceLocation: sourceLocation)
             return nil
         case .failure(let error): return error
         }

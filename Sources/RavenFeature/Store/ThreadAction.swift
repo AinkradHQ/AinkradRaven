@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// One local-first thread mutation, shared by every surface that can archive,
 /// star, mark-read, or trash a thread — the human `RavenViewModel` and the
@@ -32,21 +32,26 @@ public enum ThreadAction: Equatable, Hashable, Codable, Sendable {
         case .trash:
             return FlagMutation(threadIDs: threadIDs, add: [.trash], remove: [.inbox])
         case .star(let starred):
-            return starred ? FlagMutation(threadIDs: threadIDs, add: [.starred])
-                           : FlagMutation(threadIDs: threadIDs, remove: [.starred])
+            return starred
+                ? FlagMutation(threadIDs: threadIDs, add: [.starred])
+                : FlagMutation(threadIDs: threadIDs, remove: [.starred])
         case .setRead(let read):
-            return read ? FlagMutation(threadIDs: threadIDs, remove: [.unread])
-                        : FlagMutation(threadIDs: threadIDs, add: [.unread])
+            return read
+                ? FlagMutation(threadIDs: threadIDs, remove: [.unread])
+                : FlagMutation(threadIDs: threadIDs, add: [.unread])
         case .label(let add, let remove):
-            return FlagMutation(threadIDs: threadIDs,
-                                add: add.map { MailFlag.user($0) },
-                                remove: remove.map { MailFlag.user($0) })
+            return FlagMutation(
+                threadIDs: threadIDs,
+                add: add.map { MailFlag.user($0) },
+                remove: remove.map { MailFlag.user($0) })
         }
     }
 
     /// Convenience: the canonical mutation already rendered for one backend.
-    public func labelMutation(threadIDs: [String],
-                             vocabulary: LabelVocabulary = defaultLabelVocabulary) -> LabelMutation {
+    public func labelMutation(
+        threadIDs: [String],
+        vocabulary: LabelVocabulary = defaultLabelVocabulary
+    ) -> LabelMutation {
         vocabulary.render(mutation(threadIDs: threadIDs))
     }
 }
@@ -64,14 +69,17 @@ public enum ThreadAccountGrouping {
     /// silently not sync a mutation the caller was told had been queued.
     /// Deterministically ordered by account id.
     @MainActor
-    public static func group(_ ids: [String], store: MailStore,
-                            fallback: String? = nil) -> [(accountID: String?, ids: [String])] {
+    public static func group(
+        _ ids: [String], store: MailStore,
+        fallback: String? = nil
+    ) -> [(accountID: String?, ids: [String])] {
         var byAccount: [String?: [String]] = [:]
         for id in ids {
             let accountID = store.thread(id)?.accountID ?? fallback
             byAccount[accountID, default: []].append(id)
         }
-        return byAccount
+        return
+            byAccount
             .map { (accountID: $0.key, ids: $0.value) }
             .sorted { ($0.accountID ?? "") < ($1.accountID ?? "") }
     }
@@ -88,8 +96,10 @@ public enum ThreadMutationApplier {
     /// those strings mean canonically, instead of comparing them against one
     /// provider's unread label.
     @MainActor
-    public static func applyLocally(_ mutation: LabelMutation, store: MailStore,
-                                   vocabulary: LabelVocabulary = defaultLabelVocabulary) {
+    public static func applyLocally(
+        _ mutation: LabelMutation, store: MailStore,
+        vocabulary: LabelVocabulary = defaultLabelVocabulary
+    ) {
         for id in mutation.threadIDs {
             guard var thread = store.thread(id) else { continue }
             for index in thread.messages.indices {

@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The Rules group. Folded away behind a disclosure: most people never write
 /// one, and an empty rules editor was previously taking as much vertical space
@@ -23,15 +23,18 @@ struct RulesSettingsGroup: View {
                 + "rules from also running against the same thread."
         ) {
             let ruleSet = currentRules
-            AinkradDisclosureGroup(title: "Rules", isExpanded: $isExpanded,
-                                   hitCount: ruleSet.rules.count) {
+            AinkradDisclosureGroup(
+                title: "Rules", isExpanded: $isExpanded,
+                hitCount: ruleSet.rules.count
+            ) {
                 VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
                     rulesList(ruleSet)
                     if let editingRule {
                         RuleEditor(
                             rule: editingRule,
-                            previewCount: RuleSet.previewCount(editingRule,
-                                                               against: runtime.model.summaries),
+                            previewCount: RuleSet.previewCount(
+                                editingRule,
+                                against: runtime.model.summaries),
                             onSave: saveRule,
                             onCancel: { self.editingRule = nil })
                     } else {
@@ -74,8 +77,9 @@ struct RulesSettingsGroup: View {
             isSelected: editingRule?.id == rule.id,
             onTap: nil,
             leading: {
-                AinkradIconGlyph(systemName: "line.3.horizontal.decrease.circle",
-                                 filled: rule.isEnabled)
+                AinkradIconGlyph(
+                    systemName: "line.3.horizontal.decrease.circle",
+                    filled: rule.isEnabled)
             },
             title: rule.name,
             // Says what the rule DOES, not just whether it is on — a list of
@@ -106,7 +110,8 @@ struct RulesSettingsGroup: View {
     }
 
     private func ruleSummary(_ rule: MailRule) -> String {
-        let condition = rule.conditions.first
+        let condition =
+            rule.conditions.first
             .map { "\($0.field.rawValue) contains “\($0.contains)”" } ?? "any new mail"
         let state = rule.isEnabled ? "" : " · disabled"
         return "\(condition) → \(actionLabel(rule.action))\(state)"
@@ -200,8 +205,10 @@ struct RuleEditor: View {
         }
     }
 
-    init(rule: MailRule, previewCount: Int, onSave: @escaping (MailRule) -> Void,
-        onCancel: @escaping () -> Void) {
+    init(
+        rule: MailRule, previewCount: Int, onSave: @escaping (MailRule) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
         self.originalRule = rule
         self.previewCount = previewCount
         self.onSave = onSave
@@ -221,30 +228,36 @@ struct RuleEditor: View {
                     AinkradTextField(text: $name, placeholder: "Rule name")
                 }
                 AinkradFormRow(title: "When", controlWidth: 260) {
-                    AinkradSegmentedPicker(items: MailRule.ConditionField.allCases,
-                                           selection: $field,
-                                           label: { $0.rawValue.capitalized })
+                    AinkradSegmentedPicker(
+                        items: MailRule.ConditionField.allCases,
+                        selection: $field,
+                        label: { $0.rawValue.capitalized })
                 }
                 AinkradFormRow(title: "Contains", controlWidth: 260) {
                     AinkradTextField(text: $conditionText, placeholder: "text to match")
                 }
                 AinkradFormRow(title: "Then", controlWidth: 260) {
-                    AinkradSegmentedPicker(items: RuleActionKind.allCases,
-                                           selection: $actionKind,
-                                           label: { $0.label })
+                    AinkradSegmentedPicker(
+                        items: RuleActionKind.allCases,
+                        selection: $actionKind,
+                        label: { $0.label })
                 }
                 AinkradFormRow(title: "Enabled", controlWidth: 60) {
                     AinkradToggle(isOn: $isEnabled)
                 }
-                AinkradFormRow(title: "Stop here",
-                              help: "Later rules do not also run against a matched thread.",
-                              controlWidth: 60) {
+                AinkradFormRow(
+                    title: "Stop here",
+                    help: "Later rules do not also run against a matched thread.",
+                    controlWidth: 60
+                ) {
                     AinkradToggle(isOn: $stopProcessing)
                 }
-                Text("Matches \(previewCount) of your currently loaded thread"
-                     + (previewCount == 1 ? "" : "s") + ".")
-                    .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.6))
+                Text(
+                    "Matches \(previewCount) of your currently loaded thread"
+                        + (previewCount == 1 ? "" : "s") + "."
+                )
+                .font(AinkradFontResolver.font(.caption, typography: typo))
+                .foregroundStyle(theme.foreground.opacity(0.6))
                 HStack {
                     AinkradButton(title: "Cancel", style: .ghost, action: onCancel)
                     Spacer()

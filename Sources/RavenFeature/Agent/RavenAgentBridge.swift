@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Publishes what the user is looking at, and a small set of gated actions,
 /// so Sage can resolve "reply to this" / "open that thread" without having to
@@ -21,9 +21,12 @@ public enum RavenAgentBridge {
     /// written, which is a rewrite of the wrong text with no visible sign that
     /// anything went wrong.
     @MainActor
-    public static func snapshot(model: RavenViewModel,
-                                publisher: ComposeDraftPublisher = .shared)
-        -> AgentContextSnapshot? {
+    public static func snapshot(
+        model: RavenViewModel,
+        publisher: ComposeDraftPublisher = .shared
+    )
+        -> AgentContextSnapshot?
+    {
         let draft = publisher.openDraft
         guard model.selectedThread != nil || draft != nil else { return nil }
         let threadText = model.selectedThread.map { threadSection(for: $0, model: model) }
@@ -80,21 +83,24 @@ public enum RavenAgentBridge {
         // a From line; it falls back to the id if the account row is gone.
         let account = model.address(ofAccount: thread.accountID) ?? thread.accountID
         return """
-        Selected thread: \(thread.id)
-        Account: \(account) (\(thread.accountID))
-        Subject: \(thread.subject)
-        Last sender: \(sender)
-        Messages: \(thread.messages.count), unread: \(thread.unreadCount)
-        """
+            Selected thread: \(thread.id)
+            Account: \(account) (\(thread.accountID))
+            Subject: \(thread.subject)
+            Last sender: \(sender)
+            Messages: \(thread.messages.count), unread: \(thread.unreadCount)
+            """
     }
 
     /// Registers the context source and the `open_thread`/`open_compose`
     /// actions against `host`. Returns the tokens the caller must hand back to
     /// `host.context.remove` / `host.actions.remove` on teardown.
     @MainActor
-    public static func register(host: HostServices, model: RavenViewModel,
-                                publisher: ComposeDraftPublisher = .shared)
-        -> (context: PluginContextToken, actions: [AgentActionToken]) {
+    public static func register(
+        host: HostServices, model: RavenViewModel,
+        publisher: ComposeDraftPublisher = .shared
+    )
+        -> (context: PluginContextToken, actions: [AgentActionToken])
+    {
         let contextToken = host.context.register { snapshot(model: model, publisher: publisher) }
         let open = host.actions.register(actionID: "open_thread") { arguments in
             openThread(arguments: arguments, model: model)
@@ -119,11 +125,14 @@ public enum RavenAgentBridge {
     /// Malformed input comes back as an error result, never a throw or a trap —
     /// this runs in-process in the host.
     @MainActor
-    static func openCompose(arguments: String,
-                            publisher: ComposeDraftPublisher) -> AgentActionResult {
+    static func openCompose(
+        arguments: String,
+        publisher: ComposeDraftPublisher
+    ) -> AgentActionResult {
         guard let data = arguments.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data),
-              let object = json as? [String: Any] else {
+            let json = try? JSONSerialization.jsonObject(with: data),
+            let object = json as? [String: Any]
+        else {
             return AgentActionResult(text: "open_compose requires a JSON object.", isError: true)
         }
         func addresses(_ key: String) -> [MailAddress] {
@@ -151,9 +160,10 @@ public enum RavenAgentBridge {
     @MainActor
     static func openThread(arguments: String, model: RavenViewModel) -> AgentActionResult {
         guard let data = arguments.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data),
-              let object = json as? [String: Any],
-              let id = object["thread_id"] as? String else {
+            let json = try? JSONSerialization.jsonObject(with: data),
+            let object = json as? [String: Any],
+            let id = object["thread_id"] as? String
+        else {
             return AgentActionResult(text: "open_thread requires a thread_id string.", isError: true)
         }
         model.select(id)

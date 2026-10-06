@@ -7,6 +7,8 @@ public struct MailLabel: Codable, Equatable, Sendable, Identifiable {
     public let kind: Kind
 
     public init(id: String, name: String, kind: Kind) {
-        self.id = id; self.name = name; self.kind = kind
+        self.id = id
+        self.name = name
+        self.kind = kind
     }
 }

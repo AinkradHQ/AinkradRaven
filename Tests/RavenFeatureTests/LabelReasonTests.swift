@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The reason log itself: boundary validation, the decode rule in both
@@ -12,8 +13,10 @@ import AinkradAppKit
 /// they have nothing to do with.
 @Suite("Label reason log")
 @MainActor struct LabelReasonTests {
-    private static func reason(_ threadID: String, _ text: String, at date: Date,
-                              add: [String] = ["L1"], remove: [String] = []) -> LabelReason {
+    private static func reason(
+        _ threadID: String, _ text: String, at date: Date,
+        add: [String] = ["L1"], remove: [String] = []
+    ) -> LabelReason {
         LabelReason(threadID: threadID, add: add, remove: remove, reason: text, recordedAt: date)
     }
 
@@ -60,8 +63,10 @@ import AinkradAppKit
         // itself.
         let unreadable: Any = ["shape": "from a build this one does not know"]
         let expired = try JSONSerialization.jsonObject(
-            with: Self.encoder.encode(Self.reason("t2", "too old",
-                                                  at: now.addingTimeInterval(-86_400 * 200))))
+            with: Self.encoder.encode(
+                Self.reason(
+                    "t2", "too old",
+                    at: now.addingTimeInterval(-86_400 * 200))))
         let elements: [Any] = [live, unreadable, expired]
         let data = try JSONSerialization.data(withJSONObject: elements)
 
@@ -84,8 +89,9 @@ import AinkradAppKit
 
         let broken = LabelReasonLog.load(notAnArray, decoder: Self.decoder, now: now)
         let absent = LabelReasonLog.load(nil, decoder: Self.decoder, now: now)
-        let empty = LabelReasonLog.load(try JSONSerialization.data(withJSONObject: [Any]()),
-                                        decoder: Self.decoder, now: now)
+        let empty = LabelReasonLog.load(
+            try JSONSerialization.data(withJSONObject: [Any]()),
+            decoder: Self.decoder, now: now)
 
         #expect(broken.entries.isEmpty)
         #expect(broken.documentUnreadable)
@@ -110,10 +116,11 @@ import AinkradAppKit
         // can actually bite, against the document store, in
         // `unreadableShardIsSurvivableAndVisible`.
         #expect(throws: MailError.self) {
-            _ = try LabelReasonLog.appended(Self.reason("t1", "why", at: Date()),
-                                            to: original, key: "label-reasons-a1-2026-08",
-                                            encoder: Self.encoder, decoder: Self.decoder,
-                                            now: Date())
+            _ = try LabelReasonLog.appended(
+                Self.reason("t1", "why", at: Date()),
+                to: original, key: "label-reasons-a1-2026-08",
+                encoder: Self.encoder, decoder: Self.decoder,
+                now: Date())
         }
     }
 
@@ -124,9 +131,10 @@ import AinkradAppKit
         let elements: [Any] = [unreadable]
         let data = try JSONSerialization.data(withJSONObject: elements)
 
-        let updated = try LabelReasonLog.appended(Self.reason("t1", "mine", at: now),
-                                                  to: data, key: "k", encoder: Self.encoder,
-                                                  decoder: Self.decoder, now: now)
+        let updated = try LabelReasonLog.appended(
+            Self.reason("t1", "mine", at: now),
+            to: data, key: "k", encoder: Self.encoder,
+            decoder: Self.decoder, now: now)
 
         let rewritten = try #require(JSONSerialization.jsonObject(with: updated) as? [Any])
         #expect(rewritten.count == 2, "the unreadable element must survive the rewrite")
@@ -152,16 +160,21 @@ import AinkradAppKit
         // Deliberately carries a `recordedAt` far outside the window: if expiry
         // were somehow reading it, this element would go. It cannot decode as a
         // `LabelReason` (no `threadID`/`reason`), so it must be preserved.
-        let undecodable: Any = ["shape": "from a newer build",
-                                "recordedAt": "2020-01-01T00:00:00Z"]
+        let undecodable: Any = [
+            "shape": "from a newer build",
+            "recordedAt": "2020-01-01T00:00:00Z",
+        ]
         let expiredSibling = try JSONSerialization.jsonObject(
-            with: Self.encoder.encode(Self.reason("t-old", "expired",
-                                                  at: now.addingTimeInterval(-86_400 * 200))))
+            with: Self.encoder.encode(
+                Self.reason(
+                    "t-old", "expired",
+                    at: now.addingTimeInterval(-86_400 * 200))))
         let data = try JSONSerialization.data(withJSONObject: [undecodable, expiredSibling])
 
-        let updated = try LabelReasonLog.appended(Self.reason("t-new", "fresh", at: now),
-                                                  to: data, key: "k", encoder: Self.encoder,
-                                                  decoder: Self.decoder, now: now)
+        let updated = try LabelReasonLog.appended(
+            Self.reason("t-new", "fresh", at: now),
+            to: data, key: "k", encoder: Self.encoder,
+            decoder: Self.decoder, now: now)
 
         let rewritten = try #require(JSONSerialization.jsonObject(with: updated) as? [Any])
         // The prune DID run — the decodable expired sibling is gone — and the
@@ -169,7 +182,8 @@ import AinkradAppKit
         // the first, "2 elements" would also describe a rewrite that pruned
         // nothing.
         #expect(rewritten.count == 2)
-        #expect(rewritten.compactMap { ($0 as? [String: Any])?["shape"] as? String }
+        #expect(
+            rewritten.compactMap { ($0 as? [String: Any])?["shape"] as? String }
                 == ["from a newer build"])
         let reloaded = LabelReasonLog.load(updated, decoder: Self.decoder, now: now)
         #expect(reloaded.entries.map(\.threadID) == ["t-new"])
@@ -181,19 +195,24 @@ import AinkradAppKit
     func writePrunesTheWindow() throws {
         let now = Date()
         let stale = try JSONSerialization.jsonObject(
-            with: Self.encoder.encode(Self.reason("t-old", "expired",
-                                                  at: now.addingTimeInterval(-86_400 * 120))))
+            with: Self.encoder.encode(
+                Self.reason(
+                    "t-old", "expired",
+                    at: now.addingTimeInterval(-86_400 * 120))))
         // 89 days is INSIDE a 90-day window and outside a 30- or 60-day one, so
         // this fixture distinguishes the actual rule from a plausible wrong one.
         let nearEdge = try JSONSerialization.jsonObject(
-            with: Self.encoder.encode(Self.reason("t-edge", "just inside",
-                                                  at: now.addingTimeInterval(-86_400 * 89))))
+            with: Self.encoder.encode(
+                Self.reason(
+                    "t-edge", "just inside",
+                    at: now.addingTimeInterval(-86_400 * 89))))
         let elements: [Any] = [stale, nearEdge]
         let data = try JSONSerialization.data(withJSONObject: elements)
 
-        let updated = try LabelReasonLog.appended(Self.reason("t-new", "fresh", at: now),
-                                                  to: data, key: "k", encoder: Self.encoder,
-                                                  decoder: Self.decoder, now: now)
+        let updated = try LabelReasonLog.appended(
+            Self.reason("t-new", "fresh", at: now),
+            to: data, key: "k", encoder: Self.encoder,
+            decoder: Self.decoder, now: now)
 
         let reloaded = LabelReasonLog.load(updated, decoder: Self.decoder, now: now)
         #expect(reloaded.entries.count == 2)
@@ -229,16 +248,19 @@ import AinkradAppKit
         let documents = InMemoryDocumentStore()
         let store = DocumentMailStore(documents: documents)
         let now = Date()
-        let earlier = try #require([40.0, 70.0]
-            .map { now.addingTimeInterval(-86_400 * $0) }
-            .first { MonthShard.key(for: $0) != MonthShard.key(for: now) })
+        let earlier = try #require(
+            [40.0, 70.0]
+                .map { now.addingTimeInterval(-86_400 * $0) }
+                .first { MonthShard.key(for: $0) != MonthShard.key(for: now) })
 
         try store.recordLabelReason(Self.reason("t1", "newest", at: now), accountID: "a1")
         try store.recordLabelReason(Self.reason("t1", "older", at: earlier), accountID: "a1")
         // One second earlier, so the newest-first order is total rather than a
         // tie resolved by whatever order the shards happen to load in.
-        try store.recordLabelReason(Self.reason("t2", "other thread",
-                                                at: now.addingTimeInterval(-1)), accountID: "a1")
+        try store.recordLabelReason(
+            Self.reason(
+                "t2", "other thread",
+                at: now.addingTimeInterval(-1)), accountID: "a1")
         // Another account's record, to prove the read is account-scoped.
         try store.recordLabelReason(Self.reason("t1", "not a1's", at: now), accountID: "a2")
 
@@ -249,33 +271,48 @@ import AinkradAppKit
         #expect(forThread.map(\.reason) == ["newest", "older"])
         #expect(store.labelReasons(accountID: "a2", threadID: "t1").map(\.reason) == ["not a1's"])
         // Two distinct month shards, both registered.
-        #expect(documents.storage[DocumentKeys.labelReasons(accountID: "a1",
-                                                            month: MonthShard.key(for: now))] != nil)
-        #expect(documents.storage[DocumentKeys.labelReasons(accountID: "a1",
-                                                            month: MonthShard.key(for: earlier))] != nil)
+        #expect(
+            documents.storage[
+                DocumentKeys.labelReasons(
+                    accountID: "a1",
+                    month: MonthShard.key(for: now))] != nil)
+        #expect(
+            documents.storage[
+                DocumentKeys.labelReasons(
+                    accountID: "a1",
+                    month: MonthShard.key(for: earlier))] != nil)
     }
 
     @Test("sign-out purge removes every reason shard KEY and the registry, for that account only")
     func purgeRemovesTheReasonKeys() throws {
         let documents = InMemoryDocumentStore()
         let store = DocumentMailStore(documents: documents)
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a1@example.test",
-                                          displayName: "A1", state: .ready))
-        try store.saveAccount(MailAccount(id: "a2", provider: .gmail, address: "a2@example.test",
-                                          displayName: "A2", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "a1@example.test",
+                displayName: "A1", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a2", provider: .gmail, address: "a2@example.test",
+                displayName: "A2", state: .ready))
         let now = Date()
-        let earlier = try #require([40.0, 70.0]
-            .map { now.addingTimeInterval(-86_400 * $0) }
-            .first { MonthShard.key(for: $0) != MonthShard.key(for: now) })
+        let earlier = try #require(
+            [40.0, 70.0]
+                .map { now.addingTimeInterval(-86_400 * $0) }
+                .first { MonthShard.key(for: $0) != MonthShard.key(for: now) })
         try store.recordLabelReason(Self.reason("t1", "this month", at: now), accountID: "a1")
-        try store.recordLabelReason(Self.reason("t2", "an earlier month", at: earlier),
-                                    accountID: "a1")
+        try store.recordLabelReason(
+            Self.reason("t2", "an earlier month", at: earlier),
+            accountID: "a1")
         try store.recordLabelReason(Self.reason("t3", "another account", at: now), accountID: "a2")
 
-        let keys = [DocumentKeys.labelReasons(accountID: "a1", month: MonthShard.key(for: now)),
-                    DocumentKeys.labelReasons(accountID: "a1",
-                                              month: MonthShard.key(for: earlier)),
-                    DocumentKeys.labelReasonMonths(accountID: "a1")]
+        let keys = [
+            DocumentKeys.labelReasons(accountID: "a1", month: MonthShard.key(for: now)),
+            DocumentKeys.labelReasons(
+                accountID: "a1",
+                month: MonthShard.key(for: earlier)),
+            DocumentKeys.labelReasonMonths(accountID: "a1"),
+        ]
         // Every key is PRESENT first: a purge assertion that only checks
         // absence passes just as well against a log that was never written.
         for key in keys { #expect(documents.storage[key] != nil, "precondition: \(key)") }
@@ -286,11 +323,13 @@ import AinkradAppKit
         // back empty", which a purge that deleted the registry and stranded the
         // shards would also satisfy.
         for key in keys { #expect(documents.storage[key] == nil, "still on disk: \(key)") }
-        #expect(documents.storage.keys.contains { $0.hasPrefix("label-reason") &&
-                                                  $0.contains("a1") } == false)
+        #expect(documents.storage.keys.contains { $0.hasPrefix("label-reason") && $0.contains("a1") } == false)
         // The other account's log is untouched.
-        #expect(documents.storage[DocumentKeys.labelReasons(accountID: "a2",
-                                                            month: MonthShard.key(for: now))] != nil)
+        #expect(
+            documents.storage[
+                DocumentKeys.labelReasons(
+                    accountID: "a2",
+                    month: MonthShard.key(for: now))] != nil)
         #expect(store.labelReasons(accountID: "a2", threadID: nil).count == 1)
     }
 
@@ -299,13 +338,15 @@ import AinkradAppKit
         let documents = InMemoryDocumentStore()
         let store = DocumentMailStore(documents: documents)
         let now = Date()
-        let earlier = try #require([40.0, 70.0]
-            .map { now.addingTimeInterval(-86_400 * $0) }
-            .first { MonthShard.key(for: $0) != MonthShard.key(for: now) })
+        let earlier = try #require(
+            [40.0, 70.0]
+                .map { now.addingTimeInterval(-86_400 * $0) }
+                .first { MonthShard.key(for: $0) != MonthShard.key(for: now) })
         // A readable shard in one month, a deliberately corrupt one in another.
         try store.recordLabelReason(Self.reason("t1", "readable", at: earlier), accountID: "a1")
-        try store.recordLabelReason(Self.reason("t2", "will be clobbered", at: now),
-                                    accountID: "a1")
+        try store.recordLabelReason(
+            Self.reason("t2", "will be clobbered", at: now),
+            accountID: "a1")
         let brokenKey = DocumentKeys.labelReasons(accountID: "a1", month: MonthShard.key(for: now))
         #expect(store.labelReasons(accountID: "a1", threadID: nil).count == 2)
         let corrupt = Data("not json".utf8)

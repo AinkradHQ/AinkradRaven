@@ -1,7 +1,7 @@
+import AinkradAppKit
 // design-lint: allow-file print dev-only CLI writes to stdout
 import Foundation
 import RavenFeature
-import AinkradAppKit
 
 // RavenDevAuth — a dev-only, human-in-the-loop CLI harness for exercising the
 // REAL `GmailAuth` code end to end against real Google traffic.
@@ -32,7 +32,8 @@ let defaultCredentialsPath = ("~/.config/ainkrad-raven/oauth-client.json" as NSS
 // The only positional (non-flag) argument is an optional credentials path
 // override; `--capture-fixtures` is a flag, not a path, so it must not be
 // mistaken for one.
-let credentialsPath = CommandLine.arguments.dropFirst().first(where: { !$0.hasPrefix("--") })
+let credentialsPath =
+    CommandLine.arguments.dropFirst().first(where: { !$0.hasPrefix("--") })
     .map { ($0 as NSString).expandingTildeInPath } ?? defaultCredentialsPath
 
 struct InstalledClientCredentials: Decodable {
@@ -80,7 +81,8 @@ final class FileBackedSecretStore: PluginSecretStore {
     init(path: String) {
         self.path = path
         if let data = FileManager.default.contents(atPath: path),
-           let decoded = try? JSONDecoder().decode([String: String].self, from: data) {
+            let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+        {
             self.storage = decoded
         } else {
             self.storage = [:]
@@ -100,8 +102,9 @@ final class FileBackedSecretStore: PluginSecretStore {
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(storage) else { return }
-        FileManager.default.createFile(atPath: path, contents: data,
-                                        attributes: [.posixPermissions: 0o600])
+        FileManager.default.createFile(
+            atPath: path, contents: data,
+            attributes: [.posixPermissions: 0o600])
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
     }
 }
@@ -135,13 +138,15 @@ enum FixtureCapture {
         let secretsPath = ("~/.config/ainkrad-raven/dev-auth-secrets.json" as NSString)
             .expandingTildeInPath
         let secrets = FileBackedSecretStore(path: secretsPath)
-        let auth = GmailAuth(secrets: secrets, clientID: credentials.client_id,
-                             clientSecret: credentials.client_secret)
+        let auth = GmailAuth(
+            secrets: secrets, clientID: credentials.client_id,
+            clientSecret: credentials.client_secret)
 
         let outDir = ("~/.config/ainkrad-raven/raw-fixtures/" as NSString).expandingTildeInPath
         do {
-            try FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true,
-                                                     attributes: [.posixPermissions: 0o700])
+            try FileManager.default.createDirectory(
+                atPath: outDir, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: outDir)
         } catch {
             FileHandle.standardError.write(Data("Failed to create \(outDir): \(error)\n".utf8))
@@ -176,8 +181,9 @@ enum FixtureCapture {
             // fetch two of them in detail (ideally one single-message thread
             // and one multi-message thread).
             if let threadsFile = files.first(where: { $0.name == "threads.json" }),
-               let json = try? JSONSerialization.jsonObject(with: threadsFile.data) as? [String: Any],
-               let threads = json["threads"] as? [[String: Any]] {
+                let json = try? JSONSerialization.jsonObject(with: threadsFile.data) as? [String: Any],
+                let threads = json["threads"] as? [[String: Any]]
+            {
                 let ids = threads.compactMap { $0["id"] as? String }
 
                 // Look at metadata for every candidate thread (scratch, not
@@ -186,12 +192,15 @@ enum FixtureCapture {
                 // detail fixtures, rather than just taking the first two.
                 var scanned: [(id: String, data: Data, messageCount: Int)] = []
                 for id in ids {
-                    var request = URLRequest(url: URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(id)?format=metadata")!)
+                    var request = URLRequest(
+                        url: URL(
+                            string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(id)?format=metadata")!)
                     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                     let (data, response) = try await URLSession.shared.data(for: request)
                     let status = (response as? HTTPURLResponse)?.statusCode ?? -1
                     print("GET /users/me/threads/\(id)?format=metadata (scan) -> \(status)")
-                    let count = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+                    let count =
+                        (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
                         .flatMap { $0["messages"] as? [[String: Any]] }?.count ?? 0
                     scanned.append((id, data, count))
                 }
@@ -215,7 +224,8 @@ enum FixtureCapture {
                 for (index, entry) in chosen.prefix(2).enumerated() {
                     files.append(CapturedFile(name: "thread-\(index).json", data: entry.data))
                     if let detailJSON = try? JSONSerialization.jsonObject(with: entry.data) as? [String: Any],
-                       let messages = detailJSON["messages"] as? [[String: Any]] {
+                        let messages = detailJSON["messages"] as? [[String: Any]]
+                    {
                         for message in messages {
                             if let id = message["id"] as? String, !messageIDs.contains(id) {
                                 messageIDs.append(id)
@@ -231,19 +241,22 @@ enum FixtureCapture {
             // history — may legitimately come back with no `history` key;
             // capture it either way.
             if let profileFile = files.first(where: { $0.name == "profile.json" }),
-               let profileJSON = try? JSONSerialization.jsonObject(with: profileFile.data) as? [String: Any],
-               let historyID = profileJSON["historyId"] {
+                let profileJSON = try? JSONSerialization.jsonObject(with: profileFile.data) as? [String: Any],
+                let historyID = profileJSON["historyId"]
+            {
                 try await get("history.json", "/users/me/history?startHistoryId=\(historyID)")
             }
 
             for file in files {
                 let path = (outDir as NSString).appendingPathComponent(file.name)
-                FileManager.default.createFile(atPath: path, contents: file.data,
-                                                attributes: [.posixPermissions: 0o600])
+                FileManager.default.createFile(
+                    atPath: path, contents: file.data,
+                    attributes: [.posixPermissions: 0o600])
             }
             print("Wrote \(files.count) raw fixture file(s) to \(outDir).")
-            print("These are RAW, UNREDACTED captures — never commit them. Redact by hand into " +
-                  "Tests/RavenFeatureTests/Fixtures/ before use.")
+            print(
+                "These are RAW, UNREDACTED captures — never commit them. Redact by hand into "
+                    + "Tests/RavenFeatureTests/Fixtures/ before use.")
             return 0
         } catch {
             FileHandle.standardError.write(Data("Fixture capture failed: \(error)\n".utf8))
@@ -265,8 +278,9 @@ func runHarness() async -> Int32 {
     let secretsPath = ("~/.config/ainkrad-raven/dev-auth-secrets.json" as NSString)
         .expandingTildeInPath
     let secrets = FileBackedSecretStore(path: secretsPath)
-    let auth = GmailAuth(secrets: secrets, clientID: credentials.client_id,
-                         clientSecret: credentials.client_secret)
+    let auth = GmailAuth(
+        secrets: secrets, clientID: credentials.client_id,
+        clientSecret: credentials.client_secret)
 
     // A deliberately short timeout (`RAVEN_DEV_AUTH_TIMEOUT_SECONDS=5`) lets
     // the bind → ready → open-browser path be exercised and observed to
@@ -296,7 +310,8 @@ func runHarness() async -> Int32 {
             // of the full URL, and pulled out on its own line) is what makes
             // a Google `redirect_uri_mismatch` immediately diagnosable
             // instead of showing up as a silent hang.
-            let redirectURI = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            let redirectURI =
+                URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first { $0.name == "redirect_uri" }?.value ?? "(unknown)"
             let port = URLComponents(string: redirectURI)?.port.map(String.init) ?? "(unknown)"
             print("Listener ready on port \(port). redirect_uri = \(redirectURI)")
@@ -312,9 +327,10 @@ func runHarness() async -> Int32 {
         // carry either, and this harness does not add any of its own.
         let description = "\(error)"
         if description.contains("timedOut") {
-            print("Timed out waiting for the browser callback — the listener was up and " +
-                  "waiting the whole time; the consent screen was never completed (or the " +
-                  "callback never reached this process).")
+            print(
+                "Timed out waiting for the browser callback — the listener was up and "
+                    + "waiting the whole time; the consent screen was never completed (or the "
+                    + "callback never reached this process).")
         }
         FileHandle.standardError.write(Data("Gmail authorization failed: \(description)\n".utf8))
         return 1
@@ -333,8 +349,9 @@ nonisolated(unsafe) var exitCode: Int32?
 Task { @MainActor in
     if CommandLine.arguments.contains("--capture-fixtures") {
         guard let accountID = ProcessInfo.processInfo.environment["RAVEN_DEV_ACCOUNT_ID"] else {
-            FileHandle.standardError.write(Data(
-                "--capture-fixtures requires RAVEN_DEV_ACCOUNT_ID=<email> in the environment.\n".utf8))
+            FileHandle.standardError.write(
+                Data(
+                    "--capture-fixtures requires RAVEN_DEV_ACCOUNT_ID=<email> in the environment.\n".utf8))
             exitCode = 1
             return
         }

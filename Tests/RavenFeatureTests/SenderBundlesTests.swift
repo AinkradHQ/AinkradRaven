@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Sender bundles")
@@ -12,12 +13,15 @@ struct SenderBundlesTests {
 
     static func at(_ offset: Double) -> Date { epoch.addingTimeInterval(offset) }
 
-    static func row(_ id: String, _ account: String, _ participants: [MailAddress],
-                    _ date: Date, unread: Int = 0) -> ThreadSummary {
-        ThreadSummary(id: id, accountID: account, subject: "Subject \(id)",
-                      participants: participants, lastMessageDate: date,
-                      messageCount: 1, unreadCount: unread, isStarred: false,
-                      labelIDs: ["INBOX"], snippet: "s")
+    static func row(
+        _ id: String, _ account: String, _ participants: [MailAddress],
+        _ date: Date, unread: Int = 0
+    ) -> ThreadSummary {
+        ThreadSummary(
+            id: id, accountID: account, subject: "Subject \(id)",
+            participants: participants, lastMessageDate: date,
+            messageCount: 1, unreadCount: unread, isStarred: false,
+            labelIDs: ["INBOX"], snippet: "s")
     }
 
     /// Deliberately built so a *plausible wrong* rule still produces a
@@ -36,7 +40,8 @@ struct SenderBundlesTests {
     static var fixture: [ThreadSummary] {
         [
             row("t-b1", "a1", [MailAddress(email: "b@example.test", name: "Bea")], at(300)),
-            row("t-b2", "a1", [MailAddress(email: "B@Example.Test", name: "Beatrice")],
+            row(
+                "t-b2", "a1", [MailAddress(email: "B@Example.Test", name: "Beatrice")],
                 at(500), unread: 2),
             row("t-b3", "a2", [MailAddress(email: "Bea <b@example.test>")], at(100)),
             row("t-none", "a1", [], at(400), unread: 1),
@@ -77,12 +82,18 @@ struct SenderBundlesTests {
         #expect(bundles.count == 3)
 
         let b = try #require(bundles.first { $0.sender == .address("b@example.test") })
-        #expect(b.accounts == [SenderBundles.AccountTally(accountID: "a1", count: 2),
-                               SenderBundles.AccountTally(accountID: "a2", count: 1)])
+        #expect(
+            b.accounts == [
+                SenderBundles.AccountTally(accountID: "a1", count: 2),
+                SenderBundles.AccountTally(accountID: "a2", count: 1),
+            ])
         let c = try #require(bundles.first { $0.sender == .address("c@example.test") })
         #expect(c.accountIDs == ["a1", "a2"])
-        #expect(c.accounts == [SenderBundles.AccountTally(accountID: "a1", count: 1),
-                               SenderBundles.AccountTally(accountID: "a2", count: 1)])
+        #expect(
+            c.accounts == [
+                SenderBundles.AccountTally(accountID: "a1", count: 1),
+                SenderBundles.AccountTally(accountID: "a2", count: 1),
+            ])
     }
 
     @Test("sorted by thread count, then newest date")
@@ -100,9 +111,12 @@ struct SenderBundlesTests {
 
         let bundles = SenderBundles.bundle(rows, limit: 25)
         #expect(bundles.count == 3)
-        #expect(bundles.map(\.sender) == [.address("one@example.test"),
-                                          .address("two@example.test"),
-                                          .address("three@example.test")])
+        #expect(
+            bundles.map(\.sender) == [
+                .address("one@example.test"),
+                .address("two@example.test"),
+                .address("three@example.test"),
+            ])
         #expect(bundles.map(\.threadCount) == [2, 1, 1])
     }
 
@@ -121,15 +135,19 @@ struct SenderBundlesTests {
 
         let bundles = SenderBundles.bundle(rows, limit: 25)
         #expect(bundles.count == 3)
-        #expect(bundles.map(\.sender) == [.address("a@example.test"),
-                                          .address("m@example.test"),
-                                          .address("z@example.test")])
+        #expect(
+            bundles.map(\.sender) == [
+                .address("a@example.test"),
+                .address("m@example.test"),
+                .address("z@example.test"),
+            ])
         // Repeating the call must give the same order. Swift seeds `Dictionary`
         // hashing per process, so this cannot catch cross-run instability on its
         // own — the tie-break above is what does that. This asserts the weaker
         // but still necessary property that the function is not order-dependent
         // on its own grouping pass within a run.
-        #expect(SenderBundles.bundle(rows.reversed(), limit: 25).map(\.sender)
+        #expect(
+            SenderBundles.bundle(rows.reversed(), limit: 25).map(\.sender)
                 == bundles.map(\.sender))
     }
 
@@ -181,7 +199,8 @@ struct SenderBundlesTests {
         #expect(bundles.count == 1)
         #expect(bundles.first?.threadIDs == ["t-a", "t-b"])
         // Same rows, opposite insertion order, same answer.
-        #expect(SenderBundles.bundle(rows.reversed(), limit: 25).first?.threadIDs
+        #expect(
+            SenderBundles.bundle(rows.reversed(), limit: 25).first?.threadIDs
                 == ["t-a", "t-b"])
     }
 
@@ -193,8 +212,12 @@ struct SenderBundlesTests {
         // `search_mail` already treat as the sender. Taking the last would
         // silently re-attribute a thread to whoever replied most recently.
         let rows = [
-            Self.row("t1", "a1", [MailAddress(email: "starter@example.test"),
-                                  MailAddress(email: "replier@example.test")], Self.at(5)),
+            Self.row(
+                "t1", "a1",
+                [
+                    MailAddress(email: "starter@example.test"),
+                    MailAddress(email: "replier@example.test"),
+                ], Self.at(5))
         ]
         #expect(rows.count == 1)
 
@@ -210,8 +233,11 @@ struct SenderBundlesTests {
 
         let bundles = SenderBundles.bundle(rows, limit: 2)
         #expect(bundles.count == 2)
-        #expect(bundles.map(\.sender) == [.address("b@example.test"),
-                                          .address("c@example.test")])
+        #expect(
+            bundles.map(\.sender) == [
+                .address("b@example.test"),
+                .address("c@example.test"),
+            ])
         // The surviving bundles' counts are NOT reduced by the limit.
         #expect(bundles.first?.threadIDs.count == 3)
     }

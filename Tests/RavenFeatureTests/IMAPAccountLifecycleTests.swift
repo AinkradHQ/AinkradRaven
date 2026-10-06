@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 16's *lifecycle*: what adding an IMAP account writes and where, what
@@ -37,16 +38,26 @@ import AinkradAppKit
         /// persisted directory and the live one drift apart.
         var directory: IMAPMailboxDirectory?
 
-        var callCount: Int { lock.lock(); defer { lock.unlock() }; return calls.count }
+        var callCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return calls.count
+        }
         var lastSettings: IMAPAccountSettings? {
-            lock.lock(); defer { lock.unlock() }; return calls.last?.settings
+            lock.lock()
+            defer { lock.unlock() }
+            return calls.last?.settings
         }
         var lastUsername: String? {
-            lock.lock(); defer { lock.unlock() }; return calls.last?.username
+            lock.lock()
+            defer { lock.unlock() }
+            return calls.last?.username
         }
 
         func record(_ settings: IMAPAccountSettings, _ username: String) {
-            lock.lock(); calls.append((settings, username)); lock.unlock()
+            lock.lock()
+            calls.append((settings, username))
+            lock.unlock()
         }
     }
 
@@ -74,14 +85,18 @@ import AinkradAppKit
         return spy
     }
 
-    private func settings(tls: MailTransportTLS = .implicit,
-                          withSMTP: Bool = true) -> IMAPAccountSettings {
+    private func settings(
+        tls: MailTransportTLS = .implicit,
+        withSMTP: Bool = true
+    ) -> IMAPAccountSettings {
         IMAPAccountSettings(
             host: "imap.example.test", port: tls == .implicit ? 993 : 143,
             username: "a@example.test", tls: tls,
-            smtp: withSMTP ? SMTPAccountSettings(host: "smtp.example.test",
-                                                 port: tls == .implicit ? 465 : 587,
-                                                 tls: tls) : nil)
+            smtp: withSMTP
+                ? SMTPAccountSettings(
+                    host: "smtp.example.test",
+                    port: tls == .implicit ? 465 : 587,
+                    tls: tls) : nil)
     }
 
     /// A torn-down runtime over a fake host, plus the two in-memory stores so a
@@ -90,9 +105,11 @@ import AinkradAppKit
         let host = FakeHostServices()
         let runtime = RavenRuntime(host: host)
         runtime.teardown()
-        return (runtime,
-                host.documents as! InMemoryDocumentStore,
-                host.secrets as! InMemorySecretStore)
+        return (
+            runtime,
+            host.documents as! InMemoryDocumentStore,
+            host.secrets as! InMemorySecretStore
+        )
     }
 
     /// Bounds an operation that goes through a session.
@@ -103,15 +120,19 @@ import AinkradAppKit
     /// covers a wrong expectation. This wall-clock cancel covers the other shape: a
     /// continuation that is never resumed at all, which no script can turn into an
     /// error. No passing test waits for it.
-    private func bounded<T: Sendable>(_ label: String,
-                                      sourceLocation: SourceLocation = #_sourceLocation,
-                                      _ body: @MainActor @escaping () async throws -> T)
-        async throws -> T {
+    private func bounded<T: Sendable>(
+        _ label: String,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        _ body: @MainActor @escaping () async throws -> T
+    )
+        async throws -> T
+    {
         let work = Task { @MainActor in try await body() }
         let deadline = Task {
             try await Task.sleep(for: .seconds(10))
-            Issue.record("\(label) never resolved within 10s — the leaked-continuation shape",
-                         sourceLocation: sourceLocation)
+            Issue.record(
+                "\(label) never resolved within 10s — the leaked-continuation shape",
+                sourceLocation: sourceLocation)
             work.cancel()
         }
         defer { deadline.cancel() }
@@ -127,8 +148,9 @@ import AinkradAppKit
         let password = "app-pw-do-not-persist"
 
         let accountID = try await bounded("addIMAPAccount") {
-            try await runtime.addIMAPAccount(address: "a@example.test",
-                                             settings: self.settings(), password: password)
+            try await runtime.addIMAPAccount(
+                address: "a@example.test",
+                settings: self.settings(), password: password)
         }
 
         // In secrets, under this account's key and no other.
@@ -137,8 +159,9 @@ import AinkradAppKit
         // the interesting question is not "is it under the key I expected" but
         // "did it land anywhere at all".
         for (key, data) in documents.storage {
-            #expect(!String(decoding: data, as: UTF8.self).contains(password),
-                    "the app password reached document \(key)")
+            #expect(
+                !String(decoding: data, as: UTF8.self).contains(password),
+                "the app password reached document \(key)")
         }
         // The settings document exists and is readable — so the scan above is a
         // scan over real content, not over an empty store.
@@ -160,8 +183,9 @@ import AinkradAppKit
 
         await #expect(throws: IMAPAccountSetup.ConnectionFailure.auth("Invalid credentials")) {
             try await self.bounded("addIMAPAccount (refused)") {
-                try await runtime.addIMAPAccount(address: "a@example.test",
-                                                 settings: self.settings(), password: "wrong")
+                try await runtime.addIMAPAccount(
+                    address: "a@example.test",
+                    settings: self.settings(), password: "wrong")
             }
         }
 
@@ -212,16 +236,18 @@ import AinkradAppKit
         let spy = Self.installOpener(on: runtime)
 
         _ = try await bounded("testIMAPConnection (explicit)") {
-            await runtime.testIMAPConnection(settings: self.settings(tls: .explicit),
-                                             password: "pw")
+            await runtime.testIMAPConnection(
+                settings: self.settings(tls: .explicit),
+                password: "pw")
         }
         #expect(spy.lastSettings?.tls == .explicit)
         #expect(spy.lastSettings?.port == 143)
         #expect(spy.lastSettings?.smtp?.port == 587)
 
         _ = try await bounded("testIMAPConnection (implicit)") {
-            await runtime.testIMAPConnection(settings: self.settings(tls: .implicit),
-                                             password: "pw")
+            await runtime.testIMAPConnection(
+                settings: self.settings(tls: .implicit),
+                password: "pw")
         }
         #expect(spy.lastSettings?.tls == .implicit)
         #expect(spy.lastSettings?.port == 993)
@@ -235,8 +261,9 @@ import AinkradAppKit
         let (runtime, documents, _) = self.runtime()
         _ = Self.installOpener(on: runtime)
         let accountID = try await bounded("addIMAPAccount") {
-            try await runtime.addIMAPAccount(address: "a@example.test",
-                                             settings: self.settings(), password: "pw")
+            try await runtime.addIMAPAccount(
+                address: "a@example.test",
+                settings: self.settings(), password: "pw")
         }
 
         #expect(documents.storage[DocumentKeys.imapMailboxes(accountID: accountID)] != nil)
@@ -260,8 +287,9 @@ import AinkradAppKit
         let (runtime, _, _) = self.runtime()
         _ = Self.installOpener(on: runtime)
         let accountID = try await bounded("addIMAPAccount") {
-            try await runtime.addIMAPAccount(address: "a@example.test",
-                                             settings: self.settings(), password: "pw")
+            try await runtime.addIMAPAccount(
+                address: "a@example.test",
+                settings: self.settings(), password: "pw")
         }
 
         let vocabulary = try #require(
@@ -280,33 +308,43 @@ import AinkradAppKit
     @Test("the resolver still refuses when the directory is empty or absent")
     func resolverRefusesWithoutARealDirectory() throws {
         let (runtime, _, _) = self.runtime()
-        let account = MailAccount(id: "imap-1", provider: .imap, address: "a@example.test",
-                                  displayName: "a", state: .ready)
+        let account = MailAccount(
+            id: "imap-1", provider: .imap, address: "a@example.test",
+            displayName: "a", state: .ready)
         try runtime.store.saveAccount(account)
 
         // Absent: nothing was ever listed for this account.
-        #expect(LabelVocabularyResolver.vocabulary(forAccountID: "imap-1",
-                                                   store: runtime.store) == nil)
+        #expect(
+            LabelVocabularyResolver.vocabulary(
+                forAccountID: "imap-1",
+                store: runtime.store) == nil)
         // Present but EMPTY — the dangerous case, not the harmless one. An
         // `IMAPVocabulary` over an empty directory answers nil for every folder
         // flag, so `render` drops them and `ThreadAction.archive` becomes an empty
         // mutation the UI reports as a successful archive.
-        try runtime.store.saveIMAPMailboxDirectory(IMAPMailboxDirectory([]),
-                                                   accountID: "imap-1")
-        #expect(LabelVocabularyResolver.vocabulary(forAccountID: "imap-1",
-                                                   store: runtime.store) == nil)
+        try runtime.store.saveIMAPMailboxDirectory(
+            IMAPMailboxDirectory([]),
+            accountID: "imap-1")
+        #expect(
+            LabelVocabularyResolver.vocabulary(
+                forAccountID: "imap-1",
+                store: runtime.store) == nil)
         // The rendering that refusal prevents, spelled out so the reason above is
         // observed rather than asserted in prose.
         let empty = IMAPVocabulary(directory: IMAPMailboxDirectory([]))
-        #expect(empty.render(FlagMutation(threadIDs: ["t"], add: [], remove: [.inbox]))
+        #expect(
+            empty.render(FlagMutation(threadIDs: ["t"], add: [], remove: [.inbox]))
                 == LabelMutation(threadIDs: ["t"], add: [], remove: []))
 
         // A non-empty directory that simply lacks an archive is NOT refused: the
         // account can still move to trash, and refusing everything for a missing
         // folder would be its own silent-wrong-answer.
         let inboxOnly = IMAPMailboxDirectory(
-            [IMAPMailbox(name: "INBOX", delimiter: "/", attributes: [], flag: .inbox,
-                         isSpecialUseDeclared: false)])
+            [
+                IMAPMailbox(
+                    name: "INBOX", delimiter: "/", attributes: [], flag: .inbox,
+                    isSpecialUseDeclared: false)
+            ])
         try runtime.store.saveIMAPMailboxDirectory(inboxOnly, accountID: "imap-1")
         let vocabulary = try #require(
             LabelVocabularyResolver.vocabulary(forAccountID: "imap-1", store: runtime.store))
@@ -326,20 +364,24 @@ import AinkradAppKit
         let (runtime, documents, secrets) = self.runtime()
         _ = Self.installOpener(on: runtime)
         let accountID = try await bounded("addIMAPAccount") {
-            try await runtime.addIMAPAccount(address: "a@example.test",
-                                             settings: self.settings(), password: "pw")
+            try await runtime.addIMAPAccount(
+                address: "a@example.test",
+                settings: self.settings(), password: "pw")
         }
         // The second, previously-uncovered purge gap: an `applemail-directory-<id>`
         // document that `DocumentMailStore.purge` did not remove. Written for the
         // SAME id so one sign-out has to clear both key families.
-        documents.setData(Data("bookmark".utf8),
-                          forKey: DocumentKeys.appleMailDirectory(accountID: accountID))
-        try runtime.store.saveLabels([MailLabel(id: "l", name: "Folder A", kind: .user)],
-                                     accountID: accountID)
+        documents.setData(
+            Data("bookmark".utf8),
+            forKey: DocumentKeys.appleMailDirectory(accountID: accountID))
+        try runtime.store.saveLabels(
+            [MailLabel(id: "l", name: "Folder A", kind: .user)],
+            accountID: accountID)
 
         // A second account, to prove the purge is surgical rather than a wipe.
-        let other = MailAccount(id: "gmail-1", provider: .gmail, address: "b@example.test",
-                                displayName: "b", state: .ready)
+        let other = MailAccount(
+            id: "gmail-1", provider: .gmail, address: "b@example.test",
+            displayName: "b", state: .ready)
         try runtime.store.saveAccount(other)
         secrets.setSecret("other-secret", forKey: IMAPAppPasswordStore.key(accountID: "gmail-1"))
 
@@ -353,7 +395,8 @@ import AinkradAppKit
         #expect(runtime.accounts.map(\.id) == ["gmail-1"])
         // Untouched: the other account's secret. A `clear` that took no account id
         // would have removed this too.
-        #expect(secrets.secret(forKey: IMAPAppPasswordStore.key(accountID: "gmail-1"))
+        #expect(
+            secrets.secret(forKey: IMAPAppPasswordStore.key(accountID: "gmail-1"))
                 == "other-secret")
         runtime.teardown()
     }
@@ -361,14 +404,17 @@ import AinkradAppKit
     @Test("a store-level purge closes the same two gaps on its own")
     func storePurgeRemovesTheProviderDocuments() throws {
         let (runtime, documents, _) = self.runtime()
-        let account = MailAccount(id: "imap-1", provider: .imap, address: "a@example.test",
-                                  displayName: "a", state: .ready)
+        let account = MailAccount(
+            id: "imap-1", provider: .imap, address: "a@example.test",
+            displayName: "a", state: .ready)
         try runtime.store.saveAccount(account)
         documents.setData(Data("{}".utf8), forKey: DocumentKeys.imapSettings(accountID: "imap-1"))
-        documents.setData(Data("bm".utf8),
-                          forKey: DocumentKeys.appleMailDirectory(accountID: "imap-1"))
-        try runtime.store.saveIMAPMailboxDirectory(try IMAPProviderHarness.directory(),
-                                                   accountID: "imap-1")
+        documents.setData(
+            Data("bm".utf8),
+            forKey: DocumentKeys.appleMailDirectory(accountID: "imap-1"))
+        try runtime.store.saveIMAPMailboxDirectory(
+            try IMAPProviderHarness.directory(),
+            accountID: "imap-1")
 
         // NOT `runtime.signOut` — the store alone, which is the path an MCP-driven
         // or store-level purge takes and which used to leave all three behind.
@@ -387,8 +433,9 @@ import AinkradAppKit
         let (runtime, _, _) = self.runtime()
         _ = Self.installOpener(on: runtime)
         let accountID = try await bounded("addIMAPAccount") {
-            try await runtime.addIMAPAccount(address: "a@example.test",
-                                             settings: self.settings(), password: "pw")
+            try await runtime.addIMAPAccount(
+                address: "a@example.test",
+                settings: self.settings(), password: "pw")
         }
 
         let provider = try #require(runtime.providers.provider(for: accountID) as? IMAPProvider)
@@ -396,10 +443,12 @@ import AinkradAppKit
 
         // The same factory, over settings with no submission server: the provider
         // is still built (reading still works) and only sending is refused.
-        let account = MailAccount(id: accountID, provider: .imap, address: "a@example.test",
-                                  displayName: "a", state: .ready)
-        try runtime.providerFactory.saveIMAPAccount(settings: settings(withSMTP: false),
-                                                    password: "pw", accountID: accountID)
+        let account = MailAccount(
+            id: accountID, provider: .imap, address: "a@example.test",
+            displayName: "a", state: .ready)
+        try runtime.providerFactory.saveIMAPAccount(
+            settings: settings(withSMTP: false),
+            password: "pw", accountID: accountID)
         let noSMTP = try #require(
             try runtime.providerFactory.makeProvider(for: account) as? IMAPProvider)
         #expect(noSMTP.submit == nil)
@@ -409,28 +458,37 @@ import AinkradAppKit
     @Test("send hands the message to the submitter exactly once and never retries")
     func sendIsAtMostOnce() async throws {
         let counter = SubmitCounter()
-        let sending = IMAPProvider(accountID: "imap-1",
-                                   submit: { _ in await counter.bump(); return "250 queued as Q1" },
-                                   acquire: { throw MailTransportError.notConnected })
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.test")],
-                                      subject: "Subject 1", bodyText: "Body 1")
+        let sending = IMAPProvider(
+            accountID: "imap-1",
+            submit: { _ in
+                await counter.bump()
+                return "250 queued as Q1"
+            },
+            acquire: { throw MailTransportError.notConnected })
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.test")],
+            subject: "Subject 1", bodyText: "Body 1")
         #expect(try await sending.send(message) == "250 queued as Q1")
         #expect(await counter.count == 1)
 
         // A failing submitter must throw straight through — no retry, no
         // second attempt, and above all no success inferred from the absence of one.
-        let failing = IMAPProvider(accountID: "imap-1",
-                                   submit: { _ in await counter.bump()
-                                             throw MailError.sendOutcomeUnknown(message: "after DATA") },
-                                   acquire: { throw MailTransportError.notConnected })
+        let failing = IMAPProvider(
+            accountID: "imap-1",
+            submit: { _ in
+                await counter.bump()
+                throw MailError.sendOutcomeUnknown(message: "after DATA")
+            },
+            acquire: { throw MailTransportError.notConnected })
         await #expect(throws: MailError.sendOutcomeUnknown(message: "after DATA")) {
             try await failing.send(message)
         }
         #expect(await counter.count == 2)
 
         // And with no submitter at all, a refusal that names the missing half.
-        let unsendable = IMAPProvider(accountID: "imap-1",
-                                      acquire: { throw MailTransportError.notConnected })
+        let unsendable = IMAPProvider(
+            accountID: "imap-1",
+            acquire: { throw MailTransportError.notConnected })
         let error = await #expect(throws: MailError.self) { try await unsendable.send(message) }
         #expect("\(try #require(error))".contains("SMTP"))
     }

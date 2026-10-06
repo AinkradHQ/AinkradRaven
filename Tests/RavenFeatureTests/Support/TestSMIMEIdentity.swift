@@ -113,7 +113,10 @@ enum TestSMIMEIdentity {
         } else {
             var bytes: [UInt8] = []
             var n = count
-            while n > 0 { bytes.insert(UInt8(n & 0xFF), at: 0); n >>= 8 }
+            while n > 0 {
+                bytes.insert(UInt8(n & 0xFF), at: 0)
+                n >>= 8
+            }
             out.append(UInt8(0x80 | bytes.count))
             out.append(contentsOf: bytes)
         }
@@ -170,9 +173,11 @@ enum TestSMIMEIdentity {
             serialNumber + signatureAlg + issuer + validity + subject + subjectPublicKeyInfo)
 
         var error: Unmanaged<CFError>?
-        guard let signature = SecKeyCreateSignature(
-            privateKey, .rsaSignatureMessagePKCS1v15SHA256, tbsCertificate as CFData, &error
-        ) else {
+        guard
+            let signature = SecKeyCreateSignature(
+                privateKey, .rsaSignatureMessagePKCS1v15SHA256, tbsCertificate as CFData, &error
+            )
+        else {
             throw Error.step("SecKeyCreateSignature", errSecParam)
         }
 

@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The "connect any mailbox" form: address, IMAP and SMTP servers, TLS mode, app
 /// password — plus a "Test connection" that reports which of the three things went
@@ -60,37 +60,52 @@ struct RavenSettingsIMAPForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
-            AinkradSectionHeader(title: "Add a mailbox",
-                                 subtitle: "IMAP and SMTP, with an app password.")
+            AinkradSectionHeader(
+                title: "Add a mailbox",
+                subtitle: "IMAP and SMTP, with an app password.")
 
-            AinkradFormRow(title: "Email address",
-                           help: "Also the login name, unless you set one below.") {
-                AinkradTextField(text: Binding(get: { draft.address },
-                                               set: { applyAddress($0) }),
-                                 placeholder: "you@example.com")
+            AinkradFormRow(
+                title: "Email address",
+                help: "Also the login name, unless you set one below."
+            ) {
+                AinkradTextField(
+                    text: Binding(
+                        get: { draft.address },
+                        set: { applyAddress($0) }),
+                    placeholder: "you@example.com")
             }
             inlineMessage(for: .address)
 
-            AinkradFormRow(title: "Encryption",
-                           help: "SSL/TLS uses 993 and 465. STARTTLS uses 143 and 587.") {
-                AinkradSegmentedPicker(items: IMAPAccountSetup.TLSMode.allCases,
-                                       selection: Binding(get: { draft.mode },
-                                                          set: { applyMode($0) }),
-                                       label: \.title)
+            AinkradFormRow(
+                title: "Encryption",
+                help: "SSL/TLS uses 993 and 465. STARTTLS uses 143 and 587."
+            ) {
+                AinkradSegmentedPicker(
+                    items: IMAPAccountSetup.TLSMode.allCases,
+                    selection: Binding(
+                        get: { draft.mode },
+                        set: { applyMode($0) }),
+                    label: \.title)
             }
 
-            serverRow(title: "IMAP server", hostField: .imapHost, portField: .imapPort,
-                      host: $draft.imapHost, port: $draft.imapPort)
-            serverRow(title: "SMTP server", hostField: .smtpHost, portField: .smtpPort,
-                      host: $draft.smtpHost, port: $draft.smtpPort)
+            serverRow(
+                title: "IMAP server", hostField: .imapHost, portField: .imapPort,
+                host: $draft.imapHost, port: $draft.imapPort)
+            serverRow(
+                title: "SMTP server", hostField: .smtpHost, portField: .smtpPort,
+                host: $draft.smtpHost, port: $draft.smtpPort)
 
-            AinkradFormRow(title: "Username",
-                           help: "Leave blank to sign in with the address above.") {
+            AinkradFormRow(
+                title: "Username",
+                help: "Leave blank to sign in with the address above."
+            ) {
                 AinkradTextField(text: $draft.username, placeholder: "Optional")
             }
 
-            AinkradFormRow(title: "App password",
-                           help: "Stored in the system Keychain, never in a document.") {
+            AinkradFormRow(
+                title: "App password",
+                help: "Stored in the system Keychain, never in a document."
+            ) {
                 AinkradSecureField(text: $password, placeholder: "App password")
             }
             inlineMessage(for: .password)
@@ -98,12 +113,16 @@ struct RavenSettingsIMAPForm: View {
             if let probeResult { banner(for: probeResult) }
 
             HStack(spacing: AinkradSpacing.sm) {
-                AinkradButton(title: "Test Connection", style: .secondary, icon: "bolt.horizontal",
-                              isLoading: isBusy, action: { test() })
-                    .disabled(isBusy)
-                AinkradButton(title: "Add Mailbox", style: .primary, icon: "envelope.badge",
-                              isLoading: isBusy, action: { add() })
-                    .disabled(isBusy)
+                AinkradButton(
+                    title: "Test Connection", style: .secondary, icon: "bolt.horizontal",
+                    isLoading: isBusy, action: { test() }
+                )
+                .disabled(isBusy)
+                AinkradButton(
+                    title: "Add Mailbox", style: .primary, icon: "envelope.badge",
+                    isLoading: isBusy, action: { add() }
+                )
+                .disabled(isBusy)
                 Spacer(minLength: AinkradSpacing.sm)
                 AinkradButton(title: "Cancel", style: .ghost, action: onCancel)
                     .disabled(isBusy)
@@ -114,20 +133,31 @@ struct RavenSettingsIMAPForm: View {
     }
 
     @ViewBuilder
-    private func serverRow(title: String, hostField: IMAPAccountSetup.Field,
-                           portField: IMAPAccountSetup.Field,
-                           host: Binding<String>, port: Binding<String>) -> some View {
+    private func serverRow(
+        title: String, hostField: IMAPAccountSetup.Field,
+        portField: IMAPAccountSetup.Field,
+        host: Binding<String>, port: Binding<String>
+    ) -> some View {
         AinkradFormRow(title: title) {
             HStack(spacing: AinkradSpacing.sm) {
-                AinkradTextField(text: Binding(get: { host.wrappedValue },
-                                               set: { hostsAreCustom = true
-                                                      host.wrappedValue = $0 }),
-                                 placeholder: "server.example.com")
-                AinkradTextField(text: Binding(get: { port.wrappedValue },
-                                               set: { portsAreCustom = true
-                                                      port.wrappedValue = $0 }),
-                                 placeholder: "Port")
-                    .frame(width: 90)
+                AinkradTextField(
+                    text: Binding(
+                        get: { host.wrappedValue },
+                        set: {
+                            hostsAreCustom = true
+                            host.wrappedValue = $0
+                        }),
+                    placeholder: "server.example.com")
+                AinkradTextField(
+                    text: Binding(
+                        get: { port.wrappedValue },
+                        set: {
+                            portsAreCustom = true
+                            port.wrappedValue = $0
+                        }),
+                    placeholder: "Port"
+                )
+                .frame(width: 90)
             }
         }
         inlineMessage(for: hostField)
@@ -154,12 +184,14 @@ struct RavenSettingsIMAPForm: View {
     private func banner(for result: ProbeResult) -> some View {
         switch result {
         case .success(let mailboxes):
-            AinkradBanner(message: "Connected. The server listed \(mailboxes) "
-                                 + "mailbox\(mailboxes == 1 ? "" : "es").",
-                          status: .success, onDismiss: { probeResult = nil })
+            AinkradBanner(
+                message: "Connected. The server listed \(mailboxes) "
+                    + "mailbox\(mailboxes == 1 ? "" : "es").",
+                status: .success, onDismiss: { probeResult = nil })
         case .failure(let failure):
-            AinkradBanner(message: failure.message, status: .danger,
-                          onDismiss: { probeResult = nil })
+            AinkradBanner(
+                message: failure.message, status: .danger,
+                onDismiss: { probeResult = nil })
         }
     }
 
@@ -171,9 +203,10 @@ struct RavenSettingsIMAPForm: View {
     // that a field has been touched.
 
     private func applyAddress(_ value: String) {
-        draft = IMAPAccountSetup.applyingAddress(value, to: draft,
-                                                 hostsAreCustom: hostsAreCustom,
-                                                 portsAreCustom: portsAreCustom)
+        draft = IMAPAccountSetup.applyingAddress(
+            value, to: draft,
+            hostsAreCustom: hostsAreCustom,
+            portsAreCustom: portsAreCustom)
     }
 
     private func applyMode(_ mode: IMAPAccountSetup.TLSMode) {
@@ -201,8 +234,10 @@ struct RavenSettingsIMAPForm: View {
         guard let validated = validated() else { return }
         isBusy = true
         Task {
-            switch await runtime.testIMAPConnection(settings: validated.settings,
-                                                    password: password) {
+            switch await runtime.testIMAPConnection(
+                settings: validated.settings,
+                password: password)
+            {
             case .success(let mailboxes): probeResult = .success(mailboxes: mailboxes)
             case .failure(let failure): probeResult = .failure(failure)
             }
@@ -215,9 +250,10 @@ struct RavenSettingsIMAPForm: View {
         isBusy = true
         Task {
             do {
-                try await runtime.addIMAPAccount(address: validated.address,
-                                                 settings: validated.settings,
-                                                 password: password)
+                try await runtime.addIMAPAccount(
+                    address: validated.address,
+                    settings: validated.settings,
+                    password: password)
                 // The form stops holding the credential the moment it is no longer
                 // needed. `draft` never held it at all.
                 password = ""

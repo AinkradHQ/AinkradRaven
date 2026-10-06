@@ -56,7 +56,8 @@ public enum AddressListParser {
         }
         parts.append(current)
 
-        return parts
+        return
+            parts
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
     }

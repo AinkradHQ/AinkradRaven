@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// What Raven proves its identity with on an IMAP (and, in Task 15, SMTP)
 /// connection.
@@ -60,10 +60,13 @@ enum IMAPAppPasswordStore {
     /// - Returns: nil when no password has been stored for the account. Callers
     ///   surface that as `MailError.notAuthenticated`, never as an empty password
     ///   attempt.
-    static func credential(accountID: String, username: String,
-                           secrets: any PluginSecretStore) -> IMAPCredential? {
+    static func credential(
+        accountID: String, username: String,
+        secrets: any PluginSecretStore
+    ) -> IMAPCredential? {
         guard let password = secrets.secret(forKey: key(accountID: accountID)),
-              !password.isEmpty else { return nil }
+            !password.isEmpty
+        else { return nil }
         return .appPassword(username: username, password: password)
     }
 
@@ -114,10 +117,13 @@ final class IMAPOAuthCredentialSource {
 
     /// A usable credential, refreshing the access token only when the cached one
     /// is missing or close to expiry.
-    func credential(accountID: String, username: String,
-                    now: Date = Date()) async throws -> IMAPCredential {
+    func credential(
+        accountID: String, username: String,
+        now: Date = Date()
+    ) async throws -> IMAPCredential {
         if let cached = accessTokens[accountID],
-           cached.expiry.timeIntervalSince(now) > Self.earlyRefresh {
+            cached.expiry.timeIntervalSince(now) > Self.earlyRefresh
+        {
             return .xoauth2(username: username, accessToken: cached.token)
         }
         guard let refresh = secrets.secret(forKey: Self.refreshTokenKey(accountID: accountID)) else {

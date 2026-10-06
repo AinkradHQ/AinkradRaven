@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The document model, and the decode rule that keeps a body this build only
@@ -31,15 +32,15 @@ struct RichBodyTests {
     /// bullet, a `> ` quote line, and a sigdash. If any conversion step existed
     /// on the load path, one of these would come back changed.
     private let preM6Draft = """
-    {
-      "to": [{"email": "bea@example.test", "name": "Bea"}],
-      "cc": [],
-      "bcc": [],
-      "subject": "Subject 1",
-      "bodyText": "Hi Bea,\\n\\nUse **two stars** and a _underscore_.\\n- not a bullet\\n\\n> quoted line\\n\\n-- \\nSig",
-      "attachments": []
-    }
-    """
+        {
+          "to": [{"email": "bea@example.test", "name": "Bea"}],
+          "cc": [],
+          "bcc": [],
+          "subject": "Subject 1",
+          "bodyText": "Hi Bea,\\n\\nUse **two stars** and a _underscore_.\\n- not a bullet\\n\\n> quoted line\\n\\n-- \\nSig",
+          "attachments": []
+        }
+        """
 
     @Test("a draft persisted before M6 opens with its text intact and no rich body")
     func preM6DraftDecodesVerbatim() throws {
@@ -47,7 +48,8 @@ struct RichBodyTests {
 
         // Written out independently of the blob's escaping, so the assertion
         // cannot agree with the fixture by construction.
-        let expected = "Hi Bea,\n\nUse **two stars** and a _underscore_.\n"
+        let expected =
+            "Hi Bea,\n\nUse **two stars** and a _underscore_.\n"
             + "- not a bullet\n\n> quoted line\n\n-- \nSig"
         #expect(message.bodyText == expected)
         #expect(message.richBody == nil)
@@ -78,9 +80,11 @@ struct RichBodyTests {
     /// `RichTextBridge.blockStyle` and `RichTextBridge.order`: adding a case
     /// stops the build until each is answered.
     private var everyKind: [RichBody.Kind] {
-        [.bold, .italic, .underline, .code,
-         .link(URL(string: "https://example.test/a?b=1&c=2")!),
-         .bulletItem, .numberItem, .blockquote]
+        [
+            .bold, .italic, .underline, .code,
+            .link(URL(string: "https://example.test/a?b=1&c=2")!),
+            .bulletItem, .numberItem, .blockquote,
+        ]
     }
 
     @Test("a rich body round-trips through JSON preserving every supported attribute")
@@ -113,11 +117,11 @@ struct RichBodyTests {
     func unknownSpanKindDegrades() throws {
         // A future build's kind sitting between two this build knows.
         let json = """
-        {"text": "one two three",
-         "spans": [{"start": 0, "length": 3, "kind": "bold"},
-                   {"start": 4, "length": 3, "kind": "strikethrough"},
-                   {"start": 8, "length": 5, "kind": "italic"}]}
-        """
+            {"text": "one two three",
+             "spans": [{"start": 0, "length": 3, "kind": "bold"},
+                       {"start": 4, "length": 3, "kind": "strikethrough"},
+                       {"start": 8, "length": 5, "kind": "italic"}]}
+            """
 
         let body = try decoded(RichBody.self, json)
 
@@ -132,9 +136,9 @@ struct RichBodyTests {
     @Test("a link whose address is not a URL costs that span only")
     func unusableLinkURLDegrades() throws {
         let json = """
-        {"text": "one two", "spans": [{"start": 0, "length": 3, "kind": "link"},
-                                      {"start": 4, "length": 3, "kind": "bold"}]}
-        """
+            {"text": "one two", "spans": [{"start": 0, "length": 3, "kind": "link"},
+                                          {"start": 4, "length": 3, "kind": "bold"}]}
+            """
 
         let body = try decoded(RichBody.self, json)
 
@@ -145,9 +149,9 @@ struct RichBodyTests {
     @Test("a span outside the text is dropped, not clamped")
     func outOfRangeSpanIsDropped() throws {
         let json = """
-        {"text": "short", "spans": [{"start": 3, "length": 40, "kind": "bold"},
-                                    {"start": 0, "length": 5, "kind": "italic"}]}
-        """
+            {"text": "short", "spans": [{"start": 3, "length": 40, "kind": "bold"},
+                                        {"start": 0, "length": 5, "kind": "italic"}]}
+            """
 
         let body = try decoded(RichBody.self, json)
 
@@ -173,10 +177,10 @@ struct RichBodyTests {
         // here would fail the whole `OutgoingMessage`, and an `OutgoingMessage`
         // is what a queued send is made of.
         let json = """
-        {"to": [{"email": "bea@example.test"}], "cc": [], "bcc": [],
-         "subject": "Subject 1", "bodyText": "Hello", "attachments": [],
-         "richBody": "a future shape"}
-        """
+            {"to": [{"email": "bea@example.test"}], "cc": [], "bcc": [],
+             "subject": "Subject 1", "bodyText": "Hello", "attachments": [],
+             "richBody": "a future shape"}
+            """
 
         let message = try decoded(OutgoingMessage.self, json)
 
@@ -191,14 +195,16 @@ struct RichBodyTests {
     /// cannot fail — and would leave the one producer that can actually attach
     /// a rich body to a plain message unasserted.
     private func composed(_ body: RichBody) -> OutgoingMessage {
-        ComposeMessage.outgoing(to: [MailAddress(email: "bea@example.test")], cc: [], bcc: [],
-                                subject: "Subject 1", body: body, attachments: [])
+        ComposeMessage.outgoing(
+            to: [MailAddress(email: "bea@example.test")], cc: [], bcc: [],
+            subject: "Subject 1", body: body, attachments: [])
     }
 
     @Test("a body typed with no formatting writes no richBody key at all")
     func composingPlainTextOmitsTheKey() throws {
-        let json = String(decoding: try JSONEncoder().encode(composed(RichBody(plainText: "Hello"))),
-                          as: UTF8.self)
+        let json = String(
+            decoding: try JSONEncoder().encode(composed(RichBody(plainText: "Hello"))),
+            as: UTF8.self)
 
         // The forward-compatibility guarantee is byte-level: a build that never
         // heard of `richBody` must see exactly the document it always saw. An
@@ -210,8 +216,10 @@ struct RichBodyTests {
 
     @Test("a body typed WITH formatting does attach it, beside the same plain text")
     func composingFormattedTextAttachesTheBody() throws {
-        let message = composed(RichBody(text: "Hello",
-                                        spans: [RichBody.Span(start: 0, length: 5, kind: .bold)]))
+        let message = composed(
+            RichBody(
+                text: "Hello",
+                spans: [RichBody.Span(start: 0, length: 5, kind: .bold)]))
 
         #expect(message.bodyText == "Hello")
         #expect(message.richBody?.spans.map(\.kind) == [.bold])
@@ -221,14 +229,17 @@ struct RichBodyTests {
 
     @Test("a formatted message still carries bodyText verbatim for an older build")
     func formattedMessageKeepsPlainBodyText() throws {
-        let rich = RichBody(text: "Hello there",
-                            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
-        let message = OutgoingMessage(to: [MailAddress(email: "bea@example.test")],
-                                      subject: "Subject 1", bodyText: "Hello there",
-                                      richBody: rich)
+        let rich = RichBody(
+            text: "Hello there",
+            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "bea@example.test")],
+            subject: "Subject 1", bodyText: "Hello there",
+            richBody: rich)
 
-        let object = try JSONSerialization.jsonObject(
-            with: try JSONEncoder().encode(message)) as? [String: Any]
+        let object =
+            try JSONSerialization.jsonObject(
+                with: try JSONEncoder().encode(message)) as? [String: Any]
 
         // An older build reads this key, sends a correct plain-text message,
         // and loses only the bold.
@@ -240,12 +251,14 @@ struct RichBodyTests {
     func richBodyIsAnchoredToBodyText() {
         // The `SendAttempt.withSignature` hazard in miniature: a rebuild that
         // updates one of the two fields and not the other.
-        let stale = RichBody(text: "Hello",
-                             spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
-        let message = OutgoingMessage(to: [MailAddress(email: "bea@example.test")],
-                                      subject: "Subject 1",
-                                      bodyText: "Hello and then some",
-                                      richBody: stale)
+        let stale = RichBody(
+            text: "Hello",
+            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "bea@example.test")],
+            subject: "Subject 1",
+            bodyText: "Hello and then some",
+            richBody: stale)
 
         #expect(message.richBody?.text == message.bodyText)
         // The span still addresses real characters, so it survives the
@@ -255,11 +268,13 @@ struct RichBodyTests {
 
     @Test("a rich body whose spans no longer fit the authoritative text loses the spans only")
     func anchoringDropsSpansThatNoLongerFit() {
-        let stale = RichBody(text: "a much longer body",
-                             spans: [RichBody.Span(start: 10, length: 8, kind: .italic)])
-        let message = OutgoingMessage(to: [MailAddress(email: "bea@example.test")],
-                                      subject: "Subject 1", bodyText: "short",
-                                      richBody: stale)
+        let stale = RichBody(
+            text: "a much longer body",
+            spans: [RichBody.Span(start: 10, length: 8, kind: .italic)])
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "bea@example.test")],
+            subject: "Subject 1", bodyText: "short",
+            richBody: stale)
 
         #expect(message.bodyText == "short")
         #expect(message.richBody?.text == "short")
@@ -279,22 +294,24 @@ struct RichBodyTests {
             "Body\n-- \nSignature",
             "> quoted\n> lines\n\nreply",
             "family 👨‍👩‍👧‍👦 emoji",
-            "مرحبا بالعالم"
+            "مرحبا بالعالم",
         ]
 
         for sample in samples {
             #expect(RichBody(plainText: sample).plainText == sample)
             // And through the composer's own message construction.
-            let message = OutgoingMessage(to: [MailAddress(email: "b@example.test")],
-                                          subject: "Subject 1", bodyText: sample)
+            let message = OutgoingMessage(
+                to: [MailAddress(email: "b@example.test")],
+                subject: "Subject 1", bodyText: sample)
             #expect(message.bodyText == sample)
         }
     }
 
     @Test("RTL detection reads the same string it always did")
     func rtlDetectionUnchanged() {
-        let arabic = RichBody(text: "مرحبا بالعالم\n\n> On Monday, a@example.test wrote:\n> hello",
-                              spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
+        let arabic = RichBody(
+            text: "مرحبا بالعالم\n\n> On Monday, a@example.test wrote:\n> hello",
+            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
 
         #expect(BaseTextDirection.detect(arabic.text) == .rightToLeft)
         #expect(BaseTextDirection.detect(RichBody(plainText: "Hello there").text) == .leftToRight)

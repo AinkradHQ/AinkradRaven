@@ -1,4 +1,5 @@
 import Foundation
+
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -42,9 +43,10 @@ public struct MailDirectoryBookmark: Sendable {
     /// does and doesn't prove.
     public static func create(for url: URL, securityScoped: Bool = true) throws -> MailDirectoryBookmark {
         let options: URL.BookmarkCreationOptions = securityScoped ? [.withSecurityScope] : []
-        let data = try url.bookmarkData(options: options,
-                                        includingResourceValuesForKeys: nil,
-                                        relativeTo: nil)
+        let data = try url.bookmarkData(
+            options: options,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil)
         return MailDirectoryBookmark(data: data)
     }
 
@@ -55,8 +57,9 @@ public struct MailDirectoryBookmark: Sendable {
     public func resolve(securityScoped: Bool = true) throws -> (url: URL, isStale: Bool) {
         var isStale = false
         let options: URL.BookmarkResolutionOptions = securityScoped ? [.withSecurityScope] : []
-        let url = try URL(resolvingBookmarkData: data, options: options,
-                          relativeTo: nil, bookmarkDataIsStale: &isStale)
+        let url = try URL(
+            resolvingBookmarkData: data, options: options,
+            relativeTo: nil, bookmarkDataIsStale: &isStale)
         return (url, isStale)
     }
 

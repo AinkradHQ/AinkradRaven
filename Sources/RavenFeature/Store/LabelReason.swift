@@ -24,8 +24,10 @@ public struct LabelReason: Codable, Equatable, Sendable {
     public let reason: String
     public let recordedAt: Date
 
-    public init(threadID: String, add: [String], remove: [String],
-                reason: String, recordedAt: Date) {
+    public init(
+        threadID: String, add: [String], remove: [String],
+        reason: String, recordedAt: Date
+    ) {
         self.threadID = threadID
         self.add = add
         self.remove = remove
@@ -120,20 +122,23 @@ enum LabelReasonLog {
 
     static func load(_ data: Data?, decoder: JSONDecoder, now: Date) -> Load {
         guard let data else {
-            return Load(entries: [], unreadableEntryCount: 0,
-                        documentUnreadable: false, expiredEntryCount: 0)
+            return Load(
+                entries: [], unreadableEntryCount: 0,
+                documentUnreadable: false, expiredEntryCount: 0)
         }
         guard let lenient = try? decoder.decode([LenientReason].self, from: data) else {
-            return Load(entries: [], unreadableEntryCount: 0,
-                        documentUnreadable: true, expiredEntryCount: 0)
+            return Load(
+                entries: [], unreadableEntryCount: 0,
+                documentUnreadable: true, expiredEntryCount: 0)
         }
         let decoded = lenient.compactMap(\.reason)
         let cutoff = windowStart(from: now)
         let live = decoded.filter { $0.recordedAt >= cutoff }
-        return Load(entries: live,
-                    unreadableEntryCount: lenient.count - decoded.count,
-                    documentUnreadable: false,
-                    expiredEntryCount: decoded.count - live.count)
+        return Load(
+            entries: live,
+            unreadableEntryCount: lenient.count - decoded.count,
+            documentUnreadable: false,
+            expiredEntryCount: decoded.count - live.count)
     }
 
     /// The bytes to store for `reason` appended to `data`, with expired entries
@@ -143,9 +148,11 @@ enum LabelReasonLog {
     /// element this build cannot decode survives the rewrite — see the type's
     /// decode rule. Throws `MailError.documentCorrupt(key:)` when `data` is
     /// present but is not a JSON array, so the caller writes nothing.
-    static func appended(_ reason: LabelReason, to data: Data?, key: String,
-                         encoder: JSONEncoder, decoder: JSONDecoder,
-                         now: Date) throws -> Data {
+    static func appended(
+        _ reason: LabelReason, to data: Data?, key: String,
+        encoder: JSONEncoder, decoder: JSONDecoder,
+        now: Date
+    ) throws -> Data {
         var stored: [Any] = []
         if let data {
             guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else {
@@ -157,8 +164,9 @@ enum LabelReasonLog {
         var kept: [Any] = []
         for element in stored {
             guard let elementData = try? JSONSerialization.data(withJSONObject: element),
-                  let decoded = try? decoder.decode(LabelReason.self, from: elementData) else {
-                kept.append(element)   // unreadable here means UNTOUCHED, not dropped
+                let decoded = try? decoder.decode(LabelReason.self, from: elementData)
+            else {
+                kept.append(element)  // unreadable here means UNTOUCHED, not dropped
                 continue
             }
             if decoded.recordedAt >= cutoff { kept.append(element) }

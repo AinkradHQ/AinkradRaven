@@ -61,11 +61,14 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
 
     // MARK: Transport
 
-    func get<T: Decodable>(_ type: T.Type, path: String,
-                           query: [URLQueryItem] = [],
-                           notFoundID: String? = nil) async throws -> T {
-        var components = URLComponents(url: base.appendingPathComponent(path),
-                                       resolvingAgainstBaseURL: false)!
+    func get<T: Decodable>(
+        _ type: T.Type, path: String,
+        query: [URLQueryItem] = [],
+        notFoundID: String? = nil
+    ) async throws -> T {
+        var components = URLComponents(
+            url: base.appendingPathComponent(path),
+            resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
         return try await get(type, url: components.url!, notFoundID: notFoundID)
     }
@@ -73,8 +76,10 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
     /// The absolute-URL form, used to follow an `@odata.nextLink` verbatim.
     /// Graph's paging links are opaque and must be replayed exactly, not
     /// rebuilt from their parts.
-    private func get<T: Decodable>(_ type: T.Type, url: URL,
-                                   notFoundID: String? = nil) async throws -> T {
+    private func get<T: Decodable>(
+        _ type: T.Type, url: URL,
+        notFoundID: String? = nil
+    ) async throws -> T {
         var request = URLRequest(url: url)
         let token = try await auth.accessToken(accountID: accountID)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -102,8 +107,10 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
     ///    `MailAccount.lastError`, which is written to a document; a Graph
     ///    error body echoes the request (`$filter` contents and all), so it
     ///    must never reach that field.
-    func perform<T: Decodable>(_ type: T.Type, request: URLRequest,
-                               notFoundID: String? = nil) async throws -> T {
+    func perform<T: Decodable>(
+        _ type: T.Type, request: URLRequest,
+        notFoundID: String? = nil
+    ) async throws -> T {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw MailError.providerFailed(status: -1, message: "no response")
@@ -119,8 +126,9 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
             throw MailError.rateLimited(retryAfter: retry)
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw MailError.providerFailed(status: http.statusCode,
-                                           message: "Graph API request failed")
+            throw MailError.providerFailed(
+                status: http.statusCode,
+                message: "Graph API request failed")
         }
         guard let decoded = try? JSONDecoder().decode(type, from: data) else {
             throw MailError.decodingFailed(String(describing: type))
@@ -137,12 +145,14 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
         } else {
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime]
-            list = try await get(GraphMessageListDTO.self, path: "messages", query: [
-                .init(name: "$filter", value: "receivedDateTime ge \(formatter.string(from: since))"),
-                .init(name: "$orderby", value: "receivedDateTime desc"),
-                .init(name: "$top", value: "\(Self.pageSize)"),
-                .init(name: "$select", value: Self.messageFields),
-            ])
+            list = try await get(
+                GraphMessageListDTO.self, path: "messages",
+                query: [
+                    .init(name: "$filter", value: "receivedDateTime ge \(formatter.string(from: since))"),
+                    .init(name: "$orderby", value: "receivedDateTime desc"),
+                    .init(name: "$top", value: "\(Self.pageSize)"),
+                    .init(name: "$select", value: Self.messageFields),
+                ])
         }
         // No per-thread follow-up round trip, unlike Gmail: a Graph page
         // already carries whole messages, so the conversation grouping is
@@ -150,8 +160,9 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
         // messages fall on a later page is completed by `upsertThread`'s
         // merge on the next page, exactly as it is for any provider whose
         // pages cut across a thread.
-        return ThreadPage(threads: GraphMapping.threads(list.value ?? [], accountID: accountID),
-                          nextPageToken: list.nextLink)
+        return ThreadPage(
+            threads: GraphMapping.threads(list.value ?? [], accountID: accountID),
+            nextPageToken: list.nextLink)
     }
 
     /// One conversation, by `conversationId`.
@@ -168,11 +179,13 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
         // contain one, but this is a value from the wire reaching a query
         // language, so it is escaped rather than trusted.
         let escaped = id.replacingOccurrences(of: "'", with: "''")
-        let list = try await get(GraphMessageListDTO.self, path: "messages", query: [
-            .init(name: "$filter", value: "conversationId eq '\(escaped)'"),
-            .init(name: "$top", value: "\(Self.pageSize)"),
-            .init(name: "$select", value: Self.messageFields),
-        ], notFoundID: id)
+        let list = try await get(
+            GraphMessageListDTO.self, path: "messages",
+            query: [
+                .init(name: "$filter", value: "conversationId eq '\(escaped)'"),
+                .init(name: "$top", value: "\(Self.pageSize)"),
+                .init(name: "$select", value: Self.messageFields),
+            ], notFoundID: id)
         let messages = list.value ?? []
         guard !messages.isEmpty else { throw MailError.unknownThread(id) }
         // Grouped, then reduced to the one conversation asked for. Graph
@@ -210,9 +223,10 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
             if let url = next {
                 page = try await get(GraphMessageListDTO.self, url: url)
             } else {
-                page = try await get(GraphMessageListDTO.self,
-                                     path: "mailFolders/inbox/messages/delta",
-                                     query: [.init(name: "$deltatoken", value: cursor)])
+                page = try await get(
+                    GraphMessageListDTO.self,
+                    path: "mailFolders/inbox/messages/delta",
+                    query: [.init(name: "$deltatoken", value: cursor)])
             }
             entries.append(contentsOf: page.value ?? [])
             newToken = GraphMapping.deltaToken(inLink: page.deltaLink)
@@ -224,16 +238,21 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
     }
 
     public func fetchBody(messageID: String) async throws -> MessageBody {
-        let dto = try await get(GraphMessageDTO.self, path: "messages/\(messageID)",
-                                query: [.init(name: "$select",
-                                              value: "id,conversationId,body,uniqueBody")],
-                                notFoundID: nil)
+        let dto = try await get(
+            GraphMessageDTO.self, path: "messages/\(messageID)",
+            query: [
+                .init(
+                    name: "$select",
+                    value: "id,conversationId,body,uniqueBody")
+            ],
+            notFoundID: nil)
         return GraphMapping.body(dto)
     }
 
     public func fetchAttachment(messageID: String, attachmentID: String) async throws -> Data {
-        let dto = try await get(GraphAttachmentDTO.self,
-                                path: "messages/\(messageID)/attachments/\(attachmentID)")
+        let dto = try await get(
+            GraphAttachmentDTO.self,
+            path: "messages/\(messageID)/attachments/\(attachmentID)")
         // Standard padded base64, NOT Gmail's base64url — decoding this with
         // Gmail's decoder would succeed on some inputs and corrupt others.
         guard let encoded = dto.contentBytes, let decoded = Data(base64Encoded: encoded) else {
@@ -243,8 +262,10 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
     }
 
     public func fetchLabels() async throws -> [MailLabel] {
-        GraphMapping.labels(try await get(GraphFolderListDTO.self, path: "mailFolders",
-                                          query: [.init(name: "$top", value: "100")]))
+        GraphMapping.labels(
+            try await get(
+                GraphFolderListDTO.self, path: "mailFolders",
+                query: [.init(name: "$top", value: "100")]))
     }
 
     /// The newest cursor available right now, for seeding after a backfill.
@@ -253,9 +274,10 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
     /// state without sending me the state" — the response carries an
     /// `@odata.deltaLink` and no items, which is exactly what seeding needs.
     public func currentCursor() async throws -> String {
-        let page = try await get(GraphMessageListDTO.self,
-                                 path: "mailFolders/inbox/messages/delta",
-                                 query: [.init(name: "$deltatoken", value: "latest")])
+        let page = try await get(
+            GraphMessageListDTO.self,
+            path: "mailFolders/inbox/messages/delta",
+            query: [.init(name: "$deltatoken", value: "latest")])
         guard let token = GraphMapping.deltaToken(inLink: page.deltaLink) else {
             throw MailError.decodingFailed("graph delta token")
         }
@@ -284,16 +306,19 @@ public final class GraphProvider: MailProvider, @unchecked Sendable {
         // Backslash FIRST, then the quote: escaping the quote first would then
         // have its own escape character re-escaped, turning `\"` back into a
         // literal backslash followed by a string terminator.
-        let escaped = query
+        let escaped =
+            query
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let list = try await get(GraphMessageListDTO.self, path: "messages", query: [
-            // `$search` takes a quoted KQL string; `$orderby` is not allowed
-            // alongside it, so results come back in relevance order.
-            .init(name: "$search", value: "\"\(escaped)\""),
-            .init(name: "$top", value: "\(min(Self.pageSize, limit))"),
-            .init(name: "$select", value: Self.messageFields),
-        ])
+        let list = try await get(
+            GraphMessageListDTO.self, path: "messages",
+            query: [
+                // `$search` takes a quoted KQL string; `$orderby` is not allowed
+                // alongside it, so results come back in relevance order.
+                .init(name: "$search", value: "\"\(escaped)\""),
+                .init(name: "$top", value: "\(min(Self.pageSize, limit))"),
+                .init(name: "$select", value: Self.messageFields),
+            ])
         return Array(GraphMapping.threads(list.value ?? [], accountID: accountID).prefix(limit))
     }
 

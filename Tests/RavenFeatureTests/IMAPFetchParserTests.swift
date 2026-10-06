@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("IMAP FETCH response parsing")
@@ -112,8 +113,9 @@ struct IMAPFetchParserTests {
         #expect(secondMessage.labelIDs == ["INBOX"])
         #expect(secondMessage.labelIDs.allSatisfy { !$0.hasPrefix("\\") })
         for flag in second.flags {
-            #expect(flag.canonicalToken.contains("\\") == false,
-                    "a raw IMAP flag string escaped as \(flag.canonicalToken)")
+            #expect(
+                flag.canonicalToken.contains("\\") == false,
+                "a raw IMAP flag string escaped as \(flag.canonicalToken)")
         }
     }
 
@@ -168,7 +170,8 @@ struct IMAPFetchParserTests {
     @Test("an HTML-only message derives plainText through BodySanitizer")
     func htmlOnlyGoesThroughSanitizer() throws {
         let raw = "<p>Body one</p><script>alert(1)</script>"
-        let wire = "* 1 FETCH (UID 205 BODYSTRUCTURE (\"TEXT\" \"HTML\" "
+        let wire =
+            "* 1 FETCH (UID 205 BODYSTRUCTURE (\"TEXT\" \"HTML\" "
             + "(\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" \(raw.utf8.count) 1) "
             + "BODY[TEXT] {\(raw.utf8.count)}\r\n\(raw))\r\n"
         let response = try parsedLine(wire)
@@ -191,10 +194,12 @@ struct IMAPFetchParserTests {
         #expect(structure.mimeType == "multipart/mixed")
 
         // Compared as a whole collection, so a wrong count cannot be masked.
-        #expect(structure.attachments == [
-            MailAttachment(attachmentID: "2", filename: "file-a.pdf",
-                           mimeType: "application/pdf", size: 1234),
-        ])
+        #expect(
+            structure.attachments == [
+                MailAttachment(
+                    attachmentID: "2", filename: "file-a.pdf",
+                    mimeType: "application/pdf", size: 1234)
+            ])
         let message = IMAPFetchParser.message(response, id: "u203", threadID: "t203", labelIDs: ["INBOX"])
         #expect(message.hasAttachments)
         #expect(message.attachments == structure.attachments)
@@ -209,19 +214,23 @@ struct IMAPFetchParserTests {
         let structure = try #require(response.bodyStructure)
         #expect(structure.mimeType == "multipart/mixed")
         #expect(structure.children.map(\.partNumber) == ["1", "2", "3"])
-        #expect(structure.children.map(\.mimeType)
-            == ["multipart/alternative", "application/octet-stream", "text/plain"])
+        #expect(
+            structure.children.map(\.mimeType)
+                == ["multipart/alternative", "application/octet-stream", "text/plain"])
         // The nested `multipart/alternative` IS addressable as part 1 (a
         // `BODY[1]` fetch returns the whole alternative); only the TOP-LEVEL
         // multipart is unnumbered, which is why it contributes no entry here.
-        #expect(structure.preOrder.map(\.partNumber)
-            == [nil, "1", "1.1", "1.2", "2", "3"])
+        #expect(
+            structure.preOrder.map(\.partNumber)
+                == [nil, "1", "1.1", "1.2", "2", "3"])
         #expect(structure.plainTextPart?.partNumber == "1.1")
         #expect(structure.htmlPart?.partNumber == "1.2")
-        #expect(structure.attachments == [
-            MailAttachment(attachmentID: "2", filename: "file-b.bin",
-                           mimeType: "application/octet-stream", size: 64),
-        ])
+        #expect(
+            structure.attachments == [
+                MailAttachment(
+                    attachmentID: "2", filename: "file-b.bin",
+                    mimeType: "application/octet-stream", size: 64)
+            ])
 
         let body = IMAPFetchParser.body(response, messageID: "u204")
         // Part 3 is also `text/plain`; picking it would mean the walk is not
@@ -235,17 +244,20 @@ struct IMAPFetchParserTests {
     func textPartDispositionOffset() throws {
         // A `text/*` part carries a required body-fld-lines before the extension
         // fields, so an inline-disposition filename sits at index 9, not 8.
-        let wire = "* 1 FETCH (UID 206 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
+        let wire =
+            "* 1 FETCH (UID 206 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
             + "(\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" 8 1)"
             + "(\"TEXT\" \"CSV\" (\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" 20 2 NIL "
             + "(\"ATTACHMENT\" (\"FILENAME\" \"table-a.csv\")) NIL NIL) "
             + "\"MIXED\" (\"BOUNDARY\" \"b5\")))\r\n"
         let response = try parsedLine(wire)
         let structure = try #require(response.bodyStructure)
-        #expect(structure.attachments == [
-            MailAttachment(attachmentID: "2", filename: "table-a.csv",
-                           mimeType: "text/csv", size: 20),
-        ])
+        #expect(
+            structure.attachments == [
+                MailAttachment(
+                    attachmentID: "2", filename: "table-a.csv",
+                    mimeType: "text/csv", size: 20)
+            ])
     }
 
     @Test("a multipart container with an attachment disposition is not itself an attachment")
@@ -254,7 +266,8 @@ struct IMAPFetchParserTests {
         // container (a forwarded or signed sub-message). Counting it as an
         // attachment would list the container AND each of its leaves, so the UI
         // would offer to save the same bytes twice under two names.
-        let wire = "* 1 FETCH (UID 207 BODYSTRUCTURE (((\"TEXT\" \"PLAIN\" "
+        let wire =
+            "* 1 FETCH (UID 207 BODYSTRUCTURE (((\"TEXT\" \"PLAIN\" "
             + "(\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" 8 1)"
             + "(\"APPLICATION\" \"PDF\" (\"NAME\" \"file-c.pdf\") NIL NIL \"BASE64\" 9 NIL "
             + "(\"ATTACHMENT\" (\"FILENAME\" \"file-c.pdf\")) NIL NIL) "
@@ -268,10 +281,12 @@ struct IMAPFetchParserTests {
         // decision about multiparts, not an accident of missing metadata.
         #expect(container.isMultipart)
         #expect(container.filename == "forwarded.eml")
-        #expect(structure.attachments == [
-            MailAttachment(attachmentID: "1.2", filename: "file-c.pdf",
-                           mimeType: "application/pdf", size: 9),
-        ])
+        #expect(
+            structure.attachments == [
+                MailAttachment(
+                    attachmentID: "1.2", filename: "file-c.pdf",
+                    mimeType: "application/pdf", size: 9)
+            ])
     }
 
     // MARK: - Agreement with GmailMapping
@@ -290,14 +305,17 @@ struct IMAPFetchParserTests {
         func part(_ mime: String, text: String) -> GmailMessageDTO.Payload {
             GmailMessageDTO.Payload(
                 headers: [], mimeType: mime,
-                body: GmailMessageDTO.Body(data: GmailMapping.base64URL(text),
-                                           size: text.utf8.count),
+                body: GmailMessageDTO.Body(
+                    data: GmailMapping.base64URL(text),
+                    size: text.utf8.count),
                 parts: nil)
         }
         let alternative = GmailMessageDTO.Payload(
             headers: [], mimeType: "multipart/alternative", body: nil,
-            parts: [part("text/plain", text: "Body one"),
-                    part("text/html", text: "<p>Body one</p>")])
+            parts: [
+                part("text/plain", text: "Body one"),
+                part("text/html", text: "<p>Body one</p>"),
+            ])
         let attachment = GmailMessageDTO.Payload(
             headers: [], mimeType: "application/octet-stream", filename: "file-b.bin",
             body: GmailMessageDTO.Body(data: nil, size: 64, attachmentId: "a1"), parts: nil)
@@ -343,9 +361,9 @@ struct IMAPFetchParserTests {
         // item-name position. A build that only threw from one of them would
         // silently hand a half-built response to a caller from the others.
         let cases = [
-            "1 FETCH (UID 302 FLAGS (\\Seen",   // mid-list
-            "1 FETCH (UID ",                     // value expected, none arrives
-            "1 FETCH (",                         // item name expected
+            "1 FETCH (UID 302 FLAGS (\\Seen",  // mid-list
+            "1 FETCH (UID ",  // value expected, none arrives
+            "1 FETCH (",  // item name expected
         ]
         for wire in cases {
             let response = IMAPUntaggedResponse(tokens: try IMAPLexer.tokenize(Data(wire.utf8)))
@@ -357,9 +375,11 @@ struct IMAPFetchParserTests {
 
     @Test("References and In-Reply-To come from a fetched HEADER.FIELDS section")
     func headerFieldsSection() throws {
-        let headerText = "References: <m0@example.test> <m1@example.test>\r\n"
+        let headerText =
+            "References: <m0@example.test> <m1@example.test>\r\n"
             + "In-Reply-To: <m1@example.test>\r\n\r\n"
-        let wire = "* 8 FETCH (UID 303 BODY[HEADER.FIELDS (REFERENCES IN-REPLY-TO)] "
+        let wire =
+            "* 8 FETCH (UID 303 BODY[HEADER.FIELDS (REFERENCES IN-REPLY-TO)] "
             + "{\(headerText.utf8.count)}\r\n\(headerText))\r\n"
         let response = try parsedLine(wire)
         let headers = try #require(IMAPFetchParser.headers(response))

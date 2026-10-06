@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// Renders `ComposeAdvice.findings(for:)` and nothing else.
 ///

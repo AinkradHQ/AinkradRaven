@@ -1,7 +1,8 @@
-import Testing
-import Foundation
-@testable import RavenFeature
 import AinkradAppKit
+import Foundation
+import Testing
+
+@testable import RavenFeature
 
 /// Exercises `GmailProvider` end to end against recorded fixture bytes and
 /// synthetic HTTP responses, via `StubURLProtocol` — no live network call.
@@ -9,8 +10,9 @@ import AinkradAppKit
 @MainActor
 struct GmailProviderTests {
     private func fixture(_ name: String) throws -> Data {
-        let url = try #require(Bundle(for: FixtureBundleMarker.self)
-            .url(forResource: name, withExtension: "json"))
+        let url = try #require(
+            Bundle(for: FixtureBundleMarker.self)
+                .url(forResource: name, withExtension: "json"))
         return try Data(contentsOf: url)
     }
 
@@ -103,7 +105,7 @@ struct GmailProviderTests {
 
         #expect(delta.changedThreadIDs.isEmpty)
         #expect(delta.removedThreadIDs.isEmpty)
-        #expect(delta.newCursor == "2171944")   // historyId from the real fixture
+        #expect(delta.newCursor == "2171944")  // historyId from the real fixture
         #expect(delta.newCursor != "1")
     }
 
@@ -141,8 +143,9 @@ struct GmailProviderTests {
         defer { StubURLProtocol.handler = nil }
 
         await #expect(throws: MailError.self) {
-            _ = try await provider.fetchThreads(since: Date(timeIntervalSince1970: 0),
-                                                pageToken: nil)
+            _ = try await provider.fetchThreads(
+                since: Date(timeIntervalSince1970: 0),
+                pageToken: nil)
         }
     }
 
@@ -153,8 +156,10 @@ struct GmailProviderTests {
         StubURLProtocol.handler = { request in
             let path = request.url?.path ?? ""
             if path.hasSuffix("/threads") {
-                return (200, [:],
-                        Data(#"{"threads":[{"id":"gone"},{"id":"19fc3a0d1591338e"}]}"#.utf8))
+                return (
+                    200, [:],
+                    Data(#"{"threads":[{"id":"gone"},{"id":"19fc3a0d1591338e"}]}"#.utf8)
+                )
             }
             if path.hasSuffix("/threads/gone") {
                 return (404, [:], Data(#"{"error":{"message":"not found"}}"#.utf8))
@@ -163,8 +168,9 @@ struct GmailProviderTests {
         }
         defer { StubURLProtocol.handler = nil }
 
-        let page = try await provider.fetchThreads(since: Date(timeIntervalSince1970: 0),
-                                                   pageToken: nil)
+        let page = try await provider.fetchThreads(
+            since: Date(timeIntervalSince1970: 0),
+            pageToken: nil)
         #expect(page.threads.map(\.id) == ["19fc3a0d1591338e"])
     }
 
@@ -190,15 +196,17 @@ struct GmailProviderTests {
                 return (200, [:], Data("{\"threads\":[\(refs)]}".utf8))
             }
             let id = String(path.split(separator: "/").last ?? "")
-            let thread = "{\"id\":\"\(id)\",\"historyId\":\"1\",\"messages\":[" +
-                "{\"id\":\"\(id)\",\"threadId\":\"\(id)\",\"labelIds\":[]," +
-                "\"snippet\":\"\",\"payload\":{\"headers\":[]}}]}"
+            let thread =
+                "{\"id\":\"\(id)\",\"historyId\":\"1\",\"messages\":["
+                + "{\"id\":\"\(id)\",\"threadId\":\"\(id)\",\"labelIds\":[],"
+                + "\"snippet\":\"\",\"payload\":{\"headers\":[]}}]}"
             return (200, [:], Data(thread.utf8))
         }
         defer { StubURLProtocol.handler = nil }
 
-        let page = try await provider.fetchThreads(since: Date(timeIntervalSince1970: 0),
-                                                    pageToken: nil)
+        let page = try await provider.fetchThreads(
+            since: Date(timeIntervalSince1970: 0),
+            pageToken: nil)
         #expect(page.threads.map(\.id) == ids)
     }
 
@@ -221,15 +229,17 @@ struct GmailProviderTests {
             if id == goneID {
                 return (404, [:], Data(#"{"error":{"message":"not found"}}"#.utf8))
             }
-            let thread = "{\"id\":\"\(id)\",\"historyId\":\"1\",\"messages\":[" +
-                "{\"id\":\"\(id)\",\"threadId\":\"\(id)\",\"labelIds\":[]," +
-                "\"snippet\":\"\",\"payload\":{\"headers\":[]}}]}"
+            let thread =
+                "{\"id\":\"\(id)\",\"historyId\":\"1\",\"messages\":["
+                + "{\"id\":\"\(id)\",\"threadId\":\"\(id)\",\"labelIds\":[],"
+                + "\"snippet\":\"\",\"payload\":{\"headers\":[]}}]}"
             return (200, [:], Data(thread.utf8))
         }
         defer { StubURLProtocol.handler = nil }
 
-        let page = try await provider.fetchThreads(since: Date(timeIntervalSince1970: 0),
-                                                    pageToken: nil)
+        let page = try await provider.fetchThreads(
+            since: Date(timeIntervalSince1970: 0),
+            pageToken: nil)
         #expect(page.threads.map(\.id) == ids.filter { $0 != goneID })
     }
 
@@ -237,10 +247,11 @@ struct GmailProviderTests {
 
     @Test("send's raw RFC822 round-trips an ASCII subject and body correctly, and leaves the subject unencoded")
     func sendRoundTripsASCII() {
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")],
-            subject: "Hello there",
-            bodyText: "Line one\nLine two"))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")],
+                subject: "Hello there",
+                bodyText: "Line one\nLine two"))
         #expect(mime.headerBlock.contains("Subject: Hello there"))
         // RFC 2046 requires CRLF in a text part; the editor supplies bare `\n`.
         // This assertion used to read `contains("Line one\nLine two")`, which
@@ -256,19 +267,22 @@ struct GmailProviderTests {
     /// message — structure, part headers, or part content.
     @Test("no bare LF and no bare CR survives anywhere in the message, in either part")
     func everyLineEndingIsCRLF() {
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")], subject: "s",
-            bodyText: "Line one\nLine two\rLine three\r\nLine four"))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")], subject: "s",
+                bodyText: "Line one\nLine two\rLine three\r\nLine four"))
 
         let scalars = Array(mime.raw.unicodeScalars)
         for (index, scalar) in scalars.enumerated() {
             if scalar == "\n" {
-                #expect(index > 0 && scalars[index - 1] == "\r",
-                        "bare LF at \(index)")
+                #expect(
+                    index > 0 && scalars[index - 1] == "\r",
+                    "bare LF at \(index)")
             }
             if scalar == "\r" {
-                #expect(index + 1 < scalars.count && scalars[index + 1] == "\n",
-                        "bare CR at \(index)")
+                #expect(
+                    index + 1 < scalars.count && scalars[index + 1] == "\n",
+                    "bare CR at \(index)")
             }
         }
         #expect(mime.raw.contains("\r\r") == false)
@@ -283,8 +297,9 @@ struct GmailProviderTests {
     @Test("an Arabic subject is emitted as a valid RFC 2047 encoded word that decodes back byte-exact")
     func arabicSubjectEncodesAndDecodesExactly() {
         let subject = "مرحبا بكم في البريد"
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
-                                      subject: subject, bodyText: "body")
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.com")],
+            subject: subject, bodyText: "body")
         let raw = GmailProvider.rfc822(message)
         let decoded = GmailMapping.decodeBase64URL(raw) ?? ""
 
@@ -321,12 +336,14 @@ struct GmailProviderTests {
         // fail to produce valid UTF-8 for that chunk — proof no scalar was
         // split across a fold boundary.
         for word in words {
-            let base64 = word
+            let base64 =
+                word
                 .replacingOccurrences(of: "=?UTF-8?B?", with: "")
                 .replacingOccurrences(of: "?=", with: "")
             let data = try! #require(Data(base64Encoded: base64))
-            #expect(String(data: data, encoding: .utf8) != nil,
-                    "a chunk that isn't valid UTF-8 on its own means a scalar was split")
+            #expect(
+                String(data: data, encoding: .utf8) != nil,
+                "a chunk that isn't valid UTF-8 on its own means a scalar was split")
         }
 
         #expect(RFC2047.decode(encoded) == subject)
@@ -337,8 +354,9 @@ struct GmailProviderTests {
     @Test("a body containing Arabic and emoji round-trips byte-exact through the raw RFC822 encoding")
     func bodyWithArabicAndEmojiRoundTripsByteExact() {
         let body = "مرحبا! 👋 هذا اختبار مع نص عربي وإيموجي 🎉📧\nSecond line: café — done."
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")], subject: "ok", bodyText: body))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")], subject: "ok", bodyText: body))
         // Byte-exact apart from the CRLF the MIME spec requires of a text part.
         #expect(mime.plain == MIMEHeader.normalizeCRLF(body))
         #expect(mime.html.contains("مرحبا"))
@@ -349,8 +367,9 @@ struct GmailProviderTests {
 
     @Test("send's raw RFC822 is a multipart/alternative message with a boundary absent from both parts")
     func multipartStructureHasSafeBoundary() {
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
-                                      subject: "Plans", bodyText: "**bold** plan with a [link](https://example.com)")
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.com")],
+            subject: "Plans", bodyText: "**bold** plan with a [link](https://example.com)")
         let raw = GmailProvider.rfc822(message)
         let decoded = GmailMapping.decodeBase64URL(raw) ?? ""
 
@@ -391,13 +410,14 @@ struct GmailProviderTests {
     @Test("markdown bold, italic, inline code, a link, and a bullet list all appear in the HTML part")
     func markdownFeaturesAppearInHTMLPart() {
         let markdown = """
-        Hello **bold** and *italic* and `code` and [a link](https://example.com).
+            Hello **bold** and *italic* and `code` and [a link](https://example.com).
 
-        - first item
-        - second item
-        """
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: markdown))
+            - first item
+            - second item
+            """
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: markdown))
 
         #expect(mime.html.contains("<strong>bold</strong>"))
         #expect(mime.html.contains("<em>italic</em>"))
@@ -415,8 +435,9 @@ struct GmailProviderTests {
     @Test("a body containing <script> is escaped in the HTML part rather than injected")
     func scriptTagIsEscapedNotInjected() {
         let malicious = "Look at this: <script>alert('x')</script> & also <b>bold</b>."
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: malicious))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: malicious))
 
         // The HTML part must never contain a live <script> tag.
         #expect(mime.html.isEmpty == false)
@@ -437,44 +458,50 @@ struct GmailProviderTests {
     /// headers into the user's own reply. One test per header field.
     @Test("a CRLF in the subject cannot inject a header")
     func subjectCannotInjectHeader() {
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")],
-            subject: "hello\r\nBcc: attacker@evil.com", bodyText: "body"))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")],
+                subject: "hello\r\nBcc: attacker@evil.com", bodyText: "body"))
         #expect(mime.headerNames.contains("Bcc") == false)
-        #expect(mime.header("Subject")?.contains("Bcc") == true,
-                "the text should survive as subject content, just not as a header")
+        #expect(
+            mime.header("Subject")?.contains("Bcc") == true,
+            "the text should survive as subject content, just not as a header")
     }
 
     @Test("a CRLF in a recipient address cannot inject a header")
     func toAddressCannotInjectHeader() {
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com\r\nBcc: attacker@evil.com")],
-            subject: "s", bodyText: "body"))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com\r\nBcc: attacker@evil.com")],
+                subject: "s", bodyText: "body"))
         #expect(mime.headerNames.contains("Bcc") == false)
     }
 
     @Test("a CRLF in a display name cannot inject a header")
     func displayNameCannotInjectHeader() {
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com", name: "Bea\r\nBcc: attacker@evil.com")],
-            subject: "s", bodyText: "body"))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com", name: "Bea\r\nBcc: attacker@evil.com")],
+                subject: "s", bodyText: "body"))
         #expect(mime.headerNames.contains("Bcc") == false)
     }
 
     @Test("a CRLF in a Cc address cannot inject a header")
     func ccCannotInjectHeader() {
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")],
-            cc: [MailAddress(email: "c@example.com\r\nBcc: attacker@evil.com")],
-            subject: "s", bodyText: "body"))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")],
+                cc: [MailAddress(email: "c@example.com\r\nBcc: attacker@evil.com")],
+                subject: "s", bodyText: "body"))
         #expect(mime.headerNames.contains("Bcc") == false)
     }
 
     @Test("a CRLF in a remote Message-ID cannot inject a header via In-Reply-To or References")
     func inReplyToCannotInjectHeader() {
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: "body",
-            inReplyToMessageID: "<a@b>\r\nBcc: attacker@evil.com"))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: "body",
+                inReplyToMessageID: "<a@b>\r\nBcc: attacker@evil.com"))
         #expect(mime.headerNames.contains("Bcc") == false)
         #expect(mime.header("In-Reply-To")?.contains("\r") == false)
         #expect(mime.header("References")?.contains("\r") == false)
@@ -483,12 +510,14 @@ struct GmailProviderTests {
     @Test("no header line in a fully hostile message contains a bare CR or LF")
     func noHeaderLineContainsBareLineBreak() {
         let hostile = "x\r\nBcc: attacker@evil.com\rand\nmore"
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com", name: hostile)],
-            cc: [MailAddress(email: "c@example.com", name: hostile)],
-            subject: hostile, bodyText: "body", inReplyToMessageID: hostile))
-        #expect(mime.headerNames.sorted()
-            == ["Content-Type", "Cc", "In-Reply-To", "MIME-Version", "References", "Subject", "To"]
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com", name: hostile)],
+                cc: [MailAddress(email: "c@example.com", name: hostile)],
+                subject: hostile, bodyText: "body", inReplyToMessageID: hostile))
+        #expect(
+            mime.headerNames.sorted()
+                == ["Content-Type", "Cc", "In-Reply-To", "MIME-Version", "References", "Subject", "To"]
                 .sorted())
     }
 
@@ -500,8 +529,9 @@ struct GmailProviderTests {
         // in the review that found this).
         let long = String(repeating: "the quick brown fox jumps over the lazy dog ", count: 30)
         #expect(long.utf8.count > 998)
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: long))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: long))
 
         #expect(mime.raw.contains("Content-Transfer-Encoding: base64"))
         for line in mime.raw.components(separatedBy: "\r\n") {
@@ -521,10 +551,12 @@ struct GmailProviderTests {
     /// a signature.
     @Test("a signed body keeps every line and an explicit signature separator in BOTH parts")
     func signedBodySurvivesInBothParts() {
-        let composed = "Hi Bea,\n\nThanks for the update."
+        let composed =
+            "Hi Bea,\n\nThanks for the update."
             + Signature.sigdash + "Ahmed\nAinkrad"
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: composed))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")], subject: "s", bodyText: composed))
 
         // Plain part: exactly body + "\n-- \n" + signature, CRLF-normalized.
         #expect(mime.plain == MIMEHeader.normalizeCRLF(composed))
@@ -545,14 +577,16 @@ struct GmailProviderTests {
     func replyQuoteIsQuotedInHTMLPart() {
         let quoted = ReplyComposer.quoteBody(
             mode: .reply,
-            message: MailMessage(id: "m1", threadID: "t1", rfc822MessageID: "<a@b>",
-                                 from: MailAddress(email: "bea@example.com", name: "Bea"),
-                                 subject: "hello",
-                                 date: Date(timeIntervalSince1970: 1_700_000_000)),
+            message: MailMessage(
+                id: "m1", threadID: "t1", rfc822MessageID: "<a@b>",
+                from: MailAddress(email: "bea@example.com", name: "Bea"),
+                subject: "hello",
+                date: Date(timeIntervalSince1970: 1_700_000_000)),
             bodyText: "quoted line\n-- \nأحمد")
-        let mime = DecodedRFC822(OutgoingMessage(
-            to: [MailAddress(email: "b@example.com")], subject: "Re: hello",
-            bodyText: "أهلا This is a reply." + quoted))
+        let mime = DecodedRFC822(
+            OutgoingMessage(
+                to: [MailAddress(email: "b@example.com")], subject: "Re: hello",
+                bodyText: "أهلا This is a reply." + quoted))
 
         #expect(mime.html.contains("<blockquote>"))
         // The regression: everything flattened into two paragraphs with the
@@ -597,7 +631,8 @@ struct DecodedRFC822 {
         let bodyBlock = split.map { String(rawText[$0.upperBound...]) } ?? ""
 
         let boundary = Self.boundary(inHeaderBlock: headers)
-        let parts = boundary.isEmpty
+        let parts =
+            boundary.isEmpty
             ? []
             : bodyBlock.components(separatedBy: "--\(boundary)").dropFirst().dropLast()
         var decodedParts: [String: String] = [:]
@@ -618,7 +653,8 @@ struct DecodedRFC822 {
     var headerNames: [String] {
         headerBlock.components(separatedBy: "\r\n").compactMap { line in
             guard !line.hasPrefix(" "), !line.hasPrefix("\t"),
-                  let colon = line.firstIndex(of: ":") else { return nil }
+                let colon = line.firstIndex(of: ":")
+            else { return nil }
             return String(line[line.startIndex..<colon])
         }
     }
@@ -651,7 +687,8 @@ struct DecodedRFC822 {
         guard headers.lowercased().contains("content-transfer-encoding: base64") else {
             return content
         }
-        let joined = content
+        let joined =
+            content
             .replacingOccurrences(of: "\r\n", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let data = Data(base64Encoded: joined) else { return "" }

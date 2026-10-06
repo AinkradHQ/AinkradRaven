@@ -25,8 +25,9 @@ enum IMAPCapabilityList {
     /// list.
     static func code(in tokens: [IMAPToken]) -> Set<String>? {
         guard let open = tokens.firstIndex(of: .bracketOpen),
-              open + 1 < tokens.count,
-              tokens[open + 1].stringValue?.uppercased() == "CAPABILITY" else { return nil }
+            open + 1 < tokens.count,
+            tokens[open + 1].stringValue?.uppercased() == "CAPABILITY"
+        else { return nil }
         let close = tokens[open...].firstIndex(of: .bracketClose) ?? tokens.endIndex
         guard open + 2 <= close else { return [] }
         return names(in: Array(tokens[(open + 2)..<close]))
@@ -68,7 +69,9 @@ struct IMAPGreeting: Sendable, Equatable {
         }
         let text = IMAPResponseText.render(Array(response.tokens.dropFirst()))
         if kind == .bye { return .failure(IMAPSessionError.greetingRejected(text)) }
-        return .success(IMAPGreeting(kind: kind, text: text,
-                                     capabilities: IMAPCapabilityList.code(in: response.tokens) ?? []))
+        return .success(
+            IMAPGreeting(
+                kind: kind, text: text,
+                capabilities: IMAPCapabilityList.code(in: response.tokens) ?? []))
     }
 }

@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Whether an IMAP account has a live near-push (`IDLE`) connection, and if not,
 /// why not.
@@ -31,11 +31,11 @@ public enum RavenPushState: Equatable, Sendable {
         case .idling:
             return nil
         case .notAdvertised:
-            return "This server does not support IMAP IDLE, so new mail is picked " +
-                   "up by the two-minute check rather than as it arrives."
+            return "This server does not support IMAP IDLE, so new mail is picked "
+                + "up by the two-minute check rather than as it arrives."
         case .noSelectableMailbox:
-            return "No mailbox on this account can be opened for new-mail " +
-                   "notifications, so the two-minute check is the only trigger."
+            return "No mailbox on this account can be opened for new-mail "
+                + "notifications, so the two-minute check is the only trigger."
         }
     }
 }
@@ -186,8 +186,7 @@ extension RavenRuntime {
         let targets = accountID.map { [$0] } ?? syncEngines.keys.sorted()
         for target in targets {
             guard !backfillingAccounts.contains(target) else {
-                host.log.info("Raven: resync already in progress for \(target); " +
-                              "ignoring the new request.")
+                host.log.info("Raven: resync already in progress for \(target); " + "ignoring the new request.")
                 continue
             }
             startBackfill(accountID: target)
@@ -308,8 +307,9 @@ extension RavenRuntime {
         engine.onNewThreads = { [weak self] threadIDs in
             guard let self else { return }
             self.applyRules(threadIDs: threadIDs)
-            self.reporter.mailArrived(count: threadIDs.count,
-                                      accountLabel: self.accountLabel(accountID))
+            self.reporter.mailArrived(
+                count: threadIDs.count,
+                accountLabel: self.accountLabel(accountID))
         }
         syncEngines[accountID] = engine
         // Additive: the poll loop above is untouched and keeps ticking for this
@@ -355,9 +355,10 @@ extension RavenRuntime {
         guard idleWatchers[accountID] == nil else { return }
         let watcher = IMAPIdleWatcher(
             provider: imap,
-            clock: idleClockOverride ?? IMAPIdleSystemClock()) { [weak self] in
-                await self?.syncNow(accountID: accountID)
-            }
+            clock: idleClockOverride ?? IMAPIdleSystemClock()
+        ) { [weak self] in
+            await self?.syncNow(accountID: accountID)
+        }
         idleWatchers[accountID] = watcher
         setPushState(.idling, for: accountID)
         idleTasks[accountID] = Task { [weak self] in
@@ -436,11 +437,11 @@ extension RavenRuntime {
     func attachStoredAccounts() {
         for account in store.accounts() {
             do {
-                attach(provider: try providerFactory.makeProvider(for: account),
-                       accountID: account.id)
+                attach(
+                    provider: try providerFactory.makeProvider(for: account),
+                    accountID: account.id)
             } catch {
-                host.log.error("Raven: account \(account.id) could not be attached: " +
-                               "\(String(describing: error))")
+                host.log.error("Raven: account \(account.id) could not be attached: " + "\(String(describing: error))")
             }
         }
     }

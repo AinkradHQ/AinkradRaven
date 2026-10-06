@@ -13,7 +13,8 @@ public struct MailAddress: Codable, Equatable, Hashable, Sendable {
     public init?(rfc5322 raw: String) {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if let open = trimmed.lastIndex(of: "<"), let close = trimmed.lastIndex(of: ">"),
-           open < close {
+            open < close
+        {
             let address = String(trimmed[trimmed.index(after: open)..<close])
             guard address.contains("@") else { return nil }
             let label = String(trimmed[trimmed.startIndex..<open])

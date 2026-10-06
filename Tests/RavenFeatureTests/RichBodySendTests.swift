@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 21: what a rich body becomes on the wire.
@@ -26,35 +27,50 @@ struct RichBodyMIMETests {
     @Test("a rich message is multipart/alternative: plain from the body, html rendered from it")
     func alternativeCarriesBothParts() throws {
         let body = rich("Hello there", [RichBody.Span(start: 0, length: 5, kind: .bold)])
-        let raw = build(OutgoingMessage(to: [to], subject: "Subject 1",
-                                        bodyText: body.text, richBody: body))
+        let raw = build(
+            OutgoingMessage(
+                to: [to], subject: "Subject 1",
+                bodyText: body.text, richBody: body))
 
         // Whole-collection equality, so nothing can sit between the two parts
         // and neither can be missing.
-        #expect(MIMEProbe.contentTypes(raw) == ["multipart/alternative",
-                                                "text/plain; charset=UTF-8",
-                                                "text/html; charset=UTF-8"])
+        #expect(
+            MIMEProbe.contentTypes(raw) == [
+                "multipart/alternative",
+                "text/plain; charset=UTF-8",
+                "text/html; charset=UTF-8",
+            ])
         #expect(MIMEProbe.transferEncodings(raw) == ["base64", "base64"])
         // The plain part is the IDENTITY FUNCTION on the rich body's text — not
         // re-derived from the HTML, and not a stub.
-        #expect(MIMEProbe.decodedParts(raw) == ["Hello there",
-                                                "<p><strong>Hello</strong> there</p>"])
+        #expect(
+            MIMEProbe.decodedParts(raw) == [
+                "Hello there",
+                "<p><strong>Hello</strong> there</p>",
+            ])
     }
 
     @Test("with an attachment the alternative nests inside one multipart/mixed")
     func attachmentsWrapTheAlternative() throws {
         let body = rich("Hello there", [RichBody.Span(start: 0, length: 5, kind: .bold)])
-        let raw = build(OutgoingMessage(
-            to: [to], subject: "Subject 1", bodyText: body.text,
-            attachments: [OutgoingAttachment(filename: "a.pdf", mimeType: "application/pdf",
-                                             data: Data("bytes".utf8))],
-            richBody: body))
+        let raw = build(
+            OutgoingMessage(
+                to: [to], subject: "Subject 1", bodyText: body.text,
+                attachments: [
+                    OutgoingAttachment(
+                        filename: "a.pdf", mimeType: "application/pdf",
+                        data: Data("bytes".utf8))
+                ],
+                richBody: body))
 
-        #expect(MIMEProbe.contentTypes(raw) == ["multipart/mixed",
-                                                "multipart/alternative",
-                                                "text/plain; charset=UTF-8",
-                                                "text/html; charset=UTF-8",
-                                                "application/pdf; name=\"a.pdf\""])
+        #expect(
+            MIMEProbe.contentTypes(raw) == [
+                "multipart/mixed",
+                "multipart/alternative",
+                "text/plain; charset=UTF-8",
+                "text/html; charset=UTF-8",
+                "application/pdf; name=\"a.pdf\"",
+            ])
         // Exactly the nesting the extraction preserved: two boundaries, and the
         // alternative's own boundary opens INSIDE the mixed one rather than
         // beside it.
@@ -65,9 +81,11 @@ struct RichBodyMIMETests {
         let outerStart = try #require(raw.range(of: "--\(outer)"))
         let innerStart = try #require(raw.range(of: "--\(inner)"))
         #expect(outerStart.lowerBound < innerStart.lowerBound)
-        #expect(raw.contains("--\(inner)--\r\n\r\n--\(outer)\r\n"
-                             + "Content-Type: application/pdf; name=\"a.pdf\""),
-                "the alternative must close before the attachment part opens")
+        #expect(
+            raw.contains(
+                "--\(inner)--\r\n\r\n--\(outer)\r\n"
+                    + "Content-Type: application/pdf; name=\"a.pdf\""),
+            "the alternative must close before the attachment part opens")
     }
 
     /// The `nil` case is the one this task must not have touched. Asserted
@@ -76,13 +94,18 @@ struct RichBodyMIMETests {
     /// the renderer choice was wired.
     @Test("a message with no rich body still renders through the Markdown path")
     func plainMessagesAreUnchanged() {
-        let raw = build(OutgoingMessage(to: [to], subject: "Subject 1",
-                                        bodyText: "- one\n- two"))
+        let raw = build(
+            OutgoingMessage(
+                to: [to], subject: "Subject 1",
+                bodyText: "- one\n- two"))
         // CRLF in the expectation because RFC 2046 requires it of a `text/*`
         // part and `MIMEHeader.base64Body` has always canonicalised to it —
         // pre-existing behaviour this task did not touch.
-        #expect(MIMEProbe.decodedParts(raw) == ["- one\r\n- two",
-                                                "<ul><li>one</li><li>two</li></ul>"])
+        #expect(
+            MIMEProbe.decodedParts(raw) == [
+                "- one\r\n- two",
+                "<ul><li>one</li><li>two</li></ul>",
+            ])
     }
 
     /// The identity function, on a body whose whitespace is load-bearing.
@@ -102,8 +125,10 @@ struct RichBodyMIMETests {
     func plainPartIsNotTrimmed() throws {
         let text = "\nMy reply\n\nOn Mon, A wrote:\n> original"
         let body = rich(text, [RichBody.Span(start: 1, length: 2, kind: .bold)])
-        let raw = build(OutgoingMessage(to: [to], subject: "Subject 1",
-                                        bodyText: text, richBody: body))
+        let raw = build(
+            OutgoingMessage(
+                to: [to], subject: "Subject 1",
+                bodyText: text, richBody: body))
 
         // The CRLF canonicalisation is applied by hand to the EXPECTATION, so
         // the comparison is against a literal rather than against the transform
@@ -113,8 +138,9 @@ struct RichBodyMIMETests {
         #expect(Array(plainBytes) == Array(Data(expected.utf8)))
         // Both halves of the same message, from the same untrimmed string: the
         // bold run still lands on "My", which is only true at offset 1.
-        #expect(MIMEProbe.decodedParts(raw).last
-            == "<p><strong>My</strong> reply</p>"
+        #expect(
+            MIMEProbe.decodedParts(raw).last
+                == "<p><strong>My</strong> reply</p>"
                 + "<p>On Mon, A wrote:</p>"
                 + "<blockquote>original</blockquote>")
     }
@@ -134,10 +160,16 @@ struct RichBodyMIMETests {
         // `rtl` here and the `dir` wrapper below is a real assertion rather
         // than a decoration.
         let text = "مرحبا 🌍 سلام café"
-        let body = rich(text, [RichBody.Span(start: 0, length: 5, kind: .bold),
-                               RichBody.Span(start: 6, length: 2, kind: .italic)])
-        let raw = build(OutgoingMessage(to: [to], subject: "مرحبا 🌍",
-                                        bodyText: text, richBody: body))
+        let body = rich(
+            text,
+            [
+                RichBody.Span(start: 0, length: 5, kind: .bold),
+                RichBody.Span(start: 6, length: 2, kind: .italic),
+            ])
+        let raw = build(
+            OutgoingMessage(
+                to: [to], subject: "مرحبا 🌍",
+                bodyText: text, richBody: body))
 
         // The subject is an RFC 2047 encoded word, and the raw non-ASCII never
         // appears in a header.
@@ -149,9 +181,12 @@ struct RichBodyMIMETests {
 
         // Both parts declare the charset AND the transfer encoding — a charset
         // with no encoding is how raw UTF-8 goes out under an implicit 7bit.
-        #expect(MIMEProbe.contentTypes(raw) == ["multipart/alternative",
-                                                "text/plain; charset=UTF-8",
-                                                "text/html; charset=UTF-8"])
+        #expect(
+            MIMEProbe.contentTypes(raw) == [
+                "multipart/alternative",
+                "text/plain; charset=UTF-8",
+                "text/html; charset=UTF-8",
+            ])
         #expect(MIMEProbe.transferEncodings(raw) == ["base64", "base64"])
 
         // Byte-identical, compared as BYTES rather than as `String`s, so a
@@ -161,8 +196,9 @@ struct RichBodyMIMETests {
         #expect(Array(plainBytes) == Array(Data(text.utf8)))
         // The emoji span is two UTF-16 code units for one character: a renderer
         // slicing by `Character` would wrap the wrong run here.
-        #expect(MIMEProbe.decodedParts(raw).last
-            == "<div dir=\"rtl\"><p><strong>مرحبا</strong> <em>🌍</em> سلام café</p></div>")
+        #expect(
+            MIMEProbe.decodedParts(raw).last
+                == "<div dir=\"rtl\"><p><strong>مرحبا</strong> <em>🌍</em> سلام café</p></div>")
     }
 
     // MARK: - Provider parity
@@ -180,14 +216,19 @@ struct RichBodyMIMETests {
             to: [to], cc: [MailAddress(email: "c@example.test")],
             bcc: [MailAddress(email: "blind@example.test")],
             subject: "Subject 1", bodyText: body.text,
-            attachments: [OutgoingAttachment(filename: "a.pdf", mimeType: "application/pdf",
-                                             data: Data("bytes".utf8))],
+            attachments: [
+                OutgoingAttachment(
+                    filename: "a.pdf", mimeType: "application/pdf",
+                    data: Data("bytes".utf8))
+            ],
             richBody: body)
 
-        let gmail = try #require(GmailMapping.decodeBase64URL(
-            GmailProvider.rfc822(message, identityLookup: { _ in nil })))
-        let submitter = await SMTPHarness.submitter(SMTPHarness.transport(),
-                                                    endpoint: SMTPHarness.implicitEndpoint)
+        let gmail = try #require(
+            GmailMapping.decodeBase64URL(
+                GmailProvider.rfc822(message, identityLookup: { _ in nil })))
+        let submitter = await SMTPHarness.submitter(
+            SMTPHarness.transport(),
+            endpoint: SMTPHarness.implicitEndpoint)
         let smtp = submitter.messageData(for: message)
 
         // The Bcc asymmetry, both halves.
@@ -196,20 +237,26 @@ struct RichBodyMIMETests {
         #expect(smtp.contains("blind@example.test") == false)
 
         // The body structure, as the ordered list of parts...
-        let expected = ["multipart/mixed", "multipart/alternative",
-                        "text/plain; charset=UTF-8", "text/html; charset=UTF-8",
-                        "application/pdf; name=\"a.pdf\""]
+        let expected = [
+            "multipart/mixed", "multipart/alternative",
+            "text/plain; charset=UTF-8", "text/html; charset=UTF-8",
+            "application/pdf; name=\"a.pdf\"",
+        ]
         #expect(MIMEProbe.contentTypes(gmail) == expected)
         #expect(MIMEProbe.contentTypes(smtp) == expected)
-        #expect(MIMEProbe.decodedParts(gmail) == ["Hello there",
-                                                  "<p><strong>Hello</strong> there</p>"])
+        #expect(
+            MIMEProbe.decodedParts(gmail) == [
+                "Hello there",
+                "<p><strong>Hello</strong> there</p>",
+            ])
         #expect(MIMEProbe.decodedParts(smtp) == MIMEProbe.decodedParts(gmail))
 
         // ...and then byte-for-byte, boundaries normalised, with the one header
         // that is allowed to differ removed. Nothing else may.
-        #expect(MIMEProbe.normalisedBoundaries(gmail)
-            .replacingOccurrences(of: "Bcc: blind@example.test\r\n", with: "")
-            == MIMEProbe.normalisedBoundaries(smtp))
+        #expect(
+            MIMEProbe.normalisedBoundaries(gmail)
+                .replacingOccurrences(of: "Bcc: blind@example.test\r\n", with: "")
+                == MIMEProbe.normalisedBoundaries(smtp))
     }
 
     // MARK: - Forward compatibility
@@ -221,16 +268,19 @@ struct RichBodyMIMETests {
     @Test("an OutgoingMessage written before this task decodes without throwing")
     func preTaskDocumentsDecode() throws {
         let json = """
-        {"to":[{"email":"b@example.test","name":"Bee"}],"cc":[],"bcc":[],
-         "subject":"Subject 1","bodyText":"Hello there","attachments":[]}
-        """
+            {"to":[{"email":"b@example.test","name":"Bee"}],"cc":[],"bcc":[],
+             "subject":"Subject 1","bodyText":"Hello there","attachments":[]}
+            """
         let message = try JSONDecoder().decode(OutgoingMessage.self, from: Data(json.utf8))
 
         #expect(message.bodyText == "Hello there")
         #expect(message.richBody == nil)
         // And it still sends — through the Markdown path, unchanged.
-        #expect(MIMEProbe.decodedParts(build(message)) == ["Hello there",
-                                                           "<p>Hello there</p>"])
+        #expect(
+            MIMEProbe.decodedParts(build(message)) == [
+                "Hello there",
+                "<p>Hello there</p>",
+            ])
     }
 }
 
@@ -244,28 +294,38 @@ struct RichBodyMIMETests {
     @Test("the account signature appends once, to both parts, and not twice")
     func signatureAppendsOnce() async throws {
         let provider = FakeMailProvider()
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            accountID: "a1")
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "a@example.test", displayName: "A",
-                                          signature: "Sincerely,\nAda"))
-        let body = RichBody(text: "Hello there",
-                            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.test")],
-                                      subject: "Subject 1", bodyText: body.text,
-                                      accountID: "a1", richBody: body)
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "a@example.test", displayName: "A",
+                signature: "Sincerely,\nAda"))
+        let body = RichBody(
+            text: "Hello there",
+            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.test")],
+            subject: "Subject 1", bodyText: body.text,
+            accountID: "a1", richBody: body)
 
-        _ = try await SendAttempt.send(message, draftID: nil, outbox: outbox,
-                                       store: store, drain: outbox.drain)
+        _ = try await SendAttempt.send(
+            message, draftID: nil, outbox: outbox,
+            store: store, drain: outbox.drain)
 
         let sent = try #require(provider.sentMessages.first)
-        let raw = RFC822Builder.message(sent, includeBccHeader: true,
-                                        identityLookup: { _ in nil })
+        let raw = RFC822Builder.message(
+            sent, includeBccHeader: true,
+            identityLookup: { _ in nil })
         let parts = MIMEProbe.decodedParts(raw)
-        #expect(parts == ["Hello there\r\n-- \r\nSincerely,\r\nAda",
-                          "<p><strong>Hello</strong> there</p>"
-                              + "<div class=\"sig\">-- <br>Sincerely,<br>Ada</div>"])
+        #expect(
+            parts == [
+                "Hello there\r\n-- \r\nSincerely,\r\nAda",
+                "<p><strong>Hello</strong> there</p>"
+                    + "<div class=\"sig\">-- <br>Sincerely,<br>Ada</div>",
+            ])
         // Stated as counts too, so a doubled append that happened to produce a
         // still-plausible string could not slip past the equality above.
         #expect(parts.allSatisfy { $0.components(separatedBy: "Sincerely,").count - 1 == 1 })
@@ -284,11 +344,13 @@ struct RichBodyMIMETests {
 @Suite("At-most-once with a rich body")
 @MainActor struct RichBodyAtMostOnceTests {
     private func richMessage() -> OutgoingMessage {
-        let body = RichBody(text: "Hello there",
-                            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
-        return OutgoingMessage(to: [MailAddress(email: "b@example.test")],
-                               subject: "Subject 1", bodyText: body.text,
-                               accountID: "a1", richBody: body)
+        let body = RichBody(
+            text: "Hello there",
+            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
+        return OutgoingMessage(
+            to: [MailAddress(email: "b@example.test")],
+            subject: "Subject 1", bodyText: body.text,
+            accountID: "a1", richBody: body)
     }
 
     @Test("enqueue, provider failure, retry, dead-letter — and the draft survives")
@@ -297,16 +359,20 @@ struct RichBodyMIMETests {
         // Two scripted failures against `maxAttempts: 2`, so the entry really is
         // retried before it is given up on rather than dead-lettered on the
         // first refusal.
-        provider.failures["send"] = [MailError.providerFailed(status: 500, message: "boom"),
-                                     MailError.providerFailed(status: 500, message: "boom")]
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            maxAttempts: 2, accountID: "a1")
+        provider.failures["send"] = [
+            MailError.providerFailed(status: 500, message: "boom"),
+            MailError.providerFailed(status: 500, message: "boom"),
+        ]
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            maxAttempts: 2, accountID: "a1")
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(richMessage())
         defer { DraftBox.shared.remove(draftID) }
 
-        let first = try await SendAttempt.send(richMessage(), draftID: draftID, outbox: outbox,
-                                               store: store, drain: outbox.drain)
+        let first = try await SendAttempt.send(
+            richMessage(), draftID: draftID, outbox: outbox,
+            store: store, drain: outbox.drain)
         #expect(first.outcome == OutboxSendOutcome.queued(inFlight: false))
         #expect(DraftBox.shared.draft(draftID) != nil)
 
@@ -319,8 +385,9 @@ struct RichBodyMIMETests {
         }
         #expect(lastError?.contains("boom") == true)
         #expect(provider.sentMessages.isEmpty)
-        #expect(DraftBox.shared.draft(draftID) != nil,
-                "a dead-lettered send must not destroy the user's draft")
+        #expect(
+            DraftBox.shared.draft(draftID) != nil,
+            "a dead-lettered send must not destroy the user's draft")
         // The formatting is still on the dead-lettered entry, so resolving it in
         // Accounts resends the message the user actually composed.
         guard case .send(let held) = outbox.deadLettered().first?.operation else {
@@ -334,12 +401,14 @@ struct RichBodyMIMETests {
     @Test("a rich send removed before it went out reports that, and preserves the draft")
     func removedWithoutSendingPreservesTheDraft() async throws {
         let provider = FakeMailProvider()
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            accountID: "a1")
         let draftID = try DraftBox.shared.save(richMessage())
         defer { DraftBox.shared.remove(draftID) }
-        let entryID = try outbox.enqueue(.send(richMessage()), accountID: "a1",
-                                         holdUntil: nil, sendAt: nil, draftID: draftID)
+        let entryID = try outbox.enqueue(
+            .send(richMessage()), accountID: "a1",
+            holdUntil: nil, sendAt: nil, draftID: draftID)
 
         try outbox.discard(entryID)
 
@@ -347,9 +416,11 @@ struct RichBodyMIMETests {
         // nothing was transmitted.
         #expect(outbox.outcome(for: entryID) == .removedWithoutSending)
         #expect(provider.sentMessages.isEmpty)
-        #expect(DraftBox.shared.draft(draftID) != nil,
-                "a discarded send must not destroy the user's draft")
-        #expect(SendAttempt.describe(.removedWithoutSending, draftID: draftID)
-            .contains("Nothing was transmitted"))
+        #expect(
+            DraftBox.shared.draft(draftID) != nil,
+            "a discarded send must not destroy the user's draft")
+        #expect(
+            SendAttempt.describe(.removedWithoutSending, draftID: draftID)
+                .contains("Nothing was transmitted"))
     }
 }

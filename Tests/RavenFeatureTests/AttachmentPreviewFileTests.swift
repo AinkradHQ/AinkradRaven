@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The QuickLook preview path writes one temp file per preview (QuickLook
@@ -31,7 +32,10 @@ struct AttachmentPreviewFileTests {
     func distinctPreviewsDoNotCollide() throws {
         let first = try AttachmentPreviewFile(data: Data("one".utf8), filename: "same.txt")
         let second = try AttachmentPreviewFile(data: Data("two".utf8), filename: "same.txt")
-        defer { first.cleanUp(); second.cleanUp() }
+        defer {
+            first.cleanUp()
+            second.cleanUp()
+        }
         #expect(first.url != second.url)
         #expect(try Data(contentsOf: first.url) == Data("one".utf8))
         #expect(try Data(contentsOf: second.url) == Data("two".utf8))

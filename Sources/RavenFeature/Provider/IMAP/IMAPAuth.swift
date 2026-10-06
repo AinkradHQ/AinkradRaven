@@ -85,8 +85,10 @@ struct IMAPAuthenticator: Sendable {
     /// 4. **Re-read capabilities after success**, because servers change the list
     ///    at that point (`AUTH=` mechanisms vanish, `IDLE`/`QUOTA` appear).
     @discardableResult
-    func authenticate(_ credential: IMAPCredential,
-                      greeting: IMAPGreeting) async throws -> Set<String> {
+    func authenticate(
+        _ credential: IMAPCredential,
+        greeting: IMAPGreeting
+    ) async throws -> Set<String> {
         if security == .explicit { try await upgrade() }
         if greeting.kind == .preauth { return try await session.capabilities() }
         let capabilities = try await session.capabilities()
@@ -127,8 +129,10 @@ struct IMAPAuthenticator: Sendable {
     ///
     /// `static` and pure so the choice can be asserted directly, byte for byte,
     /// without a transport.
-    static func command(for credential: IMAPCredential,
-                        capabilities: Set<String>) throws -> IMAPCommand {
+    static func command(
+        for credential: IMAPCredential,
+        capabilities: Set<String>
+    ) throws -> IMAPCommand {
         let saslIR = capabilities.contains("SASL-IR")
         switch credential {
         case .xoauth2(let username, let accessToken):
@@ -164,8 +168,9 @@ struct IMAPAuthenticator: Sendable {
     /// empty authorization identity.
     static func plainCommand(username: String, password: String, saslIR: Bool) -> IMAPCommand {
         let response = base64(plainInitialResponse(username: username, password: password))
-        return saslCommand(mechanism: "PLAIN", initialResponse: response,
-                           saslIR: saslIR, answersFailureChallenge: false)
+        return saslCommand(
+            mechanism: "PLAIN", initialResponse: response,
+            saslIR: saslIR, answersFailureChallenge: false)
     }
 
     /// SASL `XOAUTH2`: `user=<addr>^Aauth=Bearer <token>^A^A`, base64'd, where
@@ -176,8 +181,9 @@ struct IMAPAuthenticator: Sendable {
         // mechanism that needs it: a failure arrives as `+ <base64 JSON>`, not as
         // a tagged `NO`, and the server will not send the `NO` until the client
         // has acknowledged the challenge with an empty line.
-        return saslCommand(mechanism: "XOAUTH2", initialResponse: response,
-                           saslIR: saslIR, answersFailureChallenge: true)
+        return saslCommand(
+            mechanism: "XOAUTH2", initialResponse: response,
+            saslIR: saslIR, answersFailureChallenge: true)
     }
 
     // The three payload helpers below are thin forwarders to `SASLMechanism`,
@@ -221,8 +227,10 @@ struct IMAPAuthenticator: Sendable {
     /// not ask for must not be registered as an expected continuation, or it
     /// consumes a *pipelined* command's `+ ready for literal` and desynchronises
     /// the connection. See `IMAPCommand.reactiveContinuationLines`.
-    private static func saslCommand(mechanism: String, initialResponse: String,
-                                    saslIR: Bool, answersFailureChallenge: Bool) -> IMAPCommand {
+    private static func saslCommand(
+        mechanism: String, initialResponse: String,
+        saslIR: Bool, answersFailureChallenge: Bool
+    ) -> IMAPCommand {
         let crlf = Data([0x0D, 0x0A])
         var lines: [Data] = []
         var arguments: [IMAPCommand.Argument] = [.atom(mechanism)]
@@ -232,7 +240,8 @@ struct IMAPAuthenticator: Sendable {
             lines.append(Data(initialResponse.utf8) + crlf)
         }
         if answersFailureChallenge { lines.append(crlf) }
-        return IMAPCommand("AUTHENTICATE", arguments,
-                           reactiveContinuationLines: lines, isExclusive: true)
+        return IMAPCommand(
+            "AUTHENTICATE", arguments,
+            reactiveContinuationLines: lines, isExclusive: true)
     }
 }

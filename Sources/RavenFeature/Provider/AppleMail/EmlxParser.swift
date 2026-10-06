@@ -19,9 +19,11 @@ enum EmlxParser {
     static func parse(_ data: Data) -> EmlxMessage? {
         guard let newline = data.firstIndex(of: 0x0A) else { return nil }
         let countLine = data[data.startIndex..<newline]
-        guard let countString = String(data: countLine, encoding: .ascii)?
+        guard
+            let countString = String(data: countLine, encoding: .ascii)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
-              let byteCount = Int(countString), byteCount >= 0 else {
+            let byteCount = Int(countString), byteCount >= 0
+        else {
             return nil
         }
 
@@ -43,8 +45,10 @@ enum EmlxParser {
         var isRead = false
         var isFlagged = false
         if !trailer.isEmpty {
-            guard let plist = try? PropertyListSerialization.propertyList(
-                from: trailer, options: [], format: nil) as? [String: Any] else {
+            guard
+                let plist = try? PropertyListSerialization.propertyList(
+                    from: trailer, options: [], format: nil) as? [String: Any]
+            else {
                 // A trailer is present but corrupt/truncated — the message
                 // bytes themselves were fine, but Mail.app's own contract for
                 // this format is "message + trailer", and a corrupt trailer

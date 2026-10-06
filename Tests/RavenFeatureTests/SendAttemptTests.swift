@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// `SendAttempt` is the single decision point both the human Send button
@@ -19,8 +20,9 @@ import Foundation
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
-        let result = try await SendAttempt.send(message(), draftID: draftID,
-                                                outbox: outbox, store: store, drain: outbox.drain)
+        let result = try await SendAttempt.send(
+            message(), draftID: draftID,
+            outbox: outbox, store: store, drain: outbox.drain)
 
         #expect(result.isSent)
         #expect(provider.sentMessages.count == 1)
@@ -35,8 +37,9 @@ import Foundation
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
-        let result = try await SendAttempt.send(message(), draftID: draftID,
-                                                outbox: outbox, store: store, drain: outbox.drain)
+        let result = try await SendAttempt.send(
+            message(), draftID: draftID,
+            outbox: outbox, store: store, drain: outbox.drain)
 
         #expect(result.isSent == false)
         #expect(provider.sentMessages.isEmpty)
@@ -53,8 +56,9 @@ import Foundation
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
-        let result = try await SendAttempt.send(message(), draftID: draftID,
-                                                outbox: outbox, store: store, drain: outbox.drain)
+        let result = try await SendAttempt.send(
+            message(), draftID: draftID,
+            outbox: outbox, store: store, drain: outbox.drain)
 
         #expect(result.outcome == .queued(inFlight: false))
         #expect(result.isSent == false)
@@ -81,8 +85,9 @@ import Foundation
 
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
-        let result = try await SendAttempt.send(message(), draftID: draftID,
-                                                outbox: outbox, store: store, drain: outbox.drain)
+        let result = try await SendAttempt.send(
+            message(), draftID: draftID,
+            outbox: outbox, store: store, drain: outbox.drain)
 
         #expect(result.isSent == false)
         #expect(DraftBox.shared.draft(draftID) != nil)
@@ -104,16 +109,18 @@ import Foundation
         // The call was on the wire when the user signed out, and then failed.
         // Nothing reached the recipient — so nothing may report as sent.
         provider.sendErrorAfterGate = MailError.providerFailed(status: 500, message: "boom")
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            accountID: "a1")
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
         // Start the send and let it park inside `provider.send`.
         var entryID: UUID?
         let attempt = Task { () -> SendAttempt.Result in
-            try await SendAttempt.send(self.message(), draftID: draftID, outbox: outbox,
-                                       store: store, drain: outbox.drain)
+            try await SendAttempt.send(
+                self.message(), draftID: draftID, outbox: outbox,
+                store: store, drain: outbox.drain)
         }
         await provider.waitUntilSendEntered()
         entryID = outbox.inFlight().first?.id
@@ -121,8 +128,9 @@ import Foundation
 
         // The user signs out while the send is still on the wire.
         outbox.purge(accountID: "a1")
-        #expect(outbox.outcome(for: try #require(entryID)) != .sent,
-                "a purged entry never reached the provider; absence is not success")
+        #expect(
+            outbox.outcome(for: try #require(entryID)) != .sent,
+            "a purged entry never reached the provider; absence is not success")
 
         provider.releaseSend()
         let result = try await attempt.value
@@ -130,8 +138,9 @@ import Foundation
         #expect(result.isSent == false)
         #expect(result.outcome == .removedWithoutSending)
         #expect(provider.sentMessages.isEmpty)
-        #expect(DraftBox.shared.draft(draftID) != nil,
-                "signing out mid-send must not destroy the user's draft")
+        #expect(
+            DraftBox.shared.draft(draftID) != nil,
+            "signing out mid-send must not destroy the user's draft")
         DraftBox.shared.remove(draftID)
     }
 
@@ -156,8 +165,9 @@ import Foundation
         await outbox.drain()
 
         #expect(provider.sentMessages.count == 1)
-        #expect(outbox.outcome(for: entryID) == .sent,
-                "recording success must not break the success path itself")
+        #expect(
+            outbox.outcome(for: entryID) == .sent,
+            "recording success must not break the success path itself")
     }
 
     @Test("a queued outcome is benign so the composer does not style it as an error")
@@ -176,15 +186,19 @@ import Foundation
     @Test("an empty signature adds nothing to the sent body")
     func emptySignatureAddsNothing() async throws {
         let provider = FakeMailProvider()
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            accountID: "a1")
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a@x.com",
-                                          displayName: "A", signature: ""))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "a@x.com",
+                displayName: "A", signature: ""))
         let draftID = try DraftBox.shared.save(message())
 
-        _ = try await SendAttempt.send(message(), draftID: draftID, outbox: outbox,
-                                       store: store, drain: outbox.drain)
+        _ = try await SendAttempt.send(
+            message(), draftID: draftID, outbox: outbox,
+            store: store, drain: outbox.drain)
 
         #expect(provider.sentMessages.count == 1)
         #expect(provider.sentMessages.first?.bodyText == "b")
@@ -194,15 +208,19 @@ import Foundation
     @Test("a non-empty signature is appended after a single sigdash")
     func signatureIsAppendedAfterSigdash() async throws {
         let provider = FakeMailProvider()
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            accountID: "a1")
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a@x.com",
-                                          displayName: "A", signature: "Best,\nA"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "a@x.com",
+                displayName: "A", signature: "Best,\nA"))
         let draftID = try DraftBox.shared.save(message())
 
-        _ = try await SendAttempt.send(message(), draftID: draftID, outbox: outbox,
-                                       store: store, drain: outbox.drain)
+        _ = try await SendAttempt.send(
+            message(), draftID: draftID, outbox: outbox,
+            store: store, drain: outbox.drain)
 
         #expect(provider.sentMessages.count == 1)
         let sentBody = provider.sentMessages.first?.bodyText ?? ""
@@ -220,10 +238,11 @@ import Foundation
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
-        let result = try await SendAttempt.send(message(), draftID: draftID, outbox: outbox,
-                                                store: store,
-                                                holdUntil: Date().addingTimeInterval(60),
-                                                drain: outbox.drain)
+        let result = try await SendAttempt.send(
+            message(), draftID: draftID, outbox: outbox,
+            store: store,
+            holdUntil: Date().addingTimeInterval(60),
+            drain: outbox.drain)
 
         #expect(result.outcome == .queued(inFlight: false))
         #expect(result.outcome.isBenign)
@@ -248,22 +267,25 @@ import Foundation
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(message())
 
-        let result = try await SendAttempt.send(message(), draftID: draftID, outbox: outbox,
-                                                store: store,
-                                                holdUntil: Date().addingTimeInterval(60),
-                                                drain: outbox.drain)
+        let result = try await SendAttempt.send(
+            message(), draftID: draftID, outbox: outbox,
+            store: store,
+            holdUntil: Date().addingTimeInterval(60),
+            drain: outbox.drain)
         #expect(result.outcome == .queued(inFlight: false))
 
         // The draft carries through onto the entry itself (`OutboxEntry.
         // draftID`) precisely so a LATER drain — not this same call — can
         // still clean it up once the hold elapses.
-        let dueID = try outbox.enqueue(.send(message()), accountID: nil,
-                                       holdUntil: Date().addingTimeInterval(-1),
-                                       sendAt: nil, draftID: draftID)
+        let dueID = try outbox.enqueue(
+            .send(message()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(-1),
+            sendAt: nil, draftID: draftID)
         await outbox.drain()
         #expect(outbox.outcome(for: dueID) == .sent)
-        #expect(DraftBox.shared.draft(draftID) == nil,
-                "a held send's draft must be removed once it actually transmits, even via a later drain")
+        #expect(
+            DraftBox.shared.draft(draftID) == nil,
+            "a held send's draft must be removed once it actually transmits, even via a later drain")
     }
 
     @Test("send_draft and the compose Send button share one outcome decision")
@@ -274,8 +296,9 @@ import Foundation
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let agentProvider = FakeMailProvider()
         agentProvider.failures["send"] = [MailError.notAuthenticated(accountID: "a1")]
-        let agentOutbox = Outbox(documents: InMemoryDocumentStore(),
-                                 provider: agentProvider, maxAttempts: 1)
+        let agentOutbox = Outbox(
+            documents: InMemoryDocumentStore(),
+            provider: agentProvider, maxAttempts: 1)
         let agentDraft = try DraftBox.shared.save(message())
         let agentResult = await RavenMCPOperations.run(
             "send_draft", arguments: #"{"draft_id":"\#(agentDraft)"}"#,
@@ -283,13 +306,15 @@ import Foundation
 
         let uiProvider = FakeMailProvider()
         uiProvider.failures["send"] = [MailError.notAuthenticated(accountID: "a1")]
-        let uiOutbox = Outbox(documents: InMemoryDocumentStore(),
-                              provider: uiProvider, maxAttempts: 1)
+        let uiOutbox = Outbox(
+            documents: InMemoryDocumentStore(),
+            provider: uiProvider, maxAttempts: 1)
         let uiStore = DocumentMailStore(documents: InMemoryDocumentStore())
         let uiDraft = try DraftBox.shared.save(message())
-        let uiResult = try await SendAttempt.send(message(), draftID: uiDraft,
-                                                  outbox: uiOutbox, store: uiStore,
-                                                  drain: uiOutbox.drain)
+        let uiResult = try await SendAttempt.send(
+            message(), draftID: uiDraft,
+            outbox: uiOutbox, store: uiStore,
+            drain: uiOutbox.drain)
 
         // Both must refuse to claim success and both must keep the draft.
         // The agent path is held (M3's undo-send window) rather than an

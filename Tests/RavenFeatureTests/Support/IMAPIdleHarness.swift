@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The scripted IDLE server, the fake clock, and the bounded waits that
@@ -93,7 +94,8 @@ enum IMAPIdleHarness {
         @discardableResult
         func release(_ duration: Duration) -> Bool {
             guard let entry = open.first(where: { $0.duration == duration }),
-                  let continuation = waiters.removeValue(forKey: entry.id) else { return false }
+                let continuation = waiters.removeValue(forKey: entry.id)
+            else { return false }
             forget(entry.id)
             continuation.resume()
             return true
@@ -185,10 +187,12 @@ enum IMAPIdleHarness {
         /// which counts leases handed out.
         private(set) var acquireAttempts = 0
 
-        init(scripts: [Script],
-             directory: IMAPMailboxDirectory? = nil,
-             productionTeardown: Bool = false,
-             gateAcquire: Bool = false) {
+        init(
+            scripts: [Script],
+            directory: IMAPMailboxDirectory? = nil,
+            productionTeardown: Bool = false,
+            gateAcquire: Bool = false
+        ) {
             self.scripts = scripts
             self.directory = directory
             self.productionTeardown = productionTeardown
@@ -260,8 +264,9 @@ enum IMAPIdleHarness {
         }
         if let fixture = script.selectFixture {
             let body = try IMAPDeltaHarness.fixtureText(fixture)
-            await transport.respond(to: "SELECT",
-                                    with: body + "\(nextTag()) OK [READ-WRITE] selected\r\n")
+            await transport.respond(
+                to: "SELECT",
+                with: body + "\(nextTag()) OK [READ-WRITE] selected\r\n")
         }
         // The `+ idling` carries no tag, so this one is repeatable.
         await transport.respond(to: "IDLE", with: "+ idling\r\n", repeatable: true)
@@ -269,9 +274,10 @@ enum IMAPIdleHarness {
             await transport.respond(to: "DONE", with: "\(nextTag()) OK IDLE terminated\r\n")
         }
         for rule in script.extra {
-            await transport.respond(to: rule.needle,
-                                    with: rule.response.replacingOccurrences(
-                                        of: "%TAG%", with: nextTag()))
+            await transport.respond(
+                to: rule.needle,
+                with: rule.response.replacingOccurrences(
+                    of: "%TAG%", with: nextTag()))
         }
         let session = IMAPSession(transport: transport)
         try await session.connect()
@@ -288,8 +294,9 @@ enum IMAPIdleHarness {
     /// A directory whose only mailbox is a `\Noselect` container — an account that
     /// exists but has nothing to idle on.
     static func noSelectableDirectory() throws -> IMAPMailboxDirectory {
-        IMAPMailboxDirectory(untagged: try IMAPFetchWire.untaggedResponses(
-            Data("* LIST (\\Noselect \\HasChildren) \"/\" \"Folder D\"\r\n".utf8)))
+        IMAPMailboxDirectory(
+            untagged: try IMAPFetchWire.untaggedResponses(
+                Data("* LIST (\\Noselect \\HasChildren) \"/\" \"Folder D\"\r\n".utf8)))
     }
 
     // MARK: - What a notification triggered
@@ -373,10 +380,15 @@ enum IMAPIdleHarness {
 
     /// Waits for `run()` to finish, bounded, and returns its outcome.
     static func outcome(_ box: RunBox, sourceLocation: SourceLocation = #_sourceLocation) async
-        -> IMAPIdleWatcher.Outcome? {
-        guard await waitUntil("run() to finish", sourceLocation: sourceLocation, {
-            await box.outcome != nil
-        }) else { return nil }
+        -> IMAPIdleWatcher.Outcome?
+    {
+        guard
+            await waitUntil(
+                "run() to finish", sourceLocation: sourceLocation,
+                {
+                    await box.outcome != nil
+                })
+        else { return nil }
         return await box.outcome
     }
 
@@ -391,9 +403,11 @@ enum IMAPIdleHarness {
     /// explicitly. This polls for *cross-task progress* only, the same way
     /// `IMAPSessionHarness.waitForInFlight` and `IMAPProviderHarness.outcome` do.
     @discardableResult
-    static func waitUntil(_ label: String,
-                          sourceLocation: SourceLocation = #_sourceLocation,
-                          _ condition: @escaping @Sendable () async -> Bool) async -> Bool {
+    static func waitUntil(
+        _ label: String,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        _ condition: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
         for _ in 0..<1_000 {
             if await condition() { return true }
             try? await Task.sleep(for: .milliseconds(5))
@@ -406,9 +420,11 @@ enum IMAPIdleHarness {
     /// `pushStates`/`syncErrors`, which the `@Sendable` variant above cannot touch
     /// at all.
     @discardableResult
-    static func waitUntilOnMain(_ label: String,
-                                sourceLocation: SourceLocation = #_sourceLocation,
-                                _ condition: @escaping @MainActor () -> Bool) async -> Bool {
+    static func waitUntilOnMain(
+        _ label: String,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        _ condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
         for _ in 0..<1_000 {
             if await MainActor.run(body: condition) { return true }
             try? await Task.sleep(for: .milliseconds(5))
@@ -423,8 +439,10 @@ enum IMAPIdleHarness {
     /// deadline sleep is requested as part of entering the wait, so its presence
     /// is the synchronisation point, and its duration is the assertion.
     @discardableResult
-    static func waitForSleep(_ clock: FakeClock, _ duration: Duration,
-                             sourceLocation: SourceLocation = #_sourceLocation) async -> Bool {
+    static func waitForSleep(
+        _ clock: FakeClock, _ duration: Duration,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async -> Bool {
         await waitUntil("a parked sleep of \(duration)", sourceLocation: sourceLocation) {
             await clock.pending.contains(duration)
         }
@@ -433,18 +451,28 @@ enum IMAPIdleHarness {
     /// Waits until the watcher is idling on connection `index + 1`: the `IDLE`
     /// command has been written and the re-idle deadline is parked.
     @discardableResult
-    static func waitUntilIdling(_ server: Server, _ clock: FakeClock,
-                                connection index: Int = 0,
-                                reIdle: Duration = .seconds(29 * 60),
-                                sourceLocation: SourceLocation = #_sourceLocation) async -> Bool {
-        guard await waitUntil("connection \(index + 1)", sourceLocation: sourceLocation, {
-            await server.connectionCount > index
-        }) else { return false }
+    static func waitUntilIdling(
+        _ server: Server, _ clock: FakeClock,
+        connection index: Int = 0,
+        reIdle: Duration = .seconds(29 * 60),
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async -> Bool {
+        guard
+            await waitUntil(
+                "connection \(index + 1)", sourceLocation: sourceLocation,
+                {
+                    await server.connectionCount > index
+                })
+        else { return false }
         guard let connection = await server.connection(index) else { return false }
-        guard await waitUntil("an IDLE on connection \(index + 1)",
-                              sourceLocation: sourceLocation, {
-            await connection.transport.sentText.contains("IDLE")
-        }) else { return false }
+        guard
+            await waitUntil(
+                "an IDLE on connection \(index + 1)",
+                sourceLocation: sourceLocation,
+                {
+                    await connection.transport.sentText.contains("IDLE")
+                })
+        else { return false }
         return await waitForSleep(clock, reIdle, sourceLocation: sourceLocation)
     }
 

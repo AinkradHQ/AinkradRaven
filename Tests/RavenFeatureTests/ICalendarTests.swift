@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// A naive line-split parser gets two things wrong: folded continuation
@@ -26,22 +27,23 @@ struct ICalendarTests {
     @Test("a request with a timezone-bearing DTSTART parses summary, times, location, organizer, attendees")
     func parsesTimezoneEvent() {
         let ics = """
-        BEGIN:VCALENDAR
-        METHOD:REQUEST
-        BEGIN:VEVENT
-        UID:event-1
-        SUMMARY:Team sync\\, planning
-        LOCATION:Conference Room A
-        DTSTART;TZID=America/New_York:20260810T140000
-        DTEND;TZID=America/New_York:20260810T150000
-        ORGANIZER;CN=Bea Smith:mailto:bea@example.com
-        ATTENDEE;CN=Cal Jones:mailto:cal@example.com
-        ATTENDEE:mailto:dee@example.com
-        END:VEVENT
-        END:VCALENDAR
-        """
+            BEGIN:VCALENDAR
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:event-1
+            SUMMARY:Team sync\\, planning
+            LOCATION:Conference Room A
+            DTSTART;TZID=America/New_York:20260810T140000
+            DTEND;TZID=America/New_York:20260810T150000
+            ORGANIZER;CN=Bea Smith:mailto:bea@example.com
+            ATTENDEE;CN=Cal Jones:mailto:cal@example.com
+            ATTENDEE:mailto:dee@example.com
+            END:VEVENT
+            END:VCALENDAR
+            """
         guard let invite = ICalendar.parseFirstEvent(ics) else {
-            Issue.record("failed to parse"); return
+            Issue.record("failed to parse")
+            return
         }
         #expect(invite.method == .request)
         #expect(invite.uid == "event-1")
@@ -59,17 +61,18 @@ struct ICalendarTests {
     @Test("an all-day DTSTART (VALUE=DATE) parses as all-day with no time component")
     func parsesAllDayEvent() {
         let ics = """
-        BEGIN:VCALENDAR
-        METHOD:REQUEST
-        BEGIN:VEVENT
-        UID:event-2
-        SUMMARY:Company holiday
-        DTSTART;VALUE=DATE:20260901
-        END:VEVENT
-        END:VCALENDAR
-        """
+            BEGIN:VCALENDAR
+            METHOD:REQUEST
+            BEGIN:VEVENT
+            UID:event-2
+            SUMMARY:Company holiday
+            DTSTART;VALUE=DATE:20260901
+            END:VEVENT
+            END:VCALENDAR
+            """
         guard let invite = ICalendar.parseFirstEvent(ics) else {
-            Issue.record("failed to parse"); return
+            Issue.record("failed to parse")
+            return
         }
         #expect(invite.isAllDay)
         let components = Calendar(identifier: .gregorian).dateComponents(

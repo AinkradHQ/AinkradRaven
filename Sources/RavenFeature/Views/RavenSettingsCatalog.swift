@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// Transient text the settings form holds but does not persist until asked.
 ///
@@ -61,8 +61,10 @@ enum RavenSettingsCatalog {
     /// The declared groups, in tab order. How Raven opens (Open as / Open in)
     /// is not here: the host puts it at the top of the Appearance tab it builds
     /// for every declared page, merging the "Appearance" group below into it.
-    static func page(runtime: RavenRuntime, draft: RavenSettingsDraft,
-                     theme: HostTheme) -> SettingsPage {
+    static func page(
+        runtime: RavenRuntime, draft: RavenSettingsDraft,
+        theme: HostTheme
+    ) -> SettingsPage {
         SettingsPage(
             // `path`, `title`, `icon`, `group`, `order` and `appID` are all
             // overridden by `AppSettingsCatalog` (it uses the registered app's
@@ -79,7 +81,7 @@ enum RavenSettingsCatalog {
                 sending(runtime: runtime),
                 rules(runtime: runtime, theme: theme),
                 privacy(runtime: runtime, theme: theme),
-                transparency(runtime: runtime)
+                transparency(runtime: runtime),
             ],
             appID: "raven",
             // The host DOES honour this one. It puts the needs-review +
@@ -88,14 +90,18 @@ enum RavenSettingsCatalog {
             // page at all — strictly better than the old arrangement, where it
             // was a panel you had to already be looking at. A closure, not a
             // count: the number changes while the overlay is open.
-            badge: { runtime.outboxNeedsReview.count + runtime.outboxDeadLettered.count
-                + runtime.outboxUnreadableEntryCount + (runtime.outboxQueueUnreadable ? 1 : 0) })
+            badge: {
+                runtime.outboxNeedsReview.count + runtime.outboxDeadLettered.count
+                    + runtime.outboxUnreadableEntryCount + (runtime.outboxQueueUnreadable ? 1 : 0)
+            })
     }
 
     // MARK: Accounts
 
-    private static func accounts(runtime: RavenRuntime, draft: RavenSettingsDraft,
-                                 theme: HostTheme) -> SettingsGroup {
+    private static func accounts(
+        runtime: RavenRuntime, draft: RavenSettingsDraft,
+        theme: HostTheme
+    ) -> SettingsGroup {
         let root = SettingsPath(["accounts"])
         var fields: [SettingsField] = [
             // First field in the first group: the outbox entries a human has to
@@ -122,10 +128,13 @@ enum RavenSettingsCatalog {
                 path: root.appending("list"),
                 label: "Connected accounts",
                 help: "Each mailbox, its sync state, its errors, and sign-out.",
-                keywords: ["account", "gmail", "mailbox", "connect", "sign out", "sync",
-                           "resync", "read-only", "apple mail"],
-                kind: .custom(pane(
-                    RavenAccountsPane(runtime: runtime, showsSignature: false), theme: theme)))
+                keywords: [
+                    "account", "gmail", "mailbox", "connect", "sign out", "sync",
+                    "resync", "read-only", "apple mail",
+                ],
+                kind: .custom(
+                    pane(
+                        RavenAccountsPane(runtime: runtime, showsSignature: false), theme: theme))),
         ]
 
         fields += signatureFields(runtime: runtime, root: root)
@@ -145,10 +154,10 @@ enum RavenSettingsCatalog {
             title: "Accounts",
             footerNote: runtime.isCredentialsBaked
                 ? "Signing out of an account erases every local copy of its mail and any queued "
-                  + "sends for it from this device. Other connected accounts are untouched."
+                    + "sends for it from this device. Other connected accounts are untouched."
                 : "This build has no OAuth client compiled in, so a Google Cloud Desktop client "
-                  + "id and secret are needed before an account can be connected. The secret is "
-                  + "stored in the system Keychain, never as a plain document.",
+                    + "id and secret are needed before an account can be connected. The secret is "
+                    + "stored in the system Keychain, never as a plain document.",
             fields: fields)
     }
 
@@ -161,8 +170,10 @@ enum RavenSettingsCatalog {
     /// disclosure. Read-only accounts (Apple Mail imports) are skipped: they
     /// have no transport, so a signature for one is a field that can never take
     /// effect.
-    private static func signatureFields(runtime: RavenRuntime,
-                                        root: SettingsPath) -> [SettingsField] {
+    private static func signatureFields(
+        runtime: RavenRuntime,
+        root: SettingsPath
+    ) -> [SettingsField] {
         runtime.accounts
             .filter { !runtime.isReadOnly(accountID: $0.id) }
             .map { account in
@@ -172,16 +183,17 @@ enum RavenSettingsCatalog {
                     label: "Signature — \(account.address)",
                     help: "Appended to every message sent from this account.",
                     keywords: ["signature", "sign-off", account.address],
-                    kind: .text(Binding(
-                        // Read through the store each time rather than
-                        // capturing `account`, which is a snapshot taken when
-                        // the catalog was built. Writing a stale snapshot back
-                        // is the bug that used to clobber syncCursor /
-                        // lastSyncedAt / state / lastError and silently
-                        // re-backfill the mailbox; `updateSignature` does a
-                        // read-modify-write of the CURRENT row instead.
-                        get: { runtime.accounts.first { $0.id == id }?.signature ?? "" },
-                        set: { runtime.updateSignature($0, accountID: id) })),
+                    kind: .text(
+                        Binding(
+                            // Read through the store each time rather than
+                            // capturing `account`, which is a snapshot taken when
+                            // the catalog was built. Writing a stale snapshot back
+                            // is the bug that used to clobber syncCursor /
+                            // lastSyncedAt / state / lastError and silently
+                            // re-backfill the mailbox; `updateSignature` does a
+                            // read-modify-write of the CURRENT row instead.
+                            get: { runtime.accounts.first { $0.id == id }?.signature ?? "" },
+                            set: { runtime.updateSignature($0, accountID: id) })),
                     defaultDescription: "Empty",
                     isModified: {
                         !(runtime.accounts.first { $0.id == id }?.signature ?? "").isEmpty
@@ -193,8 +205,10 @@ enum RavenSettingsCatalog {
     /// Client id, secret, and an explicit save. Three real fields rather than a
     /// `.custom` pane — see `RavenSettingsDraft` for why saving is a separate
     /// action instead of a write-through on the secure field.
-    private static func credentialFields(runtime: RavenRuntime, draft: RavenSettingsDraft,
-                                         root: SettingsPath) -> [SettingsField] {
+    private static func credentialFields(
+        runtime: RavenRuntime, draft: RavenSettingsDraft,
+        root: SettingsPath
+    ) -> [SettingsField] {
         let clientRoot = root.appending("oauth")
         return [
             SettingsField(
@@ -202,9 +216,10 @@ enum RavenSettingsCatalog {
                 label: "OAuth client ID",
                 help: "The Desktop client id from Google Cloud Console.",
                 keywords: ["oauth", "client", "google", "credentials"],
-                kind: .text(Binding(
-                    get: { draft.clientID.isEmpty ? (runtime.savedClientID ?? "") : draft.clientID },
-                    set: { draft.clientID = $0 })),
+                kind: .text(
+                    Binding(
+                        get: { draft.clientID.isEmpty ? (runtime.savedClientID ?? "") : draft.clientID },
+                        set: { draft.clientID = $0 })),
                 isAdvanced: true),
             SettingsField(
                 path: clientRoot.appending("client-secret"),
@@ -214,8 +229,10 @@ enum RavenSettingsCatalog {
                 // shows what is being typed and nothing else.
                 help: "Stored in the system Keychain. Never shown again once saved.",
                 keywords: ["oauth", "secret", "google", "credentials", "keychain"],
-                kind: .secure(Binding(get: { draft.clientSecret },
-                                      set: { draft.clientSecret = $0 })),
+                kind: .secure(
+                    Binding(
+                        get: { draft.clientSecret },
+                        set: { draft.clientSecret = $0 })),
                 isAdvanced: true),
             SettingsField(
                 path: clientRoot.appending("save"),
@@ -226,14 +243,15 @@ enum RavenSettingsCatalog {
                 keywords: ["oauth", "save", "credentials"],
                 kind: .action(title: "Save") {
                     guard draft.canSaveCredentials else { return }
-                    runtime.saveCredentials(clientID: draft.clientID,
-                                            clientSecret: draft.clientSecret)
+                    runtime.saveCredentials(
+                        clientID: draft.clientID,
+                        clientSecret: draft.clientSecret)
                     // The secret is not kept in memory past the save. The id is,
                     // because it is not a credential and the field should keep
                     // showing it.
                     draft.clientSecret = ""
                 },
-                isAdvanced: true)
+                isAdvanced: true),
         ]
     }
 
@@ -264,9 +282,11 @@ enum RavenSettingsCatalog {
                     // and the text field allowed a half-typed number to briefly
                     // read as a valid setting, which the whole `holdWindowText`
                     // mirror existed to work around.
-                    kind: .slider(range: 0...60, step: 5, value: Binding(
-                        get: { runtime.holdWindow },
-                        set: { runtime.holdWindow = $0 })),
+                    kind: .slider(
+                        range: 0...60, step: 5,
+                        value: Binding(
+                            get: { runtime.holdWindow },
+                            set: { runtime.holdWindow = $0 })),
                     defaultDescription: "\(Int(SendAttempt.defaultHoldWindow)) seconds",
                     isModified: { runtime.holdWindow != SendAttempt.defaultHoldWindow },
                     reset: { runtime.holdWindow = SendAttempt.defaultHoldWindow })
@@ -307,8 +327,10 @@ enum RavenSettingsCatalog {
                     label: "Senders allowed to load images",
                     help: "Remote images are blocked everywhere by default; this is who is "
                         + "exempt, and how to revoke that.",
-                    keywords: ["privacy", "images", "remote", "tracking", "pixel", "allow",
-                               "block", "revoke", "csp"],
+                    keywords: [
+                        "privacy", "images", "remote", "tracking", "pixel", "allow",
+                        "block", "revoke", "csp",
+                    ],
                     // A variable-length list of addresses, each with its own
                     // destructive Revoke — not a toggle, and not a value with a
                     // default worth resetting.
@@ -337,8 +359,10 @@ enum RavenSettingsCatalog {
                     path: root.appending("opacity"),
                     label: "Surface opacity",
                     help: "Lower is more see-through.",
-                    keywords: ["transparency", "translucent", "opacity", "glass", "blur",
-                               "see-through", "appearance"],
+                    keywords: [
+                        "transparency", "translucent", "opacity", "glass", "blur",
+                        "see-through", "appearance",
+                    ],
                     kind: .slider(
                         range: RavenAppearance.legibleRange, step: 0.05,
                         value: Binding(

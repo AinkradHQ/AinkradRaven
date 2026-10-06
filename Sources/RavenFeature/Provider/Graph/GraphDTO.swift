@@ -23,7 +23,10 @@ public struct GraphMessageDTO: Decodable {
     public struct EmailAddress: Decodable {
         public let name: String?
         public let address: String?
-        public init(name: String?, address: String?) { self.name = name; self.address = address }
+        public init(name: String?, address: String?) {
+            self.name = name
+            self.address = address
+        }
     }
 
     public struct Recipient: Decodable {
@@ -36,7 +39,8 @@ public struct GraphMessageDTO: Decodable {
         public let contentType: String?
         public let content: String?
         public init(contentType: String?, content: String?) {
-            self.contentType = contentType; self.content = content
+            self.contentType = contentType
+            self.content = content
         }
     }
 

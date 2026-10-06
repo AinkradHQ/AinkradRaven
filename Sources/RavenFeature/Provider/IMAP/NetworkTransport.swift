@@ -72,9 +72,11 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
     /// in which a credential can be written.
     private var didRequestUpgrade = false
 
-    init(endpoint: MailTransportEndpoint,
-         connectTimeout: Duration = .seconds(30),
-         readTimeout: Duration = .seconds(60)) {
+    init(
+        endpoint: MailTransportEndpoint,
+        connectTimeout: Duration = .seconds(30),
+        readTimeout: Duration = .seconds(60)
+    ) {
         self.endpoint = endpoint
         self.connectTimeout = connectTimeout
         self.readTimeout = readTimeout
@@ -93,8 +95,14 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
 
     func connect() async throws {
         try await suspendVoid { guard_ in
-            guard !self.isClosed else { guard_.fire(.failure(.closed)); return }
-            guard self.connection == nil else { guard_.fire(.success(())); return }
+            guard !self.isClosed else {
+                guard_.fire(.failure(.closed))
+                return
+            }
+            guard self.connection == nil else {
+                guard_.fire(.success(()))
+                return
+            }
 
             let parameters: NWParameters
             switch self.endpoint.tls {
@@ -122,9 +130,10 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
                 guard_.fire(.failure(.connectionFailed("invalid port \(self.endpoint.port)")))
                 return
             }
-            let connection = NWConnection(host: NWEndpoint.Host(self.endpoint.host),
-                                          port: port,
-                                          using: parameters)
+            let connection = NWConnection(
+                host: NWEndpoint.Host(self.endpoint.host),
+                port: port,
+                using: parameters)
             self.connection = connection
 
             let waiter = self.register { guard_.fire(.failure($0)) }
@@ -150,9 +159,10 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
                     // IS the TLS handshake failing — reported as `.tlsFailed` so
                     // no caller can mistake it for an ordinary drop and retry in
                     // the clear.
-                    self.failAll(self.didRequestUpgrade
-                                 ? .tlsFailed("\(error)")
-                                 : .connectionFailed("\(error)"))
+                    self.failAll(
+                        self.didRequestUpgrade
+                            ? .tlsFailed("\(error)")
+                            : .connectionFailed("\(error)"))
                 case .cancelled:
                     self.failAll(.closed)
                 default:
@@ -191,14 +201,16 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
                 return
             }
             let waiter = self.register { guard_.fire(.failure($0)) }
-            connection.send(content: bytes, completion: .contentProcessed { [weak self] error in
-                self?.discard(waiter)
-                if let error {
-                    guard_.fire(.failure(.connectionFailed("\(error)")))
-                } else {
-                    guard_.fire(.success(()))
-                }
-            })
+            connection.send(
+                content: bytes,
+                completion: .contentProcessed { [weak self] error in
+                    self?.discard(waiter)
+                    if let error {
+                        guard_.fire(.failure(.connectionFailed("\(error)")))
+                    } else {
+                        guard_.fire(.success(()))
+                    }
+                })
         }
     }
 
@@ -228,11 +240,15 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
                         guard_.fire(.success(self.plaintextChunks.removeFirst()))
                         return
                     }
-                    self.plaintextReaders.append((waiter, { [weak self] data in
-                        waiter.timeout?.cancel()
-                        self?.discard(waiter)
-                        guard_.fire(.success(data))
-                    }))
+                    self.plaintextReaders.append(
+                        (
+                            waiter,
+                            { [weak self] data in
+                                waiter.timeout?.cancel()
+                                self?.discard(waiter)
+                                guard_.fire(.success(data))
+                            }
+                        ))
                     return
                 }
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) {
@@ -285,7 +301,8 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
         guard endpoint.tls == .explicit else { throw MailTransportError.tlsUpgradeUnsupported }
         try await suspendVoid { guard_ in
             guard !self.isClosed, let connection = self.connection,
-                  let control = self.framerControl else {
+                let control = self.framerControl
+            else {
                 guard_.fire(.failure(self.isClosed ? .closed : .notConnected))
                 return
             }
@@ -426,12 +443,15 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
         for waiter in stranded { waiter.fail(error) }
     }
 
-    private func scheduleTimeout(_ duration: Duration,
-                                 on waiter: Waiter,
-                                 _ body: @escaping @Sendable () -> Void) {
+    private func scheduleTimeout(
+        _ duration: Duration,
+        on waiter: Waiter,
+        _ body: @escaping @Sendable () -> Void
+    ) {
         let item = DispatchWorkItem(block: body)
         waiter.timeout = item
-        let seconds = Double(duration.components.seconds)
+        let seconds =
+            Double(duration.components.seconds)
             + Double(duration.components.attoseconds) / 1e18
         queue.asyncAfter(deadline: .now() + seconds, execute: item)
     }

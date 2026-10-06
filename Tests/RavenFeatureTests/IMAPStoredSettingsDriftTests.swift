@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The two ways an IMAP account's *stored* description can go wrong after it was
@@ -21,30 +22,38 @@ import AinkradAppKit
         let host = FakeHostServices()
         let runtime = RavenRuntime(host: host)
         runtime.teardown()
-        return (runtime,
-                host.documents as! InMemoryDocumentStore,
-                host.secrets as! InMemorySecretStore)
+        return (
+            runtime,
+            host.documents as! InMemoryDocumentStore,
+            host.secrets as! InMemorySecretStore
+        )
     }
 
     private func settings() -> IMAPAccountSettings {
-        IMAPAccountSettings(host: "imap.example.test", port: 993, username: "a@example.test",
-                            tls: .implicit,
-                            smtp: SMTPAccountSettings(host: "smtp.example.test", port: 465,
-                                                      tls: .implicit))
+        IMAPAccountSettings(
+            host: "imap.example.test", port: 993, username: "a@example.test",
+            tls: .implicit,
+            smtp: SMTPAccountSettings(
+                host: "smtp.example.test", port: 465,
+                tls: .implicit))
     }
 
     /// See `IMAPAccountLifecycleTests.bounded` — same two independent stops, same
     /// reason: the script turns a wrong expectation into an error, and this turns a
     /// never-resumed continuation into a failure.
-    private func bounded<T: Sendable>(_ label: String,
-                                      sourceLocation: SourceLocation = #_sourceLocation,
-                                      _ body: @MainActor @escaping () async throws -> T)
-        async throws -> T {
+    private func bounded<T: Sendable>(
+        _ label: String,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        _ body: @MainActor @escaping () async throws -> T
+    )
+        async throws -> T
+    {
         let work = Task { @MainActor in try await body() }
         let deadline = Task {
             try await Task.sleep(for: .seconds(10))
-            Issue.record("\(label) never resolved within 10s — the leaked-continuation shape",
-                         sourceLocation: sourceLocation)
+            Issue.record(
+                "\(label) never resolved within 10s — the leaked-continuation shape",
+                sourceLocation: sourceLocation)
             work.cancel()
         }
         defer { deadline.cancel() }
@@ -55,10 +64,12 @@ import AinkradAppKit
     /// trash yet. The starting point for both drift tests below.
     private func directoryWithoutTrash() -> IMAPMailboxDirectory {
         IMAPMailboxDirectory([
-            IMAPMailbox(name: "INBOX", delimiter: "/", attributes: [], flag: .inbox,
-                        isSpecialUseDeclared: false),
-            IMAPMailbox(name: "Folder B", delimiter: "/", attributes: ["\\Archive"],
-                        flag: .archive, isSpecialUseDeclared: true),
+            IMAPMailbox(
+                name: "INBOX", delimiter: "/", attributes: [], flag: .inbox,
+                isSpecialUseDeclared: false),
+            IMAPMailbox(
+                name: "Folder B", delimiter: "/", attributes: ["\\Archive"],
+                flag: .archive, isSpecialUseDeclared: true),
         ])
     }
 
@@ -72,12 +83,15 @@ import AinkradAppKit
         // decodes with `try?`, so a throw in here does not surface as "bad TLS
         // mode" — it surfaces as "no settings document", and the account is listed
         // but permanently unconnectable with nothing saying why.
-        documents.setData(Data((#"{"host":"imap.example.test","port":993,"#
-                                + #""username":"u","tls":"requireTLS13"}"#).utf8),
-                          forKey: DocumentKeys.imapSettings(accountID: accountID))
+        documents.setData(
+            Data(
+                (#"{"host":"imap.example.test","port":993,"#
+                    + #""username":"u","tls":"requireTLS13"}"#).utf8),
+            forKey: DocumentKeys.imapSettings(accountID: accountID))
         secrets.setSecret("pw", forKey: IMAPAppPasswordStore.key(accountID: accountID))
-        let account = MailAccount(id: accountID, provider: .imap, address: "a@example.test",
-                                  displayName: "a", state: .ready)
+        let account = MailAccount(
+            id: accountID, provider: .imap, address: "a@example.test",
+            displayName: "a", state: .ready)
 
         // The whole assertion: this does not throw.
         let provider = try #require(
@@ -134,8 +148,9 @@ import AinkradAppKit
         // The server as it was at account-add: no trash folder.
         spy.directory = directoryWithoutTrash()
         let accountID = try await bounded("addIMAPAccount") {
-            try await runtime.addIMAPAccount(address: "a@example.test",
-                                             settings: self.settings(), password: "pw")
+            try await runtime.addIMAPAccount(
+                address: "a@example.test",
+                settings: self.settings(), password: "pw")
         }
         // Before: the resolver cannot spell trash, which is the state that sends
         // mail to the archive.
@@ -186,15 +201,21 @@ import AinkradAppKit
     private static func wire(applying mutation: LabelMutation) async throws -> String {
         let (provider, transport, session, _) = try await IMAPProviderHarness.provider(
             capabilities: "IMAP4rev1 MOVE",
-            steps: backfillSteps + [.init("SELECT \"INBOX\"", "imap-provider-select"),
-                                    .init("UID MOVE")])
-        _ = await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(
-                since: Date(timeIntervalSince1970: 1_750_000_000), pageToken: nil)
-        })
-        _ = await IMAPProviderHarness.expect("applyLabels", {
-            try await provider.applyLabels(mutation)
-        })
+            steps: backfillSteps + [
+                .init("SELECT \"INBOX\"", "imap-provider-select"),
+                .init("UID MOVE"),
+            ])
+        _ = await IMAPProviderHarness.expect(
+            "fetchThreads",
+            {
+                try await provider.fetchThreads(
+                    since: Date(timeIntervalSince1970: 1_750_000_000), pageToken: nil)
+            })
+        _ = await IMAPProviderHarness.expect(
+            "applyLabels",
+            {
+                try await provider.applyLabels(mutation)
+            })
         let wire = await transport.sentText
         await session.close()
         return wire

@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The Privacy group: what remote-image blocking actually guarantees, and the
 /// senders the user has chosen to exempt from it.
@@ -31,14 +31,18 @@ struct PrivacySettingsGroup: View {
                 + "and JavaScript is off in both states — allowing a sender's images is never "
                 + "allowing their code."
         ) {
-            let senders = { _ = version; return runtime.allowedImageSenders }()
+            let senders = {
+                _ = version
+                return runtime.allowedImageSenders
+            }()
             AinkradDisclosureGroup(
                 title: "Senders allowed to load images",
                 isExpanded: $isExpanded,
                 hitCount: senders.count
             ) {
                 if senders.isEmpty {
-                    caption("Nobody yet. Pressing \"Load images\" on a message adds that "
+                    caption(
+                        "Nobody yet. Pressing \"Load images\" on a message adds that "
                             + "sender here, and images from them load automatically from then on.")
                 } else {
                     VStack(alignment: .leading, spacing: 2) {

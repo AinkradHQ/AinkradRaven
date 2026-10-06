@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 12: the two delta walks, and the assertion that they agree.
@@ -37,10 +38,13 @@ struct IMAPDeltaStrategyTests {
         .init("UID FETCH 1:19", "imap-delta-plain-rescan"),
     ]
 
-    private static func strategy(_ session: IMAPSession,
-                                 window: UInt32 = 5_000) -> IMAPDeltaStrategy {
-        IMAPDeltaStrategy(session: session, identity: IMAPDeltaHarness.identity(),
-                          flagRescanWindow: window)
+    private static func strategy(
+        _ session: IMAPSession,
+        window: UInt32 = 5_000
+    ) -> IMAPDeltaStrategy {
+        IMAPDeltaStrategy(
+            session: session, identity: IMAPDeltaHarness.identity(),
+            flagRescanWindow: window)
     }
 
     // MARK: - CONDSTORE advertised
@@ -49,8 +53,10 @@ struct IMAPDeltaStrategyTests {
     func condstorePathUsesQresyncAndStoresModSeq() async throws {
         let (session, transport) = try await IMAPDeltaHarness.session(
             capabilities: Self.condstore, steps: Self.condstoreSteps)
-        guard let result = await IMAPDeltaHarness.expectPass(
-            Self.strategy(session), from: IMAPDeltaHarness.storedCursor()) else { return }
+        guard
+            let result = await IMAPDeltaHarness.expectPass(
+                Self.strategy(session), from: IMAPDeltaHarness.storedCursor())
+        else { return }
 
         let wire = await transport.sentText
         #expect(wire.contains("SELECT \"Folder A\" (QRESYNC (1 100))"))
@@ -70,8 +76,10 @@ struct IMAPDeltaStrategyTests {
     func vanishedEarlierIsARemoval() async throws {
         let (session, _) = try await IMAPDeltaHarness.session(
             capabilities: Self.condstore, steps: Self.condstoreSteps)
-        guard let result = await IMAPDeltaHarness.expectPass(
-            Self.strategy(session), from: IMAPDeltaHarness.storedCursor()) else { return }
+        guard
+            let result = await IMAPDeltaHarness.expectPass(
+                Self.strategy(session), from: IMAPDeltaHarness.storedCursor())
+        else { return }
         #expect(result.delta.removedThreadIDs == ["t-c"])
         // The removed thread must not also be reported as changed; a delta that
         // says both leaves the store's outcome dependent on apply order.
@@ -94,8 +102,10 @@ struct IMAPDeltaStrategyTests {
         let strategy = IMAPDeltaStrategy(
             session: session,
             identity: IMAPDeltaHarness.identity(sequenceNumbers: [2: 11]))
-        guard let result = await IMAPDeltaHarness.expectPass(
-            strategy, from: IMAPDeltaHarness.storedCursor(highestModSeq: nil)) else { return }
+        guard
+            let result = await IMAPDeltaHarness.expectPass(
+                strategy, from: IMAPDeltaHarness.storedCursor(highestModSeq: nil))
+        else { return }
         // t-b (UID 11) expunged, t-c (UID 12) still detected as absent from the
         // re-scan. Both mechanisms are live in the same pass.
         #expect(result.delta.removedThreadIDs == ["t-b", "t-c"])
@@ -112,8 +122,10 @@ struct IMAPDeltaStrategyTests {
     func condstoreOnlyDetectsRemovals() async throws {
         let (session, transport) = try await IMAPDeltaHarness.session(
             capabilities: Self.condstoreOnly, steps: Self.condstoreOnlySteps)
-        guard let result = await IMAPDeltaHarness.expectPass(
-            Self.strategy(session), from: IMAPDeltaHarness.storedCursor()) else { return }
+        guard
+            let result = await IMAPDeltaHarness.expectPass(
+                Self.strategy(session), from: IMAPDeltaHarness.storedCursor())
+        else { return }
 
         let wire = await transport.sentText
         // QRESYNC was not advertised, so it must not be sent — and therefore no
@@ -144,8 +156,10 @@ struct IMAPDeltaStrategyTests {
                 // cost regression are different diagnoses.
                 .init("UID FETCH 20:*", nil),
             ])
-        guard let result = await IMAPDeltaHarness.expectPass(
-            Self.strategy(session), from: IMAPDeltaHarness.storedCursor()) else { return }
+        guard
+            let result = await IMAPDeltaHarness.expectPass(
+                Self.strategy(session), from: IMAPDeltaHarness.storedCursor())
+        else { return }
 
         let wire = await transport.sentText
         // The cost assertion, pinned on the wire rather than argued in a comment:
@@ -166,9 +180,11 @@ struct IMAPDeltaStrategyTests {
     func fallbackWalksArrivalsAndRescan() async throws {
         let (session, transport) = try await IMAPDeltaHarness.session(
             capabilities: Self.plain, steps: Self.fallbackSteps)
-        guard let result = await IMAPDeltaHarness.expectPass(
-            Self.strategy(session),
-            from: IMAPDeltaHarness.storedCursor(highestModSeq: nil)) else { return }
+        guard
+            let result = await IMAPDeltaHarness.expectPass(
+                Self.strategy(session),
+                from: IMAPDeltaHarness.storedCursor(highestModSeq: nil))
+        else { return }
 
         let wire = await transport.sentText
         #expect(wire.contains("UID FETCH 20:*"))
@@ -191,9 +207,11 @@ struct IMAPDeltaStrategyTests {
                 // The window is 5, so the re-scan covers 15:19 and NOT 1:19.
                 .init("UID FETCH 15:19", "imap-delta-plain-rescan"),
             ])
-        guard await IMAPDeltaHarness.expectPass(
-            Self.strategy(session, window: 5),
-            from: IMAPDeltaHarness.storedCursor(highestModSeq: nil)) != nil else { return }
+        guard
+            await IMAPDeltaHarness.expectPass(
+                Self.strategy(session, window: 5),
+                from: IMAPDeltaHarness.storedCursor(highestModSeq: nil)) != nil
+        else { return }
         let wire = await transport.sentText
         #expect(wire.contains("UID FETCH 15:19 (UID FLAGS)"))
         #expect(!wire.contains("UID FETCH 1:19"))
@@ -204,9 +222,11 @@ struct IMAPDeltaStrategyTests {
     func unchangedFlagsAreNotAChange() async throws {
         let (session, _) = try await IMAPDeltaHarness.session(
             capabilities: Self.plain, steps: Self.fallbackSteps)
-        guard let result = await IMAPDeltaHarness.expectPass(
-            Self.strategy(session),
-            from: IMAPDeltaHarness.storedCursor(highestModSeq: nil)) else { return }
+        guard
+            let result = await IMAPDeltaHarness.expectPass(
+                Self.strategy(session),
+                from: IMAPDeltaHarness.storedCursor(highestModSeq: nil))
+        else { return }
         // UID 11 is in the re-scan with exactly its stored flags. Reporting the
         // whole re-scan as changed is the obvious wrong implementation and would
         // put "t-b" here on every single tick.
@@ -220,8 +240,10 @@ struct IMAPDeltaStrategyTests {
     func allPathsAgree() async throws {
         let (fastSession, _) = try await IMAPDeltaHarness.session(
             capabilities: Self.condstore, steps: Self.condstoreSteps)
-        guard let fast = await IMAPDeltaHarness.expectPass(
-            Self.strategy(fastSession), from: IMAPDeltaHarness.storedCursor()) else { return }
+        guard
+            let fast = await IMAPDeltaHarness.expectPass(
+                Self.strategy(fastSession), from: IMAPDeltaHarness.storedCursor())
+        else { return }
         await fastSession.close()
 
         // The middle of the matrix, and the one that was missing: CONDSTORE with
@@ -229,15 +251,19 @@ struct IMAPDeltaStrategyTests {
         // the fast path and cannot receive a `VANISHED`.
         let (middleSession, _) = try await IMAPDeltaHarness.session(
             capabilities: Self.condstoreOnly, steps: Self.condstoreOnlySteps)
-        guard let middle = await IMAPDeltaHarness.expectPass(
-            Self.strategy(middleSession), from: IMAPDeltaHarness.storedCursor()) else { return }
+        guard
+            let middle = await IMAPDeltaHarness.expectPass(
+                Self.strategy(middleSession), from: IMAPDeltaHarness.storedCursor())
+        else { return }
         await middleSession.close()
 
         let (slowSession, _) = try await IMAPDeltaHarness.session(
             capabilities: Self.plain, steps: Self.fallbackSteps)
-        guard let slow = await IMAPDeltaHarness.expectPass(
-            Self.strategy(slowSession),
-            from: IMAPDeltaHarness.storedCursor(highestModSeq: nil)) else { return }
+        guard
+            let slow = await IMAPDeltaHarness.expectPass(
+                Self.strategy(slowSession),
+                from: IMAPDeltaHarness.storedCursor(highestModSeq: nil))
+        else { return }
         await slowSession.close()
 
         // The expected value is written out here rather than computed by calling
@@ -259,9 +285,11 @@ struct IMAPDeltaStrategyTests {
         // path cannot see, never the reverse — and `walkChangedSince` is where it
         // is explained.
         for other in [middle.delta, slow.delta] {
-            #expect(MailDelta(changedThreadIDs: fast.delta.changedThreadIDs,
-                              removedThreadIDs: fast.delta.removedThreadIDs,
-                              newCursor: other.newCursor) == other)
+            #expect(
+                MailDelta(
+                    changedThreadIDs: fast.delta.changedThreadIDs,
+                    removedThreadIDs: fast.delta.removedThreadIDs,
+                    newCursor: other.newCursor) == other)
         }
 
         // And the cursor difference is exactly that one field, asserted rather
@@ -320,8 +348,10 @@ struct IMAPDeltaStrategyTests {
                 .init("SELECT", "imap-delta-rewalk-select"),
                 .init("UID FETCH 1:*", "imap-delta-plain-arrivals"),
             ])
-        guard let result = await IMAPDeltaHarness.expectPass(
-            Self.strategy(session), from: IMAPDeltaHarness.storedCursor()) else { return }
+        guard
+            let result = await IMAPDeltaHarness.expectPass(
+                Self.strategy(session), from: IMAPDeltaHarness.storedCursor())
+        else { return }
 
         let wire = await transport.sentText
         // A full walk from UID 1, NOT a CHANGEDSINCE against a modseq from a dead
@@ -333,8 +363,9 @@ struct IMAPDeltaStrategyTests {
         #expect(state.uidNext == 21)
         // The sibling mailbox is untouched: one re-provisioned folder must not
         // cost an account-wide re-walk.
-        #expect(result.cursor.mailboxes["Folder B"]
-            == IMAPMailboxSyncState(uidValidity: 9, uidNext: 5, highestModSeq: 55))
+        #expect(
+            result.cursor.mailboxes["Folder B"]
+                == IMAPMailboxSyncState(uidValidity: 9, uidNext: 5, highestModSeq: 55))
         await session.close()
     }
 
@@ -343,15 +374,18 @@ struct IMAPDeltaStrategyTests {
         let (session, _) = try await IMAPDeltaHarness.session(
             capabilities: Self.plain,
             steps: [.init("SELECT", "imap-delta-no-uidvalidity-select")])
-        guard let outcome = await IMAPDeltaHarness.pass(
-            Self.strategy(session),
-            from: IMAPDeltaHarness.storedCursor(highestModSeq: nil)) else { return }
+        guard
+            let outcome = await IMAPDeltaHarness.pass(
+                Self.strategy(session),
+                from: IMAPDeltaHarness.storedCursor(highestModSeq: nil))
+        else { return }
         switch outcome {
         case .success(let result):
             Issue.record("expected a refusal, got \(result.delta)")
         case .failure(let error):
-            #expect(error as? IMAPDeltaError
-                == .missingUIDValidity(IMAPDeltaHarness.mailbox))
+            #expect(
+                error as? IMAPDeltaError
+                    == .missingUIDValidity(IMAPDeltaHarness.mailbox))
         }
         await session.close()
     }
@@ -361,8 +395,9 @@ struct IMAPDeltaStrategyTests {
     @Test("a canonical flag with no mailbox is refused, not guessed")
     func missingMailboxIsRefused() throws {
         let directory = IMAPMailboxDirectory([
-            IMAPMailbox(name: "INBOX", delimiter: "/", attributes: [],
-                        flag: .inbox, isSpecialUseDeclared: false),
+            IMAPMailbox(
+                name: "INBOX", delimiter: "/", attributes: [],
+                flag: .inbox, isSpecialUseDeclared: false)
         ])
         #expect(throws: IMAPDeltaError.mailboxNotFound(.archive)) {
             try IMAPDeltaStrategy.mailboxName(for: .archive, in: directory)

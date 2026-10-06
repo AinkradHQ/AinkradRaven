@@ -1,22 +1,28 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Sync backfill")
 @MainActor struct SyncBackfillTests {
     private func makeEngine(_ provider: FakeMailProvider)
-        -> (SyncEngine, DocumentMailStore) {
+        -> (SyncEngine, DocumentMailStore)
+    {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        let engine = SyncEngine(store: store, provider: provider,
-                                accountID: "a1", windowDays: 90)
+        let engine = SyncEngine(
+            store: store, provider: provider,
+            accountID: "a1", windowDays: 90)
         return (engine, store)
     }
 
     private func thread(_ id: String, date: Date) -> MailThread {
-        MailThread(id: id, accountID: "a1", messages: [
-            MailMessage(id: "m-\(id)", threadID: id, from: MailAddress(email: "b@x.com"),
-                        subject: "S", date: date, labelIDs: ["INBOX"], snippet: "s")
-        ])
+        MailThread(
+            id: id, accountID: "a1",
+            messages: [
+                MailMessage(
+                    id: "m-\(id)", threadID: id, from: MailAddress(email: "b@x.com"),
+                    subject: "S", date: date, labelIDs: ["INBOX"], snippet: "s")
+            ])
     }
 
     @Test("backfill walks every page into the store")
@@ -63,8 +69,10 @@ import Foundation
         provider.cursor = "c42"
         provider.pages = [ThreadPage(threads: [], nextPageToken: nil)]
         let (engine, store) = makeEngine(provider)
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "me@x.com", displayName: "Me"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "me@x.com", displayName: "Me"))
         try await engine.backfill()
 
         #expect(store.accounts().first?.syncCursor == "c42")
@@ -76,8 +84,10 @@ import Foundation
         let provider = FakeMailProvider()
         provider.failures["fetchThreads"] = [MailError.providerFailed(status: 500, message: "boom")]
         let (engine, store) = makeEngine(provider)
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "me@x.com", displayName: "Me"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "me@x.com", displayName: "Me"))
 
         await #expect(throws: MailError.self) { try await engine.backfill() }
         #expect(store.accounts().first?.state == .failed)
@@ -112,8 +122,9 @@ import Foundation
             ThreadPage(threads: [], nextPageToken: i < 5 ? "p\(i + 1)" : nil)
         }
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        let engine = SyncEngine(store: store, provider: provider, accountID: "a1",
-                                 windowDays: 90, maxBackfillPages: 3)
+        let engine = SyncEngine(
+            store: store, provider: provider, accountID: "a1",
+            windowDays: 90, maxBackfillPages: 3)
 
         try await engine.backfill()
 
@@ -131,13 +142,16 @@ import Foundation
         provider.failures["fetchThreads"] = [MailError.providerFailed(status: 500, message: "boom")]
         provider.cursor = "c-would-skip-the-missing-thread"
         let (engine, store) = makeEngine(provider)
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "me@x.com", displayName: "Me"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "me@x.com", displayName: "Me"))
 
         await #expect(throws: MailError.self) { try await engine.backfill() }
 
-        #expect(store.accounts().first?.syncCursor == nil,
-                "seeding the cursor here would strand the unfetched threads forever")
+        #expect(
+            store.accounts().first?.syncCursor == nil,
+            "seeding the cursor here would strand the unfetched threads forever")
         #expect(store.accounts().first?.state == .failed)
     }
 
@@ -149,8 +163,10 @@ import Foundation
         provider.pages = [ThreadPage(threads: [thread("t1", date: now)], nextPageToken: nil)]
         provider.cursor = "c42"
         let (engine, store) = makeEngine(provider)
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "me@x.com", displayName: "Me"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "me@x.com", displayName: "Me"))
 
         await #expect(throws: MailError.self) { try await engine.backfill() }
         #expect(store.accounts().first?.syncCursor == nil)

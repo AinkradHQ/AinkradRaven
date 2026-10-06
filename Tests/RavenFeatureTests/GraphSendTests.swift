@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// `GraphMutations.send`: the two-request shape, the recipient split, at-most-once,
@@ -14,13 +15,15 @@ import AinkradAppKit
 struct GraphSendTests {
 
     private static func message(bcc: [MailAddress] = [MailAddress(email: "d@example.test")])
-        -> OutgoingMessage {
-        OutgoingMessage(to: [MailAddress(email: "b@example.test", name: "Person B")],
-                        cc: [MailAddress(email: "c@example.test")],
-                        bcc: bcc,
-                        subject: "Subject 1",
-                        bodyText: "Body 1",
-                        accountID: "a1")
+        -> OutgoingMessage
+    {
+        OutgoingMessage(
+            to: [MailAddress(email: "b@example.test", name: "Person B")],
+            cc: [MailAddress(email: "c@example.test")],
+            bcc: bcc,
+            subject: "Subject 1",
+            bodyText: "Body 1",
+            accountID: "a1")
     }
 
     /// The stub: the draft-creation fixture for `POST /messages`, a bodiless `202`
@@ -82,7 +85,8 @@ struct GraphSendTests {
 
         let entries = recorded.all
         #expect(entries.count == 2)
-        #expect(entries.map { "\($0.method) \($0.path)" }
+        #expect(
+            entries.map { "\($0.method) \($0.path)" }
                 == ["POST messages", "POST messages/AAMkDRAFT-1/send"])
         // The commit is addressed by the id from the response, so it also pins that
         // the id was READ rather than guessed from the request.
@@ -229,8 +233,9 @@ struct GraphSendTests {
         defer { teardown() }
 
         let provider = makeGraphProvider()
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            accountID: "a1")
         let id = try outbox.enqueue(.send(Self.message()), accountID: "a1")
         try await graphBounded("drain 1") { await outbox.drain() }
 
@@ -287,8 +292,9 @@ struct GraphSendTests {
     ///
     /// Parameterised over four statuses because "the guard is present" and "the
     /// guard covers 4xx as well as 5xx" are different claims.
-    @Test("a refused commit is reported as possibly sent, never as sent",
-          arguments: [400, 403, 429, 500])
+    @Test(
+        "a refused commit is reported as possibly sent, never as sent",
+        arguments: [400, 403, 429, 500])
     func aRefusedCommitIsPossiblySent(status: Int) async throws {
         let recorded = RecordedRequests()
         let created = try graphFixture("graph-created-draft")
@@ -304,8 +310,10 @@ struct GraphSendTests {
         }
         defer { teardown() }
 
-        await #expect(throws: MailError.sendOutcomeUnknown(
-            message: "the send request for Graph draft AAMkDRAFT-1 left without a verdict")) {
+        await #expect(
+            throws: MailError.sendOutcomeUnknown(
+                message: "the send request for Graph draft AAMkDRAFT-1 left without a verdict")
+        ) {
             try await graphBounded("send(commit \(status))") {
                 try await makeGraphProvider().send(Self.message())
             }
@@ -334,20 +342,24 @@ struct GraphSendTests {
         }
         defer { teardown() }
 
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: makeGraphProvider(),
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: makeGraphProvider(),
+            accountID: "a1")
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let draftID = try DraftBox.shared.save(Self.message())
         defer { DraftBox.shared.remove(draftID) }
 
         let result = try await graphBounded("SendAttempt") {
-            try await SendAttempt.send(Self.message(), draftID: draftID, outbox: outbox,
-                                       store: store) { await outbox.drain() }
+            try await SendAttempt.send(
+                Self.message(), draftID: draftID, outbox: outbox,
+                store: store
+            ) { await outbox.drain() }
         }
         #expect(result.isSent == false)
         #expect(result.outcome == .needsReview)
-        #expect(DraftBox.shared.draft(draftID) != nil,
-                "a refused commit must not destroy the user's draft")
+        #expect(
+            DraftBox.shared.draft(draftID) != nil,
+            "a refused commit must not destroy the user's draft")
         #expect(outbox.needsReview().map(\.id) == [result.entryID])
         #expect(outbox.pending().isEmpty)
         #expect(recorded.all.map(\.path) == ["messages", "messages/AAMkDRAFT-1/send"])
@@ -373,8 +385,9 @@ struct GraphSendTests {
         }
         defer { teardown() }
 
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: makeGraphProvider(),
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: makeGraphProvider(),
+            accountID: "a1")
         let id = try outbox.enqueue(.send(Self.message()), accountID: "a1")
         try await graphBounded("drain 1") { await outbox.drain() }
         #expect(outbox.outcome(for: id) == .queued(inFlight: false))
@@ -382,7 +395,8 @@ struct GraphSendTests {
 
         try await graphBounded("drain 2") { await outbox.drain() }
         #expect(outbox.outcome(for: id) == .sent)
-        #expect(recorded.all.map(\.path)
+        #expect(
+            recorded.all.map(\.path)
                 == ["messages", "messages", "messages/AAMkDRAFT-1/send"])
         outbox.teardownWake()
     }
@@ -441,7 +455,8 @@ final class OneShotFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var used = false
     func take() -> Bool {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         if used { return false }
         used = true
         return true

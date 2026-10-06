@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// `bundle_by_sender`, in its own file: `RavenMCPServerTests` is already 400+
@@ -18,22 +19,31 @@ import AinkradAppKit
     private func bundleFixtureStore() throws -> DocumentMailStore {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         for id in ["a1", "a2"] {
-            try store.saveAccount(MailAccount(id: id, provider: .gmail,
-                                              address: "\(id)@example.test",
-                                              displayName: id, state: .ready))
+            try store.saveAccount(
+                MailAccount(
+                    id: id, provider: .gmail,
+                    address: "\(id)@example.test",
+                    displayName: id, state: .ready))
         }
         let now = Date()
-        func thread(_ id: String, _ account: String, _ from: MailAddress?,
-                    _ minutesAgo: Double, unread: Bool = false) throws {
-            try store.upsertThread(MailThread(id: id, accountID: account, messages: [
-                MailMessage(id: "m-\(id)", threadID: id, from: from,
+        func thread(
+            _ id: String, _ account: String, _ from: MailAddress?,
+            _ minutesAgo: Double, unread: Bool = false
+        ) throws {
+            try store.upsertThread(
+                MailThread(
+                    id: id, accountID: account,
+                    messages: [
+                        MailMessage(
+                            id: "m-\(id)", threadID: id, from: from,
                             subject: "Subject \(id)", date: now.addingTimeInterval(-60 * minutesAgo),
                             isRead: !unread, labelIDs: ["INBOX"], snippet: "s")
-            ]))
+                    ]))
         }
         try thread("t-b1", "a1", MailAddress(email: "b@example.test", name: "Bea"), 30)
-        try thread("t-b2", "a1", MailAddress(email: "B@Example.Test", name: "Beatrice"), 10,
-                   unread: true)
+        try thread(
+            "t-b2", "a1", MailAddress(email: "B@Example.Test", name: "Beatrice"), 10,
+            unread: true)
         try thread("t-b3", "a2", MailAddress(email: "Bea <b@example.test>"), 50)
         try thread("t-c1", "a1", MailAddress(email: "c@example.test"), 40)
         try thread("t-c2", "a2", MailAddress(email: "c@example.test"), 20)
@@ -42,12 +52,16 @@ import AinkradAppKit
         // claim that this tool reads the SAME filtered set as `unread_summary`
         // and `search_mail` is observable — without it, a read of the raw
         // shards would produce identical output.
-        try store.upsertThread(MailThread(id: "t-archived", accountID: "a1", messages: [
-            MailMessage(id: "m-t-archived", threadID: "t-archived",
+        try store.upsertThread(
+            MailThread(
+                id: "t-archived", accountID: "a1",
+                messages: [
+                    MailMessage(
+                        id: "m-t-archived", threadID: "t-archived",
                         from: MailAddress(email: "d@example.test"),
                         subject: "Subject t-archived", date: now.addingTimeInterval(-60),
                         isRead: true, labelIDs: [], snippet: "s")
-        ]))
+                ]))
         return store
     }
 
@@ -62,9 +76,10 @@ import AinkradAppKit
         #expect(router.isEmpty)
         #expect(router.provider(for: "a1") == nil)
 
-        let result = await RavenMCPOperations.run("bundle_by_sender", arguments: "{}",
-                                                 store: store, outbox: outbox,
-                                                 providers: router)
+        let result = await RavenMCPOperations.run(
+            "bundle_by_sender", arguments: "{}",
+            store: store, outbox: outbox,
+            providers: router)
 
         #expect(result.isError == false)
         #expect(result.text.contains("3 sender(s) over 6 thread(s)"))
@@ -78,9 +93,10 @@ import AinkradAppKit
         let provider = FakeMailProvider()
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
 
-        let result = await RavenMCPOperations.run("bundle_by_sender", arguments: "{}",
-                                                 store: store, outbox: outbox,
-                                                 providers: MailProviderRouter(single: provider))
+        let result = await RavenMCPOperations.run(
+            "bundle_by_sender", arguments: "{}",
+            store: store, outbox: outbox,
+            providers: MailProviderRouter(single: provider))
 
         #expect(result.isError == false)
         #expect(provider.searchThreadsCallCount == 0)
@@ -94,8 +110,9 @@ import AinkradAppKit
         #expect(store.accounts().count == 2)
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
 
-        let result = await RavenMCPOperations.run("bundle_by_sender", arguments: "{}",
-                                                 store: store, outbox: outbox)
+        let result = await RavenMCPOperations.run(
+            "bundle_by_sender", arguments: "{}",
+            store: store, outbox: outbox)
 
         #expect(result.isError == false)
         // One bundle for b@example.test, not three; its threads span both accounts.
@@ -111,8 +128,11 @@ import AinkradAppKit
         // The archived thread is in the shard but not in the inbox, so it is
         // neither bundled nor counted — the same filtered set the Inbox list,
         // `search_mail` and `unread_summary` see.
-        #expect(store.summaries(accountID: "a1",
-                                months: UnifiedInbox.recentMonths()).count == 5)
+        #expect(
+            store.summaries(
+                accountID: "a1",
+                months: UnifiedInbox.recentMonths()
+            ).count == 5)
         #expect(result.text.contains("d@example.test") == false)
         #expect(result.text.contains("t-archived") == false)
     }
@@ -142,8 +162,9 @@ import AinkradAppKit
         #expect(scoped.text.contains("a1=") == false, "a1's threads are out of scope")
         #expect(scoped.text.contains("t-b1") == false)
 
-        let all = await RavenMCPOperations.run("bundle_by_sender", arguments: "{}",
-                                               store: store, outbox: outbox)
+        let all = await RavenMCPOperations.run(
+            "bundle_by_sender", arguments: "{}",
+            store: store, outbox: outbox)
         #expect(all.isError == false)
         #expect(all.text.contains("3 sender(s) over 6 thread(s)"))
         #expect(all.text.contains("a1="))
@@ -166,8 +187,9 @@ import AinkradAppKit
         let limited = await RavenMCPOperations.run(
             "bundle_by_sender", arguments: #"{"limit":1}"#, store: store, outbox: outbox)
         #expect(limited.isError == false)
-        #expect(limited.text.contains("1 sender(s) over 6 thread(s)"),
-                "the thread total still counts every thread, only the senders are capped")
+        #expect(
+            limited.text.contains("1 sender(s) over 6 thread(s)"),
+            "the thread total still counts every thread, only the senders are capped")
         #expect(limited.text.contains("c@example.test") == false)
 
         // Past the cap is clamped rather than refused: there are only 3 senders,
@@ -182,14 +204,17 @@ import AinkradAppKit
     @Test("bundle_by_sender on an empty store says so rather than rendering an empty list")
     func bundleBySenderEmptyStore() async throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "me@example.test", displayName: "Me",
-                                          state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "me@example.test", displayName: "Me",
+                state: .ready))
         #expect(store.summaries(accountID: "a1", months: UnifiedInbox.recentMonths()).isEmpty)
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
 
-        let result = await RavenMCPOperations.run("bundle_by_sender", arguments: "{}",
-                                                 store: store, outbox: outbox)
+        let result = await RavenMCPOperations.run(
+            "bundle_by_sender", arguments: "{}",
+            store: store, outbox: outbox)
         #expect(result.isError == false)
         #expect(result.text.contains("No threads in the synced window"))
     }

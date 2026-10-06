@@ -47,9 +47,11 @@ import Foundation
     /// gets no callback, matching `onChange`'s own convention.
     public var onNewThreads: (([String]) -> Void)?
 
-    public init(store: MailStore, provider: MailProvider,
-                accountID: String, windowDays: Int = 90,
-                maxBackfillPages: Int = SyncEngine.maxBackfillPages) {
+    public init(
+        store: MailStore, provider: MailProvider,
+        accountID: String, windowDays: Int = 90,
+        maxBackfillPages: Int = SyncEngine.maxBackfillPages
+    ) {
         self.store = store
         self.provider = provider
         self.accountID = accountID
@@ -234,7 +236,8 @@ import Foundation
             // would silently drop mail.
             try updateAccount { account in
                 account.lastSyncedAt = Date()
-                account.lastError = "syncDelta: \(transientFailures.count) thread(s) failed transiently: \(transientFailures.joined(separator: ", "))"
+                account.lastError =
+                    "syncDelta: \(transientFailures.count) thread(s) failed transiently: \(transientFailures.joined(separator: ", "))"
                 account.state = .failed
             }
             state = .failed("transient failure fetching threads: \(transientFailures.joined(separator: ", "))")

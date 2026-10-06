@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Reads a request body whether `URLSession` left it on `httpBody` or handed
@@ -25,9 +26,15 @@ private final class RequestLog: @unchecked Sendable {
     private var entries: [(url: String, body: String)] = []
     func record(_ request: URLRequest) {
         let entry = (request.url?.absoluteString ?? "", bodyString(of: request))
-        lock.lock(); entries.append(entry); lock.unlock()
+        lock.lock()
+        entries.append(entry)
+        lock.unlock()
     }
-    var all: [(url: String, body: String)] { lock.lock(); defer { lock.unlock() }; return entries }
+    var all: [(url: String, body: String)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries
+    }
 }
 
 private func makeConfiguration(clientSecret: String?) -> OAuthConfiguration {
@@ -53,7 +60,7 @@ struct OAuthFormEncodingTests {
     @Test("a value containing +, /, =, & and a space is percent-escaped, not corrupted")
     func encodesReservedCharactersAndSpace() {
         let data = OAuthTokenClient.formURLEncode([
-            "refresh_token": "a+b/c=d&e f",
+            "refresh_token": "a+b/c=d&e f"
         ])
         let body = String(decoding: data, as: UTF8.self)
 
@@ -67,10 +74,11 @@ struct OAuthFormEncodingTests {
         // under-escaping bug: '+', '/', '=', '&', and ' ' left untouched).
         #expect(encodedValue != "a+b/c=d&e f")
         #expect(encodedValue.contains("&") == false)  // no stray separator
-        #expect(encodedValue.contains(" ") == false)   // no literal space
+        #expect(encodedValue.contains(" ") == false)  // no literal space
 
         // And it must decode back to exactly the original value.
-        let recovered = encodedValue
+        let recovered =
+            encodedValue
             .replacingOccurrences(of: "+", with: " ")
             .removingPercentEncoding
         #expect(recovered == "a+b/c=d&e f")
@@ -85,15 +93,17 @@ struct OAuthFormEncodingTests {
 
 @Suite("OAuth token client")
 struct OAuthTokenClientTests {
-    private static let tokenResponse = Data("""
-    {"access_token":"at-1","refresh_token":"rt-1","expires_in":3599}
-    """.utf8)
+    private static let tokenResponse = Data(
+        """
+        {"access_token":"at-1","refresh_token":"rt-1","expires_in":3599}
+        """.utf8)
 
     @Test("the authorization URL is built from the configured endpoint, id and scopes")
     func authorizationURLFromInputs() throws {
         let client = OAuthTokenClient(configuration: makeConfiguration(clientSecret: "shh"))
-        let url = client.authorizationURL(redirectURI: "http://localhost:7654",
-                                          verifier: "verifier-value", state: "state-value")
+        let url = client.authorizationURL(
+            redirectURI: "http://localhost:7654",
+            verifier: "verifier-value", state: "state-value")
         let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
 
@@ -113,10 +123,13 @@ struct OAuthTokenClientTests {
     @Test("additional parameters are appended and may override a default")
     func additionalParameters() throws {
         let client = OAuthTokenClient(configuration: makeConfiguration(clientSecret: nil))
-        let url = client.authorizationURL(redirectURI: "http://localhost:1",
-                                          verifier: "v", state: "s",
-                                          additionalParameters: ["access_type": "offline",
-                                                                 "scope": "override"])
+        let url = client.authorizationURL(
+            redirectURI: "http://localhost:1",
+            verifier: "v", state: "s",
+            additionalParameters: [
+                "access_type": "offline",
+                "scope": "override",
+            ])
         let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
         #expect(items.filter { $0.name == "scope" }.count == 1)
         #expect(items.first { $0.name == "scope" }?.value == "override")
@@ -135,11 +148,13 @@ struct OAuthTokenClientTests {
         }
         defer { StubURLProtocol.handler = nil }
 
-        let client = OAuthTokenClient(configuration: makeConfiguration(clientSecret: "secret-value"),
-                                      session: StubURLProtocol.makeSession())
+        let client = OAuthTokenClient(
+            configuration: makeConfiguration(clientSecret: "secret-value"),
+            session: StubURLProtocol.makeSession())
 
-        let code = try await client.authorizationCode("the-code", verifier: "the-verifier",
-                                                      redirectURI: "http://localhost:7654")
+        let code = try await client.authorizationCode(
+            "the-code", verifier: "the-verifier",
+            redirectURI: "http://localhost:7654")
         let refreshed = try await client.refresh(refreshToken: "rt-1")
 
         #expect(code.accessToken == "at-1")
@@ -166,8 +181,9 @@ struct OAuthTokenClientTests {
         }
         defer { StubURLProtocol.handler = nil }
 
-        let client = OAuthTokenClient(configuration: makeConfiguration(clientSecret: nil),
-                                      session: StubURLProtocol.makeSession())
+        let client = OAuthTokenClient(
+            configuration: makeConfiguration(clientSecret: nil),
+            session: StubURLProtocol.makeSession())
         _ = try await client.refresh(refreshToken: "rt-1")
 
         #expect(log.all.count == 1)
@@ -181,8 +197,9 @@ struct OAuthTokenClientTests {
         }
         defer { StubURLProtocol.handler = nil }
 
-        let client = OAuthTokenClient(configuration: makeConfiguration(clientSecret: "secret-value"),
-                                      session: StubURLProtocol.makeSession())
+        let client = OAuthTokenClient(
+            configuration: makeConfiguration(clientSecret: "secret-value"),
+            session: StubURLProtocol.makeSession())
         do {
             _ = try await client.refresh(refreshToken: "rt-1")
             Issue.record("a 400 must throw")
@@ -198,8 +215,9 @@ struct OAuthTokenClientTests {
         StubURLProtocol.handler = { _ in (200, [:], Data("not json".utf8)) }
         defer { StubURLProtocol.handler = nil }
 
-        let client = OAuthTokenClient(configuration: makeConfiguration(clientSecret: nil),
-                                      session: StubURLProtocol.makeSession())
+        let client = OAuthTokenClient(
+            configuration: makeConfiguration(clientSecret: nil),
+            session: StubURLProtocol.makeSession())
         await #expect(throws: MailError.decodingFailed("token response")) {
             _ = try await client.refresh(refreshToken: "rt-1")
         }
@@ -228,13 +246,15 @@ struct OAuthTokenStorageTests {
     @Test("the auth layer has no document-store dependency to leak through")
     func authLayerCannotReachDocuments() throws {
         let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()      // RavenFeatureTests
-            .deletingLastPathComponent()      // Tests
-            .deletingLastPathComponent()      // repo root
-        let files = ["Sources/RavenFeature/Auth/OAuthTokenClient.swift",
-                     "Sources/RavenFeature/Auth/LoopbackCallbackListener.swift",
-                     "Sources/RavenFeature/Auth/PKCE.swift",
-                     "Sources/RavenFeature/Provider/Gmail/GmailAuth.swift"]
+            .deletingLastPathComponent()  // RavenFeatureTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // repo root
+        let files = [
+            "Sources/RavenFeature/Auth/OAuthTokenClient.swift",
+            "Sources/RavenFeature/Auth/LoopbackCallbackListener.swift",
+            "Sources/RavenFeature/Auth/PKCE.swift",
+            "Sources/RavenFeature/Provider/Gmail/GmailAuth.swift",
+        ]
         for path in files {
             let source = try String(contentsOf: root.appending(path: path), encoding: .utf8)
             // Comments are stripped first, because these files SHOULD discuss the
@@ -247,8 +267,9 @@ struct OAuthTokenStorageTests {
                     return String(line[line.startIndex..<comment.lowerBound])
                 }
                 .joined(separator: "\n")
-            #expect(code.contains("PluginDocumentStore") == false,
-                    "\(path) must not reach a document store — tokens live in secrets only")
+            #expect(
+                code.contains("PluginDocumentStore") == false,
+                "\(path) must not reach a document store — tokens live in secrets only")
             #expect(code.contains("host.documents") == false, "\(path)")
         }
     }
@@ -260,16 +281,22 @@ struct OAuthTokenStorageTests {
             if request.url?.path.contains("userinfo") == true {
                 return (200, [:], Data(#"{"email":"a@example.test"}"#.utf8))
             }
-            return (200, [:], Data("""
-            {"access_token":"access-token-secret","refresh_token":"refresh-token-secret","expires_in":3599}
-            """.utf8))
+            return (
+                200, [:],
+                Data(
+                    """
+                    {"access_token":"access-token-secret","refresh_token":"refresh-token-secret","expires_in":3599}
+                    """.utf8)
+            )
         }
         defer { StubURLProtocol.handler = nil }
 
-        let auth = GmailAuth(secrets: secrets, clientID: "cid", clientSecret: "csecret",
-                             session: StubURLProtocol.makeSession())
-        let result = try await auth.completeAuthorization(code: "the-code", verifier: "v",
-                                                          redirectURI: "http://localhost:1")
+        let auth = GmailAuth(
+            secrets: secrets, clientID: "cid", clientSecret: "csecret",
+            session: StubURLProtocol.makeSession())
+        let result = try await auth.completeAuthorization(
+            code: "the-code", verifier: "v",
+            redirectURI: "http://localhost:1")
 
         #expect(result.address == "a@example.test")
         // Refresh token: in the Keychain-backed secret store, under the account key.

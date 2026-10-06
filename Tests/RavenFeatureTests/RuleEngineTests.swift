@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// `RuleEngine` is the M3 rules/filters engine: an ordered `RuleSet` applied
@@ -21,18 +22,25 @@ import Foundation
     /// match production rather than relaxing the engine.
     private func makeStore() -> DocumentMailStore {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try? store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                           address: "a1@example.test", displayName: "A1",
-                                           state: .ready))
+        try? store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "a1@example.test", displayName: "A1",
+                state: .ready))
         return store
     }
 
-    private func thread(_ id: String, subject: String, from: String,
-                        labelIDs: [String] = ["INBOX"]) -> MailThread {
-        MailThread(id: id, accountID: "a1", messages: [
-            MailMessage(id: "\(id)-m1", threadID: id, from: MailAddress(email: from),
-                       subject: subject, date: Date(), labelIDs: labelIDs)
-        ])
+    private func thread(
+        _ id: String, subject: String, from: String,
+        labelIDs: [String] = ["INBOX"]
+    ) -> MailThread {
+        MailThread(
+            id: id, accountID: "a1",
+            messages: [
+                MailMessage(
+                    id: "\(id)-m1", threadID: id, from: MailAddress(email: from),
+                    subject: subject, date: Date(), labelIDs: labelIDs)
+            ])
     }
 
     // MARK: Matching
@@ -49,8 +57,9 @@ import Foundation
     @Test("a disabled rule or one with no conditions never matches")
     func disabledOrEmptyRuleNeverMatches() {
         let summary = thread("t1", subject: "Anything", from: "a@x.com").summary()
-        let disabled = MailRule(name: "r", isEnabled: false,
-                                conditions: [.init(field: .subject, contains: "any")], action: .archive)
+        let disabled = MailRule(
+            name: "r", isEnabled: false,
+            conditions: [.init(field: .subject, contains: "any")], action: .archive)
         #expect(disabled.matches(summary) == false)
         let empty = MailRule(name: "r", conditions: [], action: .archive)
         #expect(empty.matches(summary) == false)
@@ -65,20 +74,23 @@ import Foundation
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
 
         let ruleSet = RuleSet(rules: [
-            MailRule(name: "archive invoices",
-                    conditions: [.init(field: .subject, contains: "invoice")],
-                    action: .archive, stopProcessing: true),
-            MailRule(name: "also star invoices",
-                    conditions: [.init(field: .subject, contains: "invoice")],
-                    action: .star(true), stopProcessing: false),
+            MailRule(
+                name: "archive invoices",
+                conditions: [.init(field: .subject, contains: "invoice")],
+                action: .archive, stopProcessing: true),
+            MailRule(
+                name: "also star invoices",
+                conditions: [.init(field: .subject, contains: "invoice")],
+                action: .star(true), stopProcessing: false),
         ])
 
         RuleEngine.apply(ruleSet: ruleSet, threadIDs: ["t1"], store: store, outbox: outbox)
 
         let updated = try #require(store.thread("t1"))
         #expect(updated.messages[0].labelIDs.contains("INBOX") == false, "the first rule's archive must have applied")
-        #expect(updated.messages[0].isStarred == false,
-                "the second rule must never run once the first rule stopped processing")
+        #expect(
+            updated.messages[0].isStarred == false,
+            "the second rule must never run once the first rule stopped processing")
     }
 
     @Test("a non-stopping rule lets a later matching rule also run")
@@ -88,12 +100,14 @@ import Foundation
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
 
         let ruleSet = RuleSet(rules: [
-            MailRule(name: "star invoices",
-                    conditions: [.init(field: .subject, contains: "invoice")],
-                    action: .star(true), stopProcessing: false),
-            MailRule(name: "archive invoices",
-                    conditions: [.init(field: .subject, contains: "invoice")],
-                    action: .archive, stopProcessing: false),
+            MailRule(
+                name: "star invoices",
+                conditions: [.init(field: .subject, contains: "invoice")],
+                action: .star(true), stopProcessing: false),
+            MailRule(
+                name: "archive invoices",
+                conditions: [.init(field: .subject, contains: "invoice")],
+                action: .archive, stopProcessing: false),
         ])
 
         RuleEngine.apply(ruleSet: ruleSet, threadIDs: ["t1"], store: store, outbox: outbox)
@@ -113,9 +127,10 @@ import Foundation
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
 
         let ruleSet = RuleSet(rules: [
-            MailRule(name: "archive newsletters",
-                    conditions: [.init(field: .subject, contains: "newsletter")],
-                    action: .archive),
+            MailRule(
+                name: "archive newsletters",
+                conditions: [.init(field: .subject, contains: "newsletter")],
+                action: .archive)
         ])
 
         RuleEngine.apply(ruleSet: ruleSet, threadIDs: ["t1"], store: store, outbox: outbox)
@@ -152,8 +167,9 @@ import Foundation
             thread("t2", subject: "Invoice reminder", from: "billing@vendor.com").summary(),
             thread("t3", subject: "Hello", from: "friend@example.com").summary(),
         ]
-        let rule = MailRule(name: "invoices", conditions: [.init(field: .subject, contains: "invoice")],
-                            action: .archive)
+        let rule = MailRule(
+            name: "invoices", conditions: [.init(field: .subject, contains: "invoice")],
+            action: .archive)
         #expect(RuleSet.previewCount(rule, against: summaries) == 2)
     }
 
@@ -166,8 +182,10 @@ import Foundation
         // in `onNewThreads`, which is the hook `RuleEngine.apply` is driven
         // from; applying rules to this id would be retroactive.
         try store.upsertThread(thread("existing", subject: "Old mail", from: "a@x.com"))
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a1@x.com",
-                                          displayName: "A1", syncCursor: "c0"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "a1@x.com",
+                displayName: "A1", syncCursor: "c0"))
 
         let provider = FakeMailProvider(accountID: "a1")
         provider.threadsByID["new1"] = thread("new1", subject: "Just arrived", from: "b@x.com")
@@ -194,9 +212,10 @@ import Foundation
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
 
         let ruleSet = RuleSet(rules: [
-            MailRule(name: "archive invoices",
-                    conditions: [.init(field: .subject, contains: "invoice")],
-                    action: .archive),
+            MailRule(
+                name: "archive invoices",
+                conditions: [.init(field: .subject, contains: "invoice")],
+                action: .archive)
         ])
 
         // Simulates `RavenRuntime.applyRules` being called with exactly the
@@ -204,7 +223,8 @@ import Foundation
         RuleEngine.apply(ruleSet: ruleSet, threadIDs: ["new1"], store: store, outbox: outbox)
 
         #expect(try #require(store.thread("new1")).messages[0].labelIDs.contains("INBOX") == false)
-        #expect(try #require(store.thread("existing")).messages[0].labelIDs.contains("INBOX") == true,
-                "a rule application driven off new arrivals must never touch a pre-existing thread")
+        #expect(
+            try #require(store.thread("existing")).messages[0].labelIDs.contains("INBOX") == true,
+            "a rule application driven off new arrivals must never touch a pre-existing thread")
     }
 }

@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Exercises `GraphProvider` end to end against recorded fixture bytes and
@@ -13,10 +14,13 @@ import AinkradAppKit
 struct GraphProviderTests {
     private func fixture(_ name: String) throws -> Data { try graphFixture(name) }
     private func makeProvider() -> GraphProvider { makeGraphProvider() }
-    private func bounded<T: Sendable>(_ label: String,
-                                      sourceLocation: SourceLocation = #_sourceLocation,
-                                      _ body: @MainActor @escaping () async throws -> T)
-        async throws -> T {
+    private func bounded<T: Sendable>(
+        _ label: String,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        _ body: @MainActor @escaping () async throws -> T
+    )
+        async throws -> T
+    {
         try await graphBounded(label, sourceLocation: sourceLocation, body)
     }
 
@@ -33,8 +37,9 @@ struct GraphProviderTests {
         defer { StubURLProtocol.handler = nil }
 
         _ = try await bounded("fetchThreads") {
-            try await self.makeProvider().fetchThreads(since: Date(timeIntervalSince1970: 0),
-                                                       pageToken: nil)
+            try await self.makeProvider().fetchThreads(
+                since: Date(timeIntervalSince1970: 0),
+                pageToken: nil)
         }
         let headers = seen.all.map(\.authorization)
         #expect(headers == ["Bearer access-token"])
@@ -49,14 +54,16 @@ struct GraphProviderTests {
         defer { StubURLProtocol.handler = nil }
 
         let page = try await bounded("fetchThreads") {
-            try await self.makeProvider().fetchThreads(since: Date(timeIntervalSince1970: 0),
-                                                       pageToken: nil)
+            try await self.makeProvider().fetchThreads(
+                since: Date(timeIntervalSince1970: 0),
+                pageToken: nil)
         }
         #expect(page.threads.map(\.id) == ["conv-1", "conv-2"])
         #expect(page.threads.map { $0.messages.count } == [2, 1])
         // `@odata.nextLink` becomes `ThreadPage.nextPageToken` — no protocol
         // change, and the value is Graph's opaque link, replayed verbatim.
-        #expect(page.nextPageToken
+        #expect(
+            page.nextPageToken
                 == "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=PAGE-2")
     }
 
@@ -74,8 +81,9 @@ struct GraphProviderTests {
 
         let link = "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=PAGE-2"
         let page = try await bounded("fetchThreads(page 2)") {
-            try await self.makeProvider().fetchThreads(since: Date(timeIntervalSince1970: 0),
-                                                       pageToken: link)
+            try await self.makeProvider().fetchThreads(
+                since: Date(timeIntervalSince1970: 0),
+                pageToken: link)
         }
         #expect(seen.all.map(\.url) == [link])
         #expect(page.threads.isEmpty)
@@ -133,7 +141,6 @@ struct GraphProviderTests {
         }
     }
 
-
     // MARK: Rate limiting
 
     @Test("a 429 with Retry-After maps to MailError.rateLimited honouring the header")
@@ -171,9 +178,13 @@ struct GraphProviderTests {
     @Test("providerFailed carries a fixed phrase and never the response body")
     func providerFailedMessageIsShort() async throws {
         StubURLProtocol.handler = { _ in
-            (400, [:], Data("""
-            {"error":{"code":"BadRequest","message":"Invalid filter clause: a@example.test token=abc123"}}
-            """.utf8))
+            (
+                400, [:],
+                Data(
+                    """
+                    {"error":{"code":"BadRequest","message":"Invalid filter clause: a@example.test token=abc123"}}
+                    """.utf8)
+            )
         }
         defer { StubURLProtocol.handler = nil }
 

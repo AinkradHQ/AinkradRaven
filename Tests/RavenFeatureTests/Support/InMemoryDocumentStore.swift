@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Stands in for the host's `PluginDocumentStore`. Records writes so tests can
 /// assert on sharding rather than only on read-back.

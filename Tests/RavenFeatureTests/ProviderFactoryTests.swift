@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 1 of M6: the account kind is open, and `ProviderFactory` is the only
@@ -10,8 +11,9 @@ import AinkradAppKit
 @MainActor struct ProviderFactoryTests {
 
     private func account(_ id: String, kind: MailAccount.ProviderKind) -> MailAccount {
-        MailAccount(id: id, provider: kind, address: "\(id)@example.test",
-                    displayName: id, state: .ready)
+        MailAccount(
+            id: id, provider: kind, address: "\(id)@example.test",
+            displayName: id, state: .ready)
     }
 
     private func makeTempDir() throws -> URL {
@@ -37,9 +39,9 @@ import AinkradAppKit
         // Byte-for-byte the shape M0 wrote: `provider` is the bare string
         // "gmail" and there is no kind discriminator around it.
         let json = """
-        [{"id":"a1","provider":"gmail","address":"a@example.test","displayName":"A",\
-        "state":"ready","signature":""}]
-        """
+            [{"id":"a1","provider":"gmail","address":"a@example.test","displayName":"A",\
+            "state":"ready","signature":""}]
+            """
         let accounts = try JSONDecoder().decode([MailAccount].self, from: Data(json.utf8))
         #expect(accounts.count == 1)
         #expect(accounts[0].provider == .gmail)
@@ -48,8 +50,10 @@ import AinkradAppKit
 
     @Test("every kind round-trips through JSON as a bare string")
     func kindsRoundTrip() throws {
-        let kinds: [MailAccount.ProviderKind] = [.gmail, .imap, .graph, .appleMail,
-                                                .unsupported("carrierpigeon")]
+        let kinds: [MailAccount.ProviderKind] = [
+            .gmail, .imap, .graph, .appleMail,
+            .unsupported("carrierpigeon"),
+        ]
         for kind in kinds {
             let data = try JSONEncoder().encode(account("a1", kind: kind))
             let decoded = try JSONDecoder().decode(MailAccount.self, from: data)
@@ -65,13 +69,13 @@ import AinkradAppKit
     @Test("an unknown kind on one row leaves its sibling accounts loadable")
     func unknownKindDoesNotStrandSiblings() throws {
         let json = """
-        [{"id":"a1","provider":"gmail","address":"a@example.test","displayName":"A",\
-        "state":"ready","signature":""},\
-        {"id":"a2","provider":"quantumpost","address":"b@example.test","displayName":"B",\
-        "state":"ready","signature":""},\
-        {"id":"a3","provider":"gmail","address":"c@example.test","displayName":"C",\
-        "state":"ready","signature":""}]
-        """
+            [{"id":"a1","provider":"gmail","address":"a@example.test","displayName":"A",\
+            "state":"ready","signature":""},\
+            {"id":"a2","provider":"quantumpost","address":"b@example.test","displayName":"B",\
+            "state":"ready","signature":""},\
+            {"id":"a3","provider":"gmail","address":"c@example.test","displayName":"C",\
+            "state":"ready","signature":""}]
+            """
         let documents = InMemoryDocumentStore()
         documents.setData(Data(json.utf8), forKey: DocumentKeys.accounts)
         let store = DocumentMailStore(documents: documents)
@@ -119,9 +123,11 @@ import AinkradAppKit
         let host = FakeHostServices()
         let factory = ProviderFactory(host: host, securityScopedBookmarks: false)
         let dir = try makeTempDir()
-        factory.saveAppleMailDirectory(try MailDirectoryBookmark.create(for: dir,
-                                                                       securityScoped: false),
-                                       accountID: "am1")
+        factory.saveAppleMailDirectory(
+            try MailDirectoryBookmark.create(
+                for: dir,
+                securityScoped: false),
+            accountID: "am1")
         let provider = try factory.makeProvider(for: account("am1", kind: .appleMail))
         #expect(provider is AppleMailProvider)
         #expect(provider.capabilities == .readOnly)
@@ -144,8 +150,11 @@ import AinkradAppKit
         // its own test in `GraphAccountStateTests.swift` (suite "Graph not
         // configured") — named by FILE, so this reference is greppable.
         for kind in [MailAccount.ProviderKind.imap, .unsupported("quantumpost")] {
-            #expect(throws: MailError.unsupportedProvider(kind: kind.identifier,
-                                                          accountID: "a1")) {
+            #expect(
+                throws: MailError.unsupportedProvider(
+                    kind: kind.identifier,
+                    accountID: "a1")
+            ) {
                 _ = try factory.makeProvider(for: account("a1", kind: kind))
             }
         }
@@ -158,8 +167,11 @@ import AinkradAppKit
         // (suite "Graph not configured") for what it answers when no Azure
         // registration is baked in.
         for kind in [MailAccount.ProviderKind.imap, .appleMail] {
-            await #expect(throws: MailError.unsupportedProvider(kind: kind.identifier,
-                                                               accountID: "")) {
+            await #expect(
+                throws: MailError.unsupportedProvider(
+                    kind: kind.identifier,
+                    accountID: "")
+            ) {
                 _ = try await factory.authorize(kind: kind)
             }
         }
@@ -180,9 +192,11 @@ import AinkradAppKit
         runtime.teardown()
         let factory = ProviderFactory(host: host, securityScopedBookmarks: false)
         let dir = try makeTempDir()
-        factory.saveAppleMailDirectory(try MailDirectoryBookmark.create(for: dir,
-                                                                       securityScoped: false),
-                                       accountID: "am1")
+        factory.saveAppleMailDirectory(
+            try MailDirectoryBookmark.create(
+                for: dir,
+                securityScoped: false),
+            accountID: "am1")
         let stored = account("am1", kind: .appleMail)
         try runtime.store.saveAccount(stored)
         runtime.attach(provider: try factory.makeProvider(for: stored), accountID: "am1")
@@ -226,9 +240,11 @@ import AinkradAppKit
         let host = FakeHostServices()
         let factory = ProviderFactory(host: host, securityScopedBookmarks: false)
         let dir = try makeTempDir()
-        factory.saveAppleMailDirectory(try MailDirectoryBookmark.create(for: dir,
-                                                                       securityScoped: false),
-                                       accountID: "am1")
+        factory.saveAppleMailDirectory(
+            try MailDirectoryBookmark.create(
+                for: dir,
+                securityScoped: false),
+            accountID: "am1")
         _ = try factory.makeProvider(for: account("am1", kind: .appleMail))
         #expect(factory.accessedDirectories["am1"] != nil)
 
@@ -244,9 +260,11 @@ import AinkradAppKit
         let host = FakeHostServices()
         let factory = ProviderFactory(host: host, securityScopedBookmarks: false)
         let dir = try makeTempDir()
-        factory.saveAppleMailDirectory(try MailDirectoryBookmark.create(for: dir,
-                                                                       securityScoped: false),
-                                       accountID: "am1")
+        factory.saveAppleMailDirectory(
+            try MailDirectoryBookmark.create(
+                for: dir,
+                securityScoped: false),
+            accountID: "am1")
         let stored = account("am1", kind: .appleMail)
         for _ in 0..<3 { _ = try factory.makeProvider(for: stored) }
 
@@ -267,11 +285,11 @@ import AinkradAppKit
         let host = FakeHostServices()
         let store = DocumentMailStore(documents: host.documents)
         let json = """
-        [{"id":"a1","provider":"gmail","address":"a@example.test","displayName":"A",\
-        "state":"ready","signature":""},\
-        {"id":"a2","provider":"gmail","address":"b@example.test","displayName":"B",\
-        "state":"paused","signature":""}]
-        """
+            [{"id":"a1","provider":"gmail","address":"a@example.test","displayName":"A",\
+            "state":"ready","signature":""},\
+            {"id":"a2","provider":"gmail","address":"b@example.test","displayName":"B",\
+            "state":"paused","signature":""}]
+            """
         host.documents.setData(Data(json.utf8), forKey: DocumentKeys.accounts)
 
         let accounts = store.accounts()

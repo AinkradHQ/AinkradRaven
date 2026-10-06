@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("IMAP SASL encoding", .timeLimit(.minutes(1)))
@@ -14,8 +15,9 @@ struct IMAPSASLEncodingTests {
         // getting them wrong is the classic XOAUTH2 bug.
         #expect([UInt8](raw).filter { $0 == 0x01 }.count == 3)
         #expect([UInt8](raw).last == 0x01)
-        #expect(IMAPAuthenticator.base64(raw)
-            == "dXNlcj1hQGV4YW1wbGUudGVzdAFhdXRoPUJlYXJlciBhY2Nlc3MtdG9rZW4tc2VjcmV0AQE=")
+        #expect(
+            IMAPAuthenticator.base64(raw)
+                == "dXNlcj1hQGV4YW1wbGUudGVzdAFhdXRoPUJlYXJlciBhY2Nlc3MtdG9rZW4tc2VjcmV0AQE=")
     }
 
     @Test("the PLAIN initial response is NUL authcid NUL passwd with an empty authzid")
@@ -23,7 +25,8 @@ struct IMAPSASLEncodingTests {
         let raw = IMAPAuthenticator.plainInitialResponse(
             username: Fixture.address, password: Fixture.password)
         #expect([UInt8](raw).first == 0x00)
-        #expect(raw == Data([0x00]) + Data("a@example.test".utf8) + Data([0x00])
+        #expect(
+            raw == Data([0x00]) + Data("a@example.test".utf8) + Data([0x00])
                 + Data("app-password-secret".utf8))
     }
 
@@ -32,9 +35,11 @@ struct IMAPSASLEncodingTests {
         let command = IMAPAuthenticator.xoauth2Command(
             username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true)
         let plan = command.wirePlan(tag: "A001", allowNonSynchronizingLiterals: false)
-        let expected = IMAPAuthenticator.base64(IMAPAuthenticator.xoauth2InitialResponse(
-            username: Fixture.address, accessToken: Fixture.accessToken))
-        #expect(String(decoding: plan.chunks[0], as: UTF8.self)
+        let expected = IMAPAuthenticator.base64(
+            IMAPAuthenticator.xoauth2InitialResponse(
+                username: Fixture.address, accessToken: Fixture.accessToken))
+        #expect(
+            String(decoding: plan.chunks[0], as: UTF8.self)
                 == "A001 AUTHENTICATE XOAUTH2 \(expected)\r\n")
         // ONE chunk. The empty acknowledgement for the failure challenge is a
         // reactive line, not a chunk: a chunk would register the tag in the
@@ -55,9 +60,11 @@ struct IMAPSASLEncodingTests {
         // The credential is not in the command line — it is a reactive line, sent
         // only once the server has asked for it.
         #expect(String(decoding: plan.chunks[0], as: UTF8.self).contains("dXNlcj1h") == false)
-        let expected = IMAPAuthenticator.base64(IMAPAuthenticator.xoauth2InitialResponse(
-            username: Fixture.address, accessToken: Fixture.accessToken))
-        #expect(command.reactiveContinuationLines
+        let expected = IMAPAuthenticator.base64(
+            IMAPAuthenticator.xoauth2InitialResponse(
+                username: Fixture.address, accessToken: Fixture.accessToken))
+        #expect(
+            command.reactiveContinuationLines
                 == [Data("\(expected)\r\n".utf8), Data("\r\n".utf8)])
         #expect(command.isExclusive)
     }
@@ -152,18 +159,21 @@ struct IMAPAuthWireTests {
         // from the pre-TLS list could not succeed at all, and one that skipped the
         // mandatory re-read would refuse — which is what makes this fixture
         // distinguish the rule from the plausible wrong one.
-        await transport.respond(to: "CAPABILITY",
-                                with: "* CAPABILITY IMAP4rev1 AUTH=PLAIN SASL-IR\r\nA0002 OK done\r\n")
+        await transport.respond(
+            to: "CAPABILITY",
+            with: "* CAPABILITY IMAP4rev1 AUTH=PLAIN SASL-IR\r\nA0002 OK done\r\n")
         await transport.respond(to: "AUTHENTICATE PLAIN", with: "A0003 OK authenticated\r\n")
-        await transport.respond(to: "CAPABILITY",
-                                with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0004 OK done\r\n")
+        await transport.respond(
+            to: "CAPABILITY",
+            with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0004 OK done\r\n")
         let auth = IMAPAuthenticator(session: session, security: .explicit)
 
-        let after = try #require(await expectAuthSuccess {
-            try await auth.authenticate(
-                .appPassword(username: Fixture.address, password: Fixture.password),
-                greeting: greeting)
-        })
+        let after = try #require(
+            await expectAuthSuccess {
+                try await auth.authenticate(
+                    .appPassword(username: Fixture.address, password: Fixture.password),
+                    greeting: greeting)
+            })
 
         #expect(await transport.startTLSCount == 1)
         let before = await transport.bytesSentBeforeUpgrade
@@ -172,13 +182,14 @@ struct IMAPAuthWireTests {
         #expect(String(decoding: before, as: UTF8.self).contains(Fixture.password) == false)
         // And the credential really was sent — after the upgrade. Pinned as a
         // literal so this cannot pass by nothing having happened.
-        #expect(await transport.sentText == """
-        A0001 STARTTLS\r
-        A0002 CAPABILITY\r
-        A0003 AUTHENTICATE PLAIN AGFAZXhhbXBsZS50ZXN0AGFwcC1wYXNzd29yZC1zZWNyZXQ=\r
-        A0004 CAPABILITY\r
+        #expect(
+            await transport.sentText == """
+                A0001 STARTTLS\r
+                A0002 CAPABILITY\r
+                A0003 AUTHENTICATE PLAIN AGFAZXhhbXBsZS50ZXN0AGFwcC1wYXNzd29yZC1zZWNyZXQ=\r
+                A0004 CAPABILITY\r
 
-        """)
+                """)
         #expect(after.contains("IDLE"))
     }
 
@@ -194,11 +205,13 @@ struct IMAPAuthWireTests {
         // assertions below would pass because the session tore down, not because
         // the refusal held.
         await transport.respond(to: "STARTTLS", with: "A0001 OK begin TLS\r\n")
-        await transport.respond(to: "CAPABILITY",
-                                with: "* CAPABILITY IMAP4rev1 AUTH=PLAIN SASL-IR\r\nA0002 OK done\r\n")
+        await transport.respond(
+            to: "CAPABILITY",
+            with: "* CAPABILITY IMAP4rev1 AUTH=PLAIN SASL-IR\r\nA0002 OK done\r\n")
         await transport.respond(to: "AUTHENTICATE PLAIN", with: "A0003 OK authenticated\r\n")
-        await transport.respond(to: "CAPABILITY",
-                                with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0004 OK done\r\n")
+        await transport.respond(
+            to: "CAPABILITY",
+            with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0004 OK done\r\n")
         let auth = IMAPAuthenticator(session: session, security: .explicit)
 
         await expectAuthFailure(IMAPAuthError.startTLSUnadvertised) {
@@ -241,23 +254,26 @@ struct IMAPAuthWireTests {
             capabilities: "IMAP4rev1 AUTH=XOAUTH2 SASL-IR")
         defer { Task { await session.close() } }
         await transport.respond(to: "AUTHENTICATE XOAUTH2", with: "A0001 OK authenticated\r\n")
-        await transport.respond(to: "CAPABILITY",
-                                with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0002 OK done\r\n")
+        await transport.respond(
+            to: "CAPABILITY",
+            with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0002 OK done\r\n")
 
         let auth = IMAPAuthenticator(session: session, security: .implicit)
-        let after = try #require(await expectAuthSuccess {
-            try await auth.authenticate(
-                .xoauth2(username: Fixture.address, accessToken: Fixture.accessToken),
-                greeting: greeting)
-        })
+        let after = try #require(
+            await expectAuthSuccess {
+                try await auth.authenticate(
+                    .xoauth2(username: Fixture.address, accessToken: Fixture.accessToken),
+                    greeting: greeting)
+            })
 
         // Pinned literal rather than a self-referential re-derivation.
-        #expect(await transport.sentText == """
-        A0001 AUTHENTICATE XOAUTH2 \
-        dXNlcj1hQGV4YW1wbGUudGVzdAFhdXRoPUJlYXJlciBhY2Nlc3MtdG9rZW4tc2VjcmV0AQE=\r
-        A0002 CAPABILITY\r
+        #expect(
+            await transport.sentText == """
+                A0001 AUTHENTICATE XOAUTH2 \
+                dXNlcj1hQGV4YW1wbGUudGVzdAFhdXRoPUJlYXJlciBhY2Nlc3MtdG9rZW4tc2VjcmV0AQE=\r
+                A0002 CAPABILITY\r
 
-        """)
+                """)
         // The success path sent exactly two writes: the speculative SASL ack was
         // NOT written, because the server never asked for it.
         #expect(await transport.sent.count == 2)
@@ -270,17 +286,20 @@ struct IMAPAuthWireTests {
         let (session, transport, greeting) = try await makeAuthSession(capabilities: "IMAP4rev1")
         defer { Task { await session.close() } }
         await transport.respond(to: "LOGIN", with: "A0001 OK LOGIN completed\r\n")
-        await transport.respond(to: "CAPABILITY",
-                                with: "* CAPABILITY IMAP4rev1 IDLE UIDPLUS\r\nA0002 OK done\r\n")
+        await transport.respond(
+            to: "CAPABILITY",
+            with: "* CAPABILITY IMAP4rev1 IDLE UIDPLUS\r\nA0002 OK done\r\n")
 
         let auth = IMAPAuthenticator(session: session, security: .implicit)
-        let after = try #require(await expectAuthSuccess {
-            try await auth.authenticate(
-                .appPassword(username: Fixture.address, password: Fixture.password),
-                greeting: greeting)
-        })
+        let after = try #require(
+            await expectAuthSuccess {
+                try await auth.authenticate(
+                    .appPassword(username: Fixture.address, password: Fixture.password),
+                    greeting: greeting)
+            })
 
-        #expect(await transport.sentText
+        #expect(
+            await transport.sentText
                 == "A0001 LOGIN \"a@example.test\" \"app-password-secret\"\r\nA0002 CAPABILITY\r\n")
         #expect(after == ["IMAP4REV1", "IDLE", "UIDPLUS"])
     }
@@ -293,8 +312,9 @@ struct IMAPAuthWireTests {
         // The mechanism reports failure as a base64 JSON *challenge*, not as a
         // tagged completion. Until the client acknowledges it the server sends no
         // NO, so a client that just waits hangs forever.
-        await transport.respond(to: "AUTHENTICATE XOAUTH2",
-                                with: "+ eyJzdGF0dXMiOiI0MDEifQ==\r\n")
+        await transport.respond(
+            to: "AUTHENTICATE XOAUTH2",
+            with: "+ eyJzdGF0dXMiOiI0MDEifQ==\r\n")
         await transport.respond(to: "\r\n", with: "A0001 NO Invalid credentials\r\n")
 
         let auth = IMAPAuthenticator(session: session, security: .implicit)
@@ -314,22 +334,25 @@ struct IMAPAuthWireTests {
             capabilities: "IMAP4rev1 LOGINDISABLED AUTH=PLAIN SASL-IR")
         defer { Task { await session.close() } }
         await transport.respond(to: "AUTHENTICATE PLAIN", with: "A0001 OK authenticated\r\n")
-        await transport.respond(to: "CAPABILITY",
-                                with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0002 OK done\r\n")
+        await transport.respond(
+            to: "CAPABILITY",
+            with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0002 OK done\r\n")
 
         let auth = IMAPAuthenticator(session: session, security: .implicit)
-        let after = try #require(await expectAuthSuccess {
-            try await auth.authenticate(
-                .appPassword(username: Fixture.address, password: Fixture.password),
-                greeting: greeting)
-        })
+        let after = try #require(
+            await expectAuthSuccess {
+                try await auth.authenticate(
+                    .appPassword(username: Fixture.address, password: Fixture.password),
+                    greeting: greeting)
+            })
 
         // base64("\0a@example.test\0app-password-secret"), pinned as a literal.
-        #expect(await transport.sentText == """
-        A0001 AUTHENTICATE PLAIN AGFAZXhhbXBsZS50ZXN0AGFwcC1wYXNzd29yZC1zZWNyZXQ=\r
-        A0002 CAPABILITY\r
+        #expect(
+            await transport.sentText == """
+                A0001 AUTHENTICATE PLAIN AGFAZXhhbXBsZS50ZXN0AGFwcC1wYXNzd29yZC1zZWNyZXQ=\r
+                A0002 CAPABILITY\r
 
-        """)
+                """)
         #expect(after.contains("IDLE"))
     }
 
@@ -346,19 +369,21 @@ struct IMAPAuthWireTests {
         await transport.enqueue("* PREAUTH [CAPABILITY IMAP4rev1 IDLE] tunnelled\r\n")
         await transport.respond(to: "LOGIN", with: "A0001 OK LOGIN completed\r\n")
         await transport.respond(to: "AUTHENTICATE", with: "A0001 OK authenticated\r\n")
-        await transport.respond(to: "CAPABILITY",
-                                with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0002 OK done\r\n")
+        await transport.respond(
+            to: "CAPABILITY",
+            with: "* CAPABILITY IMAP4rev1 IDLE\r\nA0002 OK done\r\n")
         let session = IMAPSession(transport: transport)
         let greeting = try await session.connect()
         defer { Task { await session.close() } }
         #expect(greeting.kind == .preauth)
 
         let auth = IMAPAuthenticator(session: session, security: .implicit)
-        let after = try #require(await expectAuthSuccess {
-            try await auth.authenticate(
-                .appPassword(username: Fixture.address, password: Fixture.password),
-                greeting: greeting)
-        })
+        let after = try #require(
+            await expectAuthSuccess {
+                try await auth.authenticate(
+                    .appPassword(username: Fixture.address, password: Fixture.password),
+                    greeting: greeting)
+            })
         #expect(after.contains("IDLE"))
         #expect(await transport.sentText.contains(Fixture.password) == false)
         #expect(await transport.sent.isEmpty)

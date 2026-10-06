@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The Sending group: the undo-send hold window, and a plain statement of what
 /// scheduled sends can and cannot promise.
@@ -31,9 +31,11 @@ struct SendingSettingsGroup: View {
                 + "undo."
         ) {
             VStack(alignment: .leading, spacing: AinkradSpacing.md) {
-                AinkradFormRow(title: "Undo window",
-                              help: "Seconds. The composer shows a live countdown for this long.",
-                              controlWidth: 260) {
+                AinkradFormRow(
+                    title: "Undo window",
+                    help: "Seconds. The composer shows a live countdown for this long.",
+                    controlWidth: 260
+                ) {
                     HStack(spacing: AinkradSpacing.sm) {
                         AinkradTextField(text: $holdWindowText, placeholder: "20")
                             .frame(width: 70)
@@ -51,7 +53,8 @@ struct SendingSettingsGroup: View {
                     }
                 }
 
-                caption("Scheduled sends fire only while Raven is running. A message scheduled "
+                caption(
+                    "Scheduled sends fire only while Raven is running. A message scheduled "
                         + "for 3am while your Mac is asleep sends when the app next wakes, not "
                         + "at 3am.")
             }

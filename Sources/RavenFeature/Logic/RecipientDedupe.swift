@@ -42,14 +42,17 @@ public enum RecipientDedupe {
     /// the account's own address is the only thing in To. It is removed from To
     /// only when To has other recipients as well, where it is a reply-all
     /// artefact rather than an intention.
-    public static func apply(to: [MailAddress], cc: [MailAddress], bcc: [MailAddress],
-                             ownAddress: String?) -> Result {
+    public static func apply(
+        to: [MailAddress], cc: [MailAddress], bcc: [MailAddress],
+        ownAddress: String?
+    ) -> Result {
         let own = ownAddress?.lowercased()
         var seen = Set<String>()
         var duplicates: [MailAddress] = []
         var selfAddressed: [MailAddress] = []
 
-        let deliberateSelfSend = to.count == 1 && cc.isEmpty
+        let deliberateSelfSend =
+            to.count == 1 && cc.isEmpty
             && to.first.map { $0.email.lowercased() == own } == true
 
         func filter(_ addresses: [MailAddress], isTo: Bool) -> [MailAddress] {
@@ -72,7 +75,8 @@ public enum RecipientDedupe {
         let keptTo = filter(to, isTo: true)
         let keptCc = filter(cc, isTo: false)
         let keptBcc = filter(bcc, isTo: false)
-        return Result(to: keptTo, cc: keptCc, bcc: keptBcc,
-                      duplicates: duplicates, selfAddressed: selfAddressed)
+        return Result(
+            to: keptTo, cc: keptCc, bcc: keptBcc,
+            duplicates: duplicates, selfAddressed: selfAddressed)
     }
 }

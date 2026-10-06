@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// `VANISHED`'s `uid-set`, which arrives in two token shapes and whose failure
@@ -54,8 +55,9 @@ struct IMAPSequenceSetTests {
         // below it still parses — otherwise "bounded" would be off by one and the
         // refusal would fire on legitimate input.
         let allowed = "1:\(IMAPSequenceSet.maxRangeWidth)"
-        #expect(try IMAPSequenceSet.uids(inText: allowed).count
-            == Int(IMAPSequenceSet.maxRangeWidth))
+        #expect(
+            try IMAPSequenceSet.uids(inText: allowed).count
+                == Int(IMAPSequenceSet.maxRangeWidth))
     }
 
     @Test("an empty or non-numeric set is refused, never read as no deletions")

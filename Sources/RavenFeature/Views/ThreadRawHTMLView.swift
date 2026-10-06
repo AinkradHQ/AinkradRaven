@@ -1,9 +1,9 @@
-import SwiftUI
-import AppKit
-import WebKit
-import Quartz
 import AinkradAppKit
 import AinkradAppKitUI
+import AppKit
+import Quartz
+import SwiftUI
+import WebKit
 
 /// The raw-HTML "Show original" view.
 ///
@@ -59,8 +59,10 @@ struct RawHTMLSheet: View {
                     .foregroundStyle(theme.foreground)
                 Spacer(minLength: AinkradSpacing.sm)
                 if remoteImageCount > 0 && !imagesAllowed {
-                    AinkradButton(title: "Load images (\(remoteImageCount))", style: .secondary,
-                                  icon: "photo") {
+                    AinkradButton(
+                        title: "Load images (\(remoteImageCount))", style: .secondary,
+                        icon: "photo"
+                    ) {
                         imagesAllowed = true
                         if let sender { runtime.allowImages(for: sender) }
                     }
@@ -69,9 +71,11 @@ struct RawHTMLSheet: View {
             }
             .padding(AinkradSpacing.md)
 
-            RawHTMLWebView(html: imagesAllowed ? html : Self.blockingRemoteImages(html),
-                           allowsRemoteLoads: imagesAllowed)
-                .clipShape(ChamferShape(cut: AinkradRadius.sm))
+            RawHTMLWebView(
+                html: imagesAllowed ? html : Self.blockingRemoteImages(html),
+                allowsRemoteLoads: imagesAllowed
+            )
+            .clipShape(ChamferShape(cut: AinkradRadius.sm))
         }
         // A fixed height, not a `minHeight`: this is presented inside
         // `.ainkradModal(contentWidth:)` now, whose content is offered the
@@ -116,7 +120,8 @@ struct RawHTMLWebView: NSViewRepresentable {
     /// `frame-src`, `object-src` and `connect-src` remain `'none'` in BOTH
     /// states: opting into a sender's images is not opting into their code.
     private var policy: String {
-        let shared = "default-src 'none'; script-src 'none'; object-src 'none'; "
+        let shared =
+            "default-src 'none'; script-src 'none'; object-src 'none'; "
             + "frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"
         return allowsRemoteLoads
             ? shared + "; img-src http: https: data: cid:; "
@@ -154,7 +159,8 @@ struct RawHTMLWebView: NSViewRepresentable {
 /// closes — the "held only for the open thread, never cached to disk
 /// indefinitely" contract extends to this one on-disk exception.
 final class QuickLookAttachmentPreviewer: NSObject, QLPreviewPanelDataSource,
-    QLPreviewPanelDelegate {
+    QLPreviewPanelDelegate
+{
     private let file: AttachmentPreviewFile
     private var onClose: (() -> Void)?
 
@@ -164,13 +170,18 @@ final class QuickLookAttachmentPreviewer: NSObject, QLPreviewPanelDataSource,
 
     func show(onClose: @escaping () -> Void) {
         self.onClose = onClose
-        guard let panel = QLPreviewPanel.shared() else { onClose(); cleanUpNow(); return }
+        guard let panel = QLPreviewPanel.shared() else {
+            onClose()
+            cleanUpNow()
+            return
+        }
         panel.dataSource = self
         panel.delegate = self
         panel.reloadData()
         panel.makeKeyAndOrderFront(nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(panelWillClose),
-                                               name: NSWindow.willCloseNotification, object: panel)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(panelWillClose),
+            name: NSWindow.willCloseNotification, object: panel)
     }
 
     @objc private func panelWillClose() {

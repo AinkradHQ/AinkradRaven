@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("SMTP reply parsing", .timeLimit(.minutes(1)))
@@ -21,13 +22,16 @@ struct SMTPReplyParserTests {
     func multiline() throws {
         let reply = try SMTPReplyParser.parse(try SMTPHarness.fixtureText("smtp-ehlo-multiline"))
         #expect(reply.code == 250)
-        #expect(reply.lines == ["mail.example.test greets [127.0.0.1]",
-                                "SIZE 35882577",
-                                "8BITMIME",
-                                "STARTTLS",
-                                "AUTH LOGIN PLAIN XOAUTH2",
-                                "ENHANCEDSTATUSCODES",
-                                "SMTPUTF8"])
+        #expect(
+            reply.lines == [
+                "mail.example.test greets [127.0.0.1]",
+                "SIZE 35882577",
+                "8BITMIME",
+                "STARTTLS",
+                "AUTH LOGIN PLAIN XOAUTH2",
+                "ENHANCEDSTATUSCODES",
+                "SMTPUTF8",
+            ])
     }
 
     @Test("a final line with no separator and no text is legal")
@@ -53,8 +57,9 @@ struct SMTPReplyParserTests {
         }
     }
 
-    @Test("lines with no code, a short code or an illegal separator are refused",
-          arguments: ["ok\r\n", "25\r\n", "250x ok\r\n", "abc def\r\n", "999 ok\r\n"])
+    @Test(
+        "lines with no code, a short code or an illegal separator are refused",
+        arguments: ["ok\r\n", "25\r\n", "250x ok\r\n", "abc def\r\n", "999 ok\r\n"])
     func malformedLines(text: String) {
         #expect(throws: SMTPSessionError.self) { _ = try SMTPReplyParser.parse(text) }
     }
@@ -68,10 +73,12 @@ struct SMTPReplyParserTests {
         let permanent = try SMTPReplyParser.parse("550 5.1.1 no such user\r\n")
         #expect(permanent.isPermanent && !permanent.isTransient)
 
-        #expect(SMTPSessionError.transientFailure(code: 451, text: "t").mailError
-                    == .providerFailed(status: 451, message: "t"))
-        #expect(SMTPSessionError.permanentFailure(code: 550, text: "p").mailError
-                    == .sendRefused(status: 550, message: "p"))
+        #expect(
+            SMTPSessionError.transientFailure(code: 451, text: "t").mailError
+                == .providerFailed(status: 451, message: "t"))
+        #expect(
+            SMTPSessionError.permanentFailure(code: 550, text: "p").mailError
+                == .sendRefused(status: 550, message: "p"))
         #expect(SMTPSessionError.outcomeUnknown("u").mailError == .sendOutcomeUnknown(message: "u"))
     }
 
@@ -80,12 +87,15 @@ struct SMTPReplyParserTests {
     /// `Outbox` in `SMTPSubmitterTests`.
     @Test("only a permanent refusal skips the retry, and only an unknown outcome is held")
     func dispositions() {
-        #expect(OutboxFailure.disposition(for: MailError.sendRefused(status: 550, message: "x"))
-                    == .deadLetter)
-        #expect(OutboxFailure.disposition(for: MailError.sendOutcomeUnknown(message: "x"))
-                    == .review)
-        #expect(OutboxFailure.disposition(for: MailError.providerFailed(status: 451, message: "x"))
-                    == .retry)
+        #expect(
+            OutboxFailure.disposition(for: MailError.sendRefused(status: 550, message: "x"))
+                == .deadLetter)
+        #expect(
+            OutboxFailure.disposition(for: MailError.sendOutcomeUnknown(message: "x"))
+                == .review)
+        #expect(
+            OutboxFailure.disposition(for: MailError.providerFailed(status: 451, message: "x"))
+                == .retry)
         #expect(OutboxFailure.disposition(for: MailError.rateLimited(retryAfter: 1)) == .retry)
     }
 }
@@ -98,13 +108,16 @@ struct SMTPSessionTLSTests {
     func implicitTLS() async throws {
         let transport = await SMTPHarness.transport()
         try await SMTPHarness.scriptImplicitTLSLogin(transport)
-        let session = SMTPSession(transport: transport, security: .implicit,
-                                  clientDomain: "[127.0.0.1]")
+        let session = SMTPSession(
+            transport: transport, security: .implicit,
+            clientDomain: "[127.0.0.1]")
 
         await SMTPHarness.expectSuccess {
             try await session.connect()
-            try await session.authenticate(.appPassword(username: SMTPHarness.address,
-                                                        password: SMTPHarness.password))
+            try await session.authenticate(
+                .appPassword(
+                    username: SMTPHarness.address,
+                    password: SMTPHarness.password))
         }
 
         #expect(await session.isEncrypted)
@@ -136,15 +149,18 @@ struct SMTPSessionTLSTests {
     func explicitTLS() async throws {
         let transport = await SMTPHarness.transport()
         try await SMTPHarness.scriptSTARTTLSLogin(transport)
-        let session = SMTPSession(transport: transport, security: .explicit,
-                                  clientDomain: "[127.0.0.1]")
+        let session = SMTPSession(
+            transport: transport, security: .explicit,
+            clientDomain: "[127.0.0.1]")
 
         #expect(await session.isEncrypted == false)
         await SMTPHarness.expectSuccess {
             try await session.connect()
             try await session.upgradeToTLS()
-            try await session.authenticate(.appPassword(username: SMTPHarness.address,
-                                                        password: SMTPHarness.password))
+            try await session.authenticate(
+                .appPassword(
+                    username: SMTPHarness.address,
+                    password: SMTPHarness.password))
         }
 
         #expect(await transport.startTLSCount == 1)
@@ -157,8 +173,9 @@ struct SMTPSessionTLSTests {
         // never authenticated.
         let after = await transport.sent.dropFirst(index).map { String(decoding: $0, as: UTF8.self) }
         let payload = SASLMechanism.base64(
-            SASLMechanism.plainInitialResponse(username: SMTPHarness.address,
-                                               password: SMTPHarness.password))
+            SASLMechanism.plainInitialResponse(
+                username: SMTPHarness.address,
+                password: SMTPHarness.password))
         #expect(after == ["EHLO [127.0.0.1]\r\n", "AUTH PLAIN " + payload + "\r\n"])
         #expect(await session.isEncrypted)
     }
@@ -175,16 +192,22 @@ struct SMTPSessionTLSTests {
         await SMTPHarness.expectSuccess {
             try await session.connect()
             try await session.upgradeToTLS()
-            try await session.authenticate(.appPassword(username: SMTPHarness.address,
-                                                        password: SMTPHarness.password))
+            try await session.authenticate(
+                .appPassword(
+                    username: SMTPHarness.address,
+                    password: SMTPHarness.password))
         }
         let plaintext = String(decoding: await transport.bytesSentBeforeUpgrade, as: UTF8.self)
-        #expect(plaintext.isEmpty == false,
-                "nothing was sent before the upgrade — the assertions below would then hold for any implementation")
+        #expect(
+            plaintext.isEmpty == false,
+            "nothing was sent before the upgrade — the assertions below would then hold for any implementation")
         #expect(plaintext.contains(SMTPHarness.password) == false)
-        #expect(plaintext.contains(SASLMechanism.base64(
-            SASLMechanism.plainInitialResponse(username: SMTPHarness.address,
-                                               password: SMTPHarness.password))) == false)
+        #expect(
+            plaintext.contains(
+                SASLMechanism.base64(
+                    SASLMechanism.plainInitialResponse(
+                        username: SMTPHarness.address,
+                        password: SMTPHarness.password))) == false)
         #expect(plaintext.contains("AUTH") == false)
     }
 
@@ -202,8 +225,10 @@ struct SMTPSessionTLSTests {
         let session = SMTPSession(transport: transport, security: .explicit)
         await SMTPHarness.expectSuccess { try await session.connect() }
         await SMTPHarness.expectFailure(.notEncrypted) {
-            try await session.authenticate(.appPassword(username: SMTPHarness.address,
-                                                        password: SMTPHarness.password))
+            try await session.authenticate(
+                .appPassword(
+                    username: SMTPHarness.address,
+                    password: SMTPHarness.password))
         }
         #expect(await transport.sentText.contains("AUTH") == false)
         #expect(await transport.sentText.contains(SMTPHarness.password) == false)
@@ -278,14 +303,22 @@ struct SMTPSessionAuthTests {
         await transport.respond(to: "\r\n", with: "535 5.7.8 credentials rejected\r\n")
         let session = SMTPSession(transport: transport, security: .implicit)
         await SMTPHarness.expectSuccess { try await session.connect() }
-        await SMTPHarness.expectFailure(.authenticationRefused(code: 535,
-                                                              text: "5.7.8 credentials rejected")) {
-            try await session.authenticate(.xoauth2(username: SMTPHarness.address,
-                                                    accessToken: SMTPHarness.accessToken))
+        await SMTPHarness.expectFailure(
+            .authenticationRefused(
+                code: 535,
+                text: "5.7.8 credentials rejected")
+        ) {
+            try await session.authenticate(
+                .xoauth2(
+                    username: SMTPHarness.address,
+                    accessToken: SMTPHarness.accessToken))
         }
-        let expected = "AUTH XOAUTH2 " + SASLMechanism.base64(
-            SASLMechanism.xoauth2InitialResponse(username: SMTPHarness.address,
-                                                 accessToken: SMTPHarness.accessToken)) + "\r\n"
+        let expected =
+            "AUTH XOAUTH2 "
+            + SASLMechanism.base64(
+                SASLMechanism.xoauth2InitialResponse(
+                    username: SMTPHarness.address,
+                    accessToken: SMTPHarness.accessToken)) + "\r\n"
         let sent = await transport.sent.map { String(decoding: $0, as: UTF8.self) }
         #expect(sent == ["EHLO [127.0.0.1]\r\n", expected, "\r\n"])
     }
@@ -298,8 +331,10 @@ struct SMTPSessionAuthTests {
         let session = SMTPSession(transport: transport, security: .implicit)
         await SMTPHarness.expectSuccess { try await session.connect() }
         await SMTPHarness.expectFailure(.mechanismUnavailable("PLAIN")) {
-            try await session.authenticate(.appPassword(username: SMTPHarness.address,
-                                                        password: SMTPHarness.password))
+            try await session.authenticate(
+                .appPassword(
+                    username: SMTPHarness.address,
+                    password: SMTPHarness.password))
         }
         #expect(await transport.sentText.contains("AUTH") == false)
     }
@@ -310,8 +345,9 @@ struct SMTPSessionAuthTests {
     @Test("AUTH LOGIN is used only when PLAIN is absent, and sends both challenges")
     func authLogin() async throws {
         let transport = await SMTPHarness.transport()
-        await transport.respond(to: "EHLO",
-                                with: "250-mail.example.test greets\r\n250 AUTH LOGIN\r\n")
+        await transport.respond(
+            to: "EHLO",
+            with: "250-mail.example.test greets\r\n250 AUTH LOGIN\r\n")
         await transport.respond(to: "AUTH LOGIN", with: "334 VXNlcm5hbWU6\r\n")
         let user = SASLMechanism.base64(Data(SMTPHarness.address.utf8))
         await transport.respond(to: user, with: "334 UGFzc3dvcmQ6\r\n")
@@ -320,12 +356,17 @@ struct SMTPSessionAuthTests {
         let session = SMTPSession(transport: transport, security: .implicit)
         await SMTPHarness.expectSuccess {
             try await session.connect()
-            try await session.authenticate(.appPassword(username: SMTPHarness.address,
-                                                        password: SMTPHarness.password))
+            try await session.authenticate(
+                .appPassword(
+                    username: SMTPHarness.address,
+                    password: SMTPHarness.password))
         }
         let sent = await transport.sent.map { String(decoding: $0, as: UTF8.self) }
-        #expect(sent == ["EHLO [127.0.0.1]\r\n", "AUTH LOGIN\r\n",
-                         user + "\r\n", secret + "\r\n"])
+        #expect(
+            sent == [
+                "EHLO [127.0.0.1]\r\n", "AUTH LOGIN\r\n",
+                user + "\r\n", secret + "\r\n",
+            ])
     }
 
     /// Nothing this session keeps in memory for a test (or a log) to find carries
@@ -337,8 +378,10 @@ struct SMTPSessionAuthTests {
         let session = SMTPSession(transport: transport, security: .implicit)
         await SMTPHarness.expectSuccess {
             try await session.connect()
-            try await session.authenticate(.appPassword(username: SMTPHarness.address,
-                                                        password: SMTPHarness.password))
+            try await session.authenticate(
+                .appPassword(
+                    username: SMTPHarness.address,
+                    password: SMTPHarness.password))
         }
         let verbs = await session.issuedVerbs
         #expect(verbs == ["EHLO [127.0.0.1]", "AUTH PLAIN"])
@@ -352,13 +395,15 @@ struct SMTPSessionAuthTests {
     @Test("the SMTP path has no document store and no logger to leak through")
     func smtpCannotReachDocumentsOrLogs() throws {
         let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()      // RavenFeatureTests
-            .deletingLastPathComponent()      // Tests
-            .deletingLastPathComponent()      // repo root
-        let files = ["Sources/RavenFeature/Provider/SMTP/SMTPSession.swift",
-                     "Sources/RavenFeature/Provider/SMTP/SMTPSubmitter.swift",
-                     "Sources/RavenFeature/Provider/SMTP/SMTPReply.swift",
-                     "Sources/RavenFeature/Provider/SASLMechanism.swift"]
+            .deletingLastPathComponent()  // RavenFeatureTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // repo root
+        let files = [
+            "Sources/RavenFeature/Provider/SMTP/SMTPSession.swift",
+            "Sources/RavenFeature/Provider/SMTP/SMTPSubmitter.swift",
+            "Sources/RavenFeature/Provider/SMTP/SMTPReply.swift",
+            "Sources/RavenFeature/Provider/SASLMechanism.swift",
+        ]
         for path in files {
             let source = try String(contentsOf: root.appending(path: path), encoding: .utf8)
             let code = source.split(separator: "\n", omittingEmptySubsequences: false)
@@ -375,14 +420,16 @@ struct SMTPSessionAuthTests {
         }
     }
 
-    @Test("fixtures are redacted",
-          arguments: ["smtp-ehlo-multiline", "smtp-ehlo-plaintext", "smtp-ehlo-secured"])
+    @Test(
+        "fixtures are redacted",
+        arguments: ["smtp-ehlo-multiline", "smtp-ehlo-plaintext", "smtp-ehlo-secured"])
     func fixturesAreRedacted(name: String) throws {
         let text = try SMTPHarness.fixtureText(name)
         for field in text.split(whereSeparator: { " <>\"()".contains($0) })
-            where field.contains("@") {
-            #expect(field.hasSuffix("example.test>") || field.hasSuffix("example.test"),
-                    "non-redacted address \(field) in \(name)")
+        where field.contains("@") {
+            #expect(
+                field.hasSuffix("example.test>") || field.hasSuffix("example.test"),
+                "non-redacted address \(field) in \(name)")
         }
         #expect(text.hasSuffix("\r\n"), "\(name) must be CRLF-terminated")
     }

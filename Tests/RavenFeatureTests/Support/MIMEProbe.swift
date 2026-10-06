@@ -40,8 +40,10 @@ enum MIMEProbe {
         let lines = raw.components(separatedBy: "\r\n")
         var index = 0
         while index < lines.count {
-            guard lines[index].hasPrefix("Content-Type: text/plain")
-                    || lines[index].hasPrefix("Content-Type: text/html") else {
+            guard
+                lines[index].hasPrefix("Content-Type: text/plain")
+                    || lines[index].hasPrefix("Content-Type: text/html")
+            else {
                 index += 1
                 continue
             }

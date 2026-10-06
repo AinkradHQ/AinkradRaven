@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("AppleMailImporter")
@@ -9,8 +10,9 @@ import Foundation
         let messageBytes = Data(rfc822.utf8)
         var data = Data("\(messageBytes.count)\n".utf8)
         data.append(messageBytes)
-        data.append(try PropertyListSerialization.data(
-            fromPropertyList: ["flags": ["read": isRead]], format: .xml, options: 0))
+        data.append(
+            try PropertyListSerialization.data(
+                fromPropertyList: ["flags": ["read": isRead]], format: .xml, options: 0))
         try data.write(to: path)
     }
 

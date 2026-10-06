@@ -190,9 +190,10 @@ struct RFC822Builder {
             ]
             for attachment in message.attachments {
                 parts.append("--\(outerBoundary)")
-                parts.append(MIMEHeader.literalLine(
-                    "Content-Type",
-                    "\(attachment.mimeType); name=\"\(sanitizedASCIIName(attachment.filename))\""))
+                parts.append(
+                    MIMEHeader.literalLine(
+                        "Content-Type",
+                        "\(attachment.mimeType); name=\"\(sanitizedASCIIName(attachment.filename))\""))
                 parts.append(MIMEHeader.contentDispositionAttachment(filename: attachment.filename))
                 parts.append(MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"))
                 parts.append("")
@@ -200,8 +201,9 @@ struct RFC822Builder {
             }
             if let icsReply = message.icsReply {
                 parts.append("--\(outerBoundary)")
-                parts.append(MIMEHeader.literalLine(
-                    "Content-Type", "text/calendar; method=REPLY; charset=UTF-8"))
+                parts.append(
+                    MIMEHeader.literalLine(
+                        "Content-Type", "text/calendar; method=REPLY; charset=UTF-8"))
                 parts.append(MIMEHeader.literalLine("Content-Transfer-Encoding", "base64"))
                 parts.append("")
                 parts.append(MIMEHeader.base64Body(icsReply.icsText))
@@ -218,9 +220,10 @@ struct RFC822Builder {
         // configured) means sending proceeds exactly as before, unsigned,
         // with no error raised.
         if let accountID = message.accountID, let identity = identityLookup(accountID),
-           let signed = signedEnvelope(
-               contentTypeLine: contentTypeLine, body: body,
-               avoiding: [plainText, html, icsText], identity: identity) {
+            let signed = signedEnvelope(
+                contentTypeLine: contentTypeLine, body: body,
+                avoiding: [plainText, html, icsText], identity: identity)
+        {
             lines.append(signed.contentTypeLine)
             return lines.joined(separator: "\r\n") + "\r\n\r\n" + signed.body
         }
@@ -282,7 +285,8 @@ struct RFC822Builder {
     /// this one only needs a safe placeholder when the real name cannot fit.
     private static func sanitizedASCIIName(_ filename: String) -> String {
         guard filename.utf8.allSatisfy({ $0 <= 0x7F }) else { return "attachment" }
-        return filename
+        return
+            filename
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
     }

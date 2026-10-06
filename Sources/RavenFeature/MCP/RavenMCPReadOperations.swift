@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Every **read** tool body: `list_accounts`, `list_labels`, `search_mail`,
 /// `unread_summary`, `bundle_by_sender`, `read_thread`.
@@ -26,8 +26,10 @@ enum RavenMCPReadOperations {
     private static func recentMonths() -> [String] { UnifiedInbox.recentMonths() }
 
     @MainActor
-    static func run(_ operation: String, args: [String: Any], store: MailStore,
-                    providers: MailProviderRouter?) async -> AgentActionResult? {
+    static func run(
+        _ operation: String, args: [String: Any], store: MailStore,
+        providers: MailProviderRouter?
+    ) async -> AgentActionResult? {
         let ok = RavenMCPOperations.ok
         let fail = RavenMCPOperations.fail
 
@@ -51,10 +53,12 @@ enum RavenMCPReadOperations {
             return await searchMail(args: args, store: store, providers: providers)
 
         case "unread_summary":
-            let unread = UnifiedInbox.inbox(store: store,
-                                            accountIDs: RavenMCPOperations.scope(args),
-                                            months: recentMonths())
-                .filter { $0.unreadCount > 0 }
+            let unread = UnifiedInbox.inbox(
+                store: store,
+                accountIDs: RavenMCPOperations.scope(args),
+                months: recentMonths()
+            )
+            .filter { $0.unreadCount > 0 }
             if unread.isEmpty {
                 return ok("No unread threads in the synced window (last 90 days).")
             }
@@ -73,15 +77,16 @@ enum RavenMCPReadOperations {
             let breakdown = SenderBundles.bundle(unread, limit: unread.count)
                 .map { "\($0.sender.label): \($0.threadCount)" }
                 .joined(separator: "\n")
-            return ok("""
-            \(unread.count) unread threads.
+            return ok(
+                """
+                \(unread.count) unread threads.
 
-            By sender:
-            \(breakdown)
+                By sender:
+                \(breakdown)
 
-            Threads:
-            \(unread.map(describe).joined(separator: "\n"))
-            """)
+                Threads:
+                \(unread.map(describe).joined(separator: "\n"))
+                """)
 
         case "bundle_by_sender":
             // Store only. This file cannot reach an outbox at all, and this
@@ -95,14 +100,17 @@ enum RavenMCPReadOperations {
             // The same filtered, merged, windowed read `unread_summary` and
             // `search_mail` use — a bundle count that disagreed with the inbox
             // Sage was just shown would be worse than no bundling at all.
-            let rows = UnifiedInbox.inbox(store: store,
-                                          accountIDs: RavenMCPOperations.scope(args),
-                                          months: recentMonths())
+            let rows = UnifiedInbox.inbox(
+                store: store,
+                accountIDs: RavenMCPOperations.scope(args),
+                months: recentMonths())
             if rows.isEmpty {
                 return ok("No threads in the synced window (last 90 days) to bundle.")
             }
-            return ok(SenderBundles.render(SenderBundles.bundle(rows, limit: limit),
-                                           totalThreads: rows.count))
+            return ok(
+                SenderBundles.render(
+                    SenderBundles.bundle(rows, limit: limit),
+                    totalThreads: rows.count))
 
         case "read_thread":
             guard let id = args["thread_id"] as? String else { return fail("thread_id required.") }
@@ -111,16 +119,17 @@ enum RavenMCPReadOperations {
                 let body = store.body(messageID: message.id)?.plainText ?? "(body not synced)"
                 let visible = QuoteTrimmer.split(body).visible
                 return """
-                From: \(message.from?.displayLabel ?? "unknown")
-                Date: \(message.date.formatted(.iso8601))
-                \(visible)
-                """
+                    From: \(message.from?.displayLabel ?? "unknown")
+                    Date: \(message.date.formatted(.iso8601))
+                    \(visible)
+                    """
             }
             // States the account: a reply has to go out from the mailbox that
             // received the thread, and the agent cannot know which that is
             // from the thread id alone.
-            return ok("Subject: \(thread.subject)\nAccount: \(thread.accountID)\n\n"
-                      + rendered.joined(separator: "\n---\n"))
+            return ok(
+                "Subject: \(thread.subject)\nAccount: \(thread.accountID)\n\n"
+                    + rendered.joined(separator: "\n---\n"))
 
         default:
             return nil
@@ -128,8 +137,10 @@ enum RavenMCPReadOperations {
     }
 
     @MainActor
-    private static func searchMail(args: [String: Any], store: MailStore,
-                                   providers: MailProviderRouter?) async -> AgentActionResult {
+    private static func searchMail(
+        args: [String: Any], store: MailStore,
+        providers: MailProviderRouter?
+    ) async -> AgentActionResult {
         let ok = RavenMCPOperations.ok
         let fail = RavenMCPOperations.fail
         let accountIDs = RavenMCPOperations.scope(args)
@@ -196,14 +207,18 @@ enum RavenMCPReadOperations {
         // show up as an inbox search hit. This is the DEFAULT path —
         // synced-window only, exactly as the tool description promises —
         // and never touches `provider`.
-        let hits = ThreadSearch.match(UnifiedInbox.inbox(store: store, accountIDs: accountIDs,
-                                                        months: recentMonths()),
-                                      query: query).prefix(limit)
+        let hits = ThreadSearch.match(
+            UnifiedInbox.inbox(
+                store: store, accountIDs: accountIDs,
+                months: recentMonths()),
+            query: query
+        ).prefix(limit)
         if hits.isEmpty {
-            return ok("No matching threads in the synced window (last 90 days). " +
-                      "This does not mean no such mail exists — only that it hasn't " +
-                      "synced this far back, or at all. Call again with " +
-                      "\"include_archive\": true to search the full mailbox.")
+            return ok(
+                "No matching threads in the synced window (last 90 days). "
+                    + "This does not mean no such mail exists — only that it hasn't "
+                    + "synced this far back, or at all. Call again with "
+                    + "\"include_archive\": true to search the full mailbox.")
         }
         return ok(hits.map(describe).joined(separator: "\n"))
     }

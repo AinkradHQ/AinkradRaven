@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Stands in for the host's Keychain-backed `PluginSecretStore`.
 final class InMemorySecretStore: PluginSecretStore {

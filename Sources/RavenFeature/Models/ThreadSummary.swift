@@ -14,13 +14,21 @@ public struct ThreadSummary: Codable, Equatable, Sendable {
     public var labelIDs: [String]
     public var snippet: String
 
-    public init(id: String, accountID: String, subject: String,
-                participants: [MailAddress], lastMessageDate: Date,
-                messageCount: Int, unreadCount: Int, isStarred: Bool,
-                labelIDs: [String], snippet: String) {
-        self.id = id; self.accountID = accountID; self.subject = subject
-        self.participants = participants; self.lastMessageDate = lastMessageDate
-        self.messageCount = messageCount; self.unreadCount = unreadCount
-        self.isStarred = isStarred; self.labelIDs = labelIDs; self.snippet = snippet
+    public init(
+        id: String, accountID: String, subject: String,
+        participants: [MailAddress], lastMessageDate: Date,
+        messageCount: Int, unreadCount: Int, isStarred: Bool,
+        labelIDs: [String], snippet: String
+    ) {
+        self.id = id
+        self.accountID = accountID
+        self.subject = subject
+        self.participants = participants
+        self.lastMessageDate = lastMessageDate
+        self.messageCount = messageCount
+        self.unreadCount = unreadCount
+        self.isStarred = isStarred
+        self.labelIDs = labelIDs
+        self.snippet = snippet
     }
 }

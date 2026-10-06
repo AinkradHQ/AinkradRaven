@@ -1,12 +1,14 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Gmail mapping")
 struct GmailMappingTests {
     private func fixture(_ name: String) throws -> Data {
-        let url = try #require(Bundle(for: FixtureBundleMarker.self)
-            .url(forResource: name, withExtension: "json"))
+        let url = try #require(
+            Bundle(for: FixtureBundleMarker.self)
+                .url(forResource: name, withExtension: "json"))
         return try Data(contentsOf: url)
     }
 
@@ -38,8 +40,9 @@ struct GmailMappingTests {
         // Deliberately hand the mapper the messages in the OPPOSITE order
         // from the fixture (i.e. oldest-first on the wire this time) to prove
         // the sort is real and not an accident of the fixture's own order.
-        let reversedDTO = GmailThreadDTO(id: wire.id, historyId: wire.historyId,
-                                        messages: Array((wire.messages ?? []).reversed()))
+        let reversedDTO = GmailThreadDTO(
+            id: wire.id, historyId: wire.historyId,
+            messages: Array((wire.messages ?? []).reversed()))
         let reorderedThread = GmailMapping.thread(reversedDTO, accountID: "a1")
         #expect(reorderedThread.messages.map(\.id) == ["19fc00000000m001", "19fc00000000m002"])
     }
@@ -47,11 +50,15 @@ struct GmailMappingTests {
     @Test("UNREAD in labelIds becomes isRead == false")
     func mapsUnread() {
         let message = GmailMapping.message(
-            GmailMessageDTO(id: "m1", threadId: "t1", labelIds: ["INBOX", "UNREAD"],
-                            snippet: "hi", internalDate: "1772000000000",
-                            payload: .init(headers: [.init(name: "From", value: "b@x.com"),
-                                                     .init(name: "Subject", value: "S")],
-                                           mimeType: "text/plain", body: nil, parts: nil)))
+            GmailMessageDTO(
+                id: "m1", threadId: "t1", labelIds: ["INBOX", "UNREAD"],
+                snippet: "hi", internalDate: "1772000000000",
+                payload: .init(
+                    headers: [
+                        .init(name: "From", value: "b@x.com"),
+                        .init(name: "Subject", value: "S"),
+                    ],
+                    mimeType: "text/plain", body: nil, parts: nil)))
         #expect(message.isRead == false)
         #expect(message.labelIDs.contains("INBOX"))
     }
@@ -59,16 +66,18 @@ struct GmailMappingTests {
     @Test("internalDate milliseconds become a Date, not a 1970 timestamp")
     func mapsDate() {
         let message = GmailMapping.message(
-            GmailMessageDTO(id: "m1", threadId: "t1", labelIds: [], snippet: "",
-                            internalDate: "1772000000000",
-                            payload: .init(headers: [], mimeType: "text/plain",
-                                           body: nil, parts: nil)))
+            GmailMessageDTO(
+                id: "m1", threadId: "t1", labelIds: [], snippet: "",
+                internalDate: "1772000000000",
+                payload: .init(
+                    headers: [], mimeType: "text/plain",
+                    body: nil, parts: nil)))
         #expect(message.date == Date(timeIntervalSince1970: 1_772_000_000))
     }
 
     @Test("a base64url body decodes, including - and _ substitutions")
     func decodesBody() {
-        let encoded = "SGVsbG8sIHdvcmxkPw"   // "Hello, world?"
+        let encoded = "SGVsbG8sIHdvcmxkPw"  // "Hello, world?"
         #expect(GmailMapping.decodeBase64URL(encoded) == "Hello, world?")
     }
 
@@ -88,10 +97,12 @@ struct GmailMappingTests {
             payload: .init(
                 headers: [], mimeType: "multipart/mixed", body: nil,
                 parts: [
-                    .init(headers: [], mimeType: "text/plain",
-                          body: .init(data: GmailMapping.base64URL("hi"), size: 2), parts: nil),
-                    .init(headers: [], mimeType: "application/pdf", filename: "report.pdf",
-                          body: .init(data: nil, size: 12345, attachmentId: "att-1"), parts: nil),
+                    .init(
+                        headers: [], mimeType: "text/plain",
+                        body: .init(data: GmailMapping.base64URL("hi"), size: 2), parts: nil),
+                    .init(
+                        headers: [], mimeType: "application/pdf", filename: "report.pdf",
+                        body: .init(data: nil, size: 12345, attachmentId: "att-1"), parts: nil),
                 ]))
         let message = GmailMapping.message(dto)
         #expect(message.hasAttachments)
@@ -107,10 +118,12 @@ struct GmailMappingTests {
         let htmlOnly = GmailMessageDTO(
             id: "m1", threadId: "t1", labelIds: [], snippet: "",
             internalDate: "1772000000000",
-            payload: .init(headers: [], mimeType: "text/html",
-                           body: .init(data: GmailMapping.base64URL("<p>Hi <b>there</b></p>"),
-                                       size: nil),
-                           parts: nil))
+            payload: .init(
+                headers: [], mimeType: "text/html",
+                body: .init(
+                    data: GmailMapping.base64URL("<p>Hi <b>there</b></p>"),
+                    size: nil),
+                parts: nil))
         let body = GmailMapping.body(htmlOnly)
         #expect(body.html == "<p>Hi <b>there</b></p>")
         #expect(body.plainText.contains("Hi there"))

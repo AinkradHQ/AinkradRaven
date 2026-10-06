@@ -92,10 +92,12 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
     /// thread" still gets it.
     let storedLocators: @Sendable (String) async -> [IMAPMessageLocator]
 
-    init(accountID: String, pageSize: Int = 50,
-         submit: (@Sendable (OutgoingMessage) async throws -> String)? = nil,
-         storedLocators: @escaping @Sendable (String) async -> [IMAPMessageLocator] = { _ in [] },
-         acquire: @escaping @Sendable () async throws -> IMAPSessionLease) {
+    init(
+        accountID: String, pageSize: Int = 50,
+        submit: (@Sendable (OutgoingMessage) async throws -> String)? = nil,
+        storedLocators: @escaping @Sendable (String) async -> [IMAPMessageLocator] = { _ in [] },
+        acquire: @escaping @Sendable () async throws -> IMAPSessionLease
+    ) {
         self.accountID = accountID
         self.pageSize = pageSize
         self.submit = submit
@@ -135,9 +137,10 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
             // across a re-provisioning.
             throw IMAPDeltaError.missingUIDValidity(mailbox)
         }
-        return Selection(uidValidity: uidValidity,
-                         uidNext: code("UIDNEXT").flatMap { UInt32(exactly: $0) },
-                         highestModSeq: code("HIGHESTMODSEQ"))
+        return Selection(
+            uidValidity: uidValidity,
+            uidNext: code("UIDNEXT").flatMap { UInt32(exactly: $0) },
+            highestModSeq: code("HIGHESTMODSEQ"))
     }
 
     /// The mailboxes a walk covers, in a deterministic order with `INBOX` first.
@@ -170,17 +173,20 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
     static func walkable(_ directory: IMAPMailboxDirectory) -> [IMAPMailbox] {
         directory.mailboxes.filter { $0.isSelectable && !$0.isEverythingView }
             .sorted { left, right in
-            let leftInbox = left.flag == .inbox, rightInbox = right.flag == .inbox
-            if leftInbox != rightInbox { return leftInbox }
-            return left.name < right.name
-        }
+                let leftInbox = left.flag == .inbox
+                let rightInbox = right.flag == .inbox
+                if leftInbox != rightInbox { return leftInbox }
+                return left.name < right.name
+            }
     }
 
     // MARK: - Fetching
 
     /// `UID SEARCH …` → the UIDs it named, descending (newest first).
-    func searchUIDs(_ arguments: [IMAPCommand.Argument],
-                    on session: IMAPSession) async throws -> [UInt32] {
+    func searchUIDs(
+        _ arguments: [IMAPCommand.Argument],
+        on session: IMAPSession
+    ) async throws -> [UInt32] {
         let response = try await session.execute(
             IMAPCommand("UID SEARCH", arguments, isExclusive: true))
         var uids: [UInt32] = []
@@ -201,21 +207,26 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
     /// Item list shared with `IMAPDeltaStrategy.fullItems` on purpose: an arrival
     /// found by a delta and the same message found by a backfill must be described
     /// by identical bytes, or the two paths thread it differently.
-    func fetchMessages(uids: [UInt32], mailbox: String, uidValidity: UInt32,
-                       on session: IMAPSession) async throws
-        -> [IMAPThreadAssembler.Input] {
+    func fetchMessages(
+        uids: [UInt32], mailbox: String, uidValidity: UInt32,
+        on session: IMAPSession
+    ) async throws
+        -> [IMAPThreadAssembler.Input]
+    {
         guard !uids.isEmpty else { return [] }
         let set = uids.map(String.init).joined(separator: ",")
-        let response = try await session.execute(IMAPCommand(
-            "UID FETCH", [.atom(set), IMAPDeltaStrategy.fullItems], isExclusive: true))
+        let response = try await session.execute(
+            IMAPCommand(
+                "UID FETCH", [.atom(set), IMAPDeltaStrategy.fullItems], isExclusive: true))
         return try IMAPDeltaStrategy.fetches(in: response.untagged)
             .compactMap { fetched -> IMAPThreadAssembler.Input? in
-            guard let uid = IMAPDeltaStrategy.uid(of: fetched) else { return nil }
-            return IMAPThreadAssembler.Input(
-                locator: IMAPMessageLocator(mailbox: mailbox, uidValidity: uidValidity,
-                                            uid: uid),
-                fetched: fetched)
-        }
+                guard let uid = IMAPDeltaStrategy.uid(of: fetched) else { return nil }
+                return IMAPThreadAssembler.Input(
+                    locator: IMAPMessageLocator(
+                        mailbox: mailbox, uidValidity: uidValidity,
+                        uid: uid),
+                    fetched: fetched)
+            }
     }
 
     /// Assembles, records and returns. The three always happen together: a thread
@@ -231,7 +242,8 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
     /// the store. `IMAPThreadAssembler.commit(_:to:)` is what turns the second half
     /// into a `MailStore.mergeThreads` call.
     func assembleForStore(_ inputs: [IMAPThreadAssembler.Input]) async
-        -> [IMAPThreadAssembler.Assembled] {
+        -> [IMAPThreadAssembler.Assembled]
+    {
         let assembled = assembler.assemble(inputs)
         await index.record(assembled, inputs: inputs)
         return assembled
@@ -249,37 +261,38 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
     /// an offset into a `UID SEARCH` result would shift under every arrival and
     /// silently skip a thread.
     func fetchThreads(since: Date, pageToken: String?) async throws -> ThreadPage {
-      try await withSession { working in
-        let boxes = Self.walkable(working.directory)
-        var (start, ceiling) = Self.decodePageToken(pageToken)
-        while start < boxes.count {
-            let mailbox = boxes[start]
-            let selection = try await select(mailbox.name, on: working.session)
-            var uids = try await searchUIDs(
-                [.atom("SINCE"), .atom(Self.imapDate(since))], on: working.session)
-            if let ceiling { uids = uids.filter { $0 <= ceiling } }
-            guard !uids.isEmpty else {
-                start += 1
-                ceiling = nil
-                continue
+        try await withSession { working in
+            let boxes = Self.walkable(working.directory)
+            var (start, ceiling) = Self.decodePageToken(pageToken)
+            while start < boxes.count {
+                let mailbox = boxes[start]
+                let selection = try await select(mailbox.name, on: working.session)
+                var uids = try await searchUIDs(
+                    [.atom("SINCE"), .atom(Self.imapDate(since))], on: working.session)
+                if let ceiling { uids = uids.filter { $0 <= ceiling } }
+                guard !uids.isEmpty else {
+                    start += 1
+                    ceiling = nil
+                    continue
+                }
+                let page = Array(uids.prefix(pageSize))
+                let inputs = try await fetchMessages(
+                    uids: page, mailbox: mailbox.name,
+                    uidValidity: selection.uidValidity,
+                    on: working.session)
+                let threads = await commit(inputs)
+                let next: String?
+                if uids.count > page.count, let last = page.last, last > 1 {
+                    next = "\(start):\(last - 1)"
+                } else if start + 1 < boxes.count {
+                    next = "\(start + 1):"
+                } else {
+                    next = nil
+                }
+                return ThreadPage(threads: threads, nextPageToken: next)
             }
-            let page = Array(uids.prefix(pageSize))
-            let inputs = try await fetchMessages(uids: page, mailbox: mailbox.name,
-                                                 uidValidity: selection.uidValidity,
-                                                 on: working.session)
-            let threads = await commit(inputs)
-            let next: String?
-            if uids.count > page.count, let last = page.last, last > 1 {
-                next = "\(start):\(last - 1)"
-            } else if start + 1 < boxes.count {
-                next = "\(start + 1):"
-            } else {
-                next = nil
-            }
-            return ThreadPage(threads: threads, nextPageToken: next)
+            return ThreadPage(threads: [], nextPageToken: nil)
         }
-        return ThreadPage(threads: [], nextPageToken: nil)
-      }
     }
 
     static func decodePageToken(_ token: String?) -> (start: Int, ceiling: UInt32?) {
@@ -310,126 +323,133 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
         if locators.isEmpty { locators = await storedLocators(id) }
         guard !locators.isEmpty else { throw MailError.unknownThread(id) }
         return try await withSession { working in
-        var inputs: [IMAPThreadAssembler.Input] = []
-        for (mailbox, group) in Dictionary(grouping: locators, by: \.mailbox)
-            .sorted(by: { $0.key < $1.key }) {
-            let selection = try await select(mailbox, on: working.session)
-            // A generation change voids every UID below it, so a stale locator is
-            // refused rather than fetched. Refetching from scratch costs a
-            // backfill; fetching UID 12 of a re-provisioned mailbox returns
-            // somebody else's message.
-            guard group.allSatisfy({ $0.uidValidity == selection.uidValidity }) else {
-                await index.forget(mailbox: mailbox)
+            var inputs: [IMAPThreadAssembler.Input] = []
+            for (mailbox, group) in Dictionary(grouping: locators, by: \.mailbox)
+                .sorted(by: { $0.key < $1.key })
+            {
+                let selection = try await select(mailbox, on: working.session)
+                // A generation change voids every UID below it, so a stale locator is
+                // refused rather than fetched. Refetching from scratch costs a
+                // backfill; fetching UID 12 of a re-provisioned mailbox returns
+                // somebody else's message.
+                guard group.allSatisfy({ $0.uidValidity == selection.uidValidity }) else {
+                    await index.forget(mailbox: mailbox)
+                    throw MailError.unknownThread(id)
+                }
+                inputs += try await fetchMessages(
+                    uids: group.map(\.uid), mailbox: mailbox,
+                    uidValidity: selection.uidValidity,
+                    on: working.session)
+            }
+            let threads = await commit(inputs)
+            guard let thread = threads.first(where: { $0.id == id }) else {
                 throw MailError.unknownThread(id)
             }
-            inputs += try await fetchMessages(uids: group.map(\.uid), mailbox: mailbox,
-                                              uidValidity: selection.uidValidity,
-                                              on: working.session)
-        }
-        let threads = await commit(inputs)
-        guard let thread = threads.first(where: { $0.id == id }) else {
-            throw MailError.unknownThread(id)
-        }
-        return thread
+            return thread
         }
     }
 
     func fetchDelta(cursor: String) async throws -> MailDelta {
-      try await withSession { working in
-        var position = IMAPSyncCursor(encoded: cursor)
-        var changed: Set<String> = []
-        var removed: Set<String> = []
-        let collector = IMAPArrivalCollector()
+        try await withSession { working in
+            var position = IMAPSyncCursor(encoded: cursor)
+            var changed: Set<String> = []
+            var removed: Set<String> = []
+            let collector = IMAPArrivalCollector()
 
-        for mailbox in Self.walkable(working.directory) {
-            let identity = await index.identity(for: mailbox.name)
-            let strategy = IMAPDeltaStrategy(
-                session: working.session,
-                identity: collector.wrapping(identity))
-            let delta = try await strategy.delta(cursor: &position)
-            changed.formUnion(delta.changedThreadIDs)
-            removed.formUnion(delta.removedThreadIDs)
-        }
-
-        // Arrivals are filed AFTER the walk, and in two different ways, because
-        // "which thread is this?" has two different answers:
-        //
-        // - The walk already resolved it (the message cites a thread we hold). The
-        //   arrival is ATTACHED to that thread, not re-threaded: re-threading a lone
-        //   arrival would put it in a thread of its own, and the index would then
-        //   disagree with the id the delta just reported — `fetchThread` on the
-        //   reported id would come back without the new message.
-        // - The walk had no answer (a brand-new thread). Those are assembled as a
-        //   batch, and the changed ids are then remapped, because two messages of
-        //   one new thread arriving in the same pass each get a *provisional* id
-        //   from the walk. Without the remap the delta would name an id
-        //   `fetchThread` can never resolve and the sync engine would retry it
-        //   forever.
-        var remapped = changed
-        for (mailbox, arrivals) in collector.drain() {
-            guard let uidValidity = position.mailboxes[mailbox]?.uidValidity else { continue }
-            var unthreaded: [IMAPThreadAssembler.Input] = []
-            for arrival in arrivals {
-                let locator = IMAPMessageLocator(mailbox: mailbox, uidValidity: uidValidity,
-                                                 uid: arrival.uid)
-                if let known = arrival.knownThreadID {
-                    await index.attach(locator, fetched: arrival.fetched, to: known)
-                } else {
-                    unthreaded.append(IMAPThreadAssembler.Input(locator: locator,
-                                                               fetched: arrival.fetched))
-                }
+            for mailbox in Self.walkable(working.directory) {
+                let identity = await index.identity(for: mailbox.name)
+                let strategy = IMAPDeltaStrategy(
+                    session: working.session,
+                    identity: collector.wrapping(identity))
+                let delta = try await strategy.delta(cursor: &position)
+                changed.formUnion(delta.changedThreadIDs)
+                removed.formUnion(delta.removedThreadIDs)
             }
-            guard !unthreaded.isEmpty else { continue }
-            let assembled = await assembleForStore(unthreaded)
-            var finalByProvisional: [String: String] = [:]
-            for entry in assembled {
-                for message in entry.thread.messages {
-                    guard let locator = IMAPMessageLocator(encoded: message.id),
-                          let arrival = unthreaded.first(where: { $0.locator == locator })
-                    else { continue }
-                    let provisional = IMAPThreadAssembler.threadID(
-                        root: IMAPThreadAssembler.messageKey(arrival.fetched))
-                    finalByProvisional[provisional] = entry.thread.id
-                }
-            }
-            remapped = Set(remapped.map { finalByProvisional[$0] ?? $0 })
-        }
 
-        // Removal wins over change for one id — `changed.subtracting(removed)`, the
-        // rule Task 12 states — so the index is made to agree with what was
-        // reported. The cost is stated rather than hidden: a thread that lost one
-        // message and gained another IN THE SAME PASS is reported removed, and the
-        // arrival is not re-delivered until the next full walk. That is inherent to
-        // resolving the collision in the delta rather than in the store, and
-        // `IMAPProviderTests` pins the behaviour so a future change to it is
-        // deliberate.
-        await index.forget(threadIDs: Array(removed))
-        // The subtraction here is a SECOND, cross-mailbox guard, not a copy of the
-        // strategy's. `IMAPDeltaStrategy` already subtracts within one mailbox
-        // (`IMAPProviderTests.strategySubtractsRemovedFromChanged` falsifies that
-        // one directly); this one covers a thread whose message in INBOX was expunged
-        // while its message in another folder changed, which only appears once the
-        // per-mailbox results are unioned and which the strategy therefore cannot see.
-        // `IMAPProviderTests.removalWinsAcrossMailboxes` falsifies it, with the same
-        // `Message-ID` filed at INBOX UID 10 and `Folder B` UID 30 — one thread, two
-        // folders. Removing this line fails that test and nothing else.
-        return MailDelta(changedThreadIDs: remapped.subtracting(removed).sorted(),
-                         removedThreadIDs: removed.sorted(),
-                         newCursor: position.encoded())
-      }
+            // Arrivals are filed AFTER the walk, and in two different ways, because
+            // "which thread is this?" has two different answers:
+            //
+            // - The walk already resolved it (the message cites a thread we hold). The
+            //   arrival is ATTACHED to that thread, not re-threaded: re-threading a lone
+            //   arrival would put it in a thread of its own, and the index would then
+            //   disagree with the id the delta just reported — `fetchThread` on the
+            //   reported id would come back without the new message.
+            // - The walk had no answer (a brand-new thread). Those are assembled as a
+            //   batch, and the changed ids are then remapped, because two messages of
+            //   one new thread arriving in the same pass each get a *provisional* id
+            //   from the walk. Without the remap the delta would name an id
+            //   `fetchThread` can never resolve and the sync engine would retry it
+            //   forever.
+            var remapped = changed
+            for (mailbox, arrivals) in collector.drain() {
+                guard let uidValidity = position.mailboxes[mailbox]?.uidValidity else { continue }
+                var unthreaded: [IMAPThreadAssembler.Input] = []
+                for arrival in arrivals {
+                    let locator = IMAPMessageLocator(
+                        mailbox: mailbox, uidValidity: uidValidity,
+                        uid: arrival.uid)
+                    if let known = arrival.knownThreadID {
+                        await index.attach(locator, fetched: arrival.fetched, to: known)
+                    } else {
+                        unthreaded.append(
+                            IMAPThreadAssembler.Input(
+                                locator: locator,
+                                fetched: arrival.fetched))
+                    }
+                }
+                guard !unthreaded.isEmpty else { continue }
+                let assembled = await assembleForStore(unthreaded)
+                var finalByProvisional: [String: String] = [:]
+                for entry in assembled {
+                    for message in entry.thread.messages {
+                        guard let locator = IMAPMessageLocator(encoded: message.id),
+                            let arrival = unthreaded.first(where: { $0.locator == locator })
+                        else { continue }
+                        let provisional = IMAPThreadAssembler.threadID(
+                            root: IMAPThreadAssembler.messageKey(arrival.fetched))
+                        finalByProvisional[provisional] = entry.thread.id
+                    }
+                }
+                remapped = Set(remapped.map { finalByProvisional[$0] ?? $0 })
+            }
+
+            // Removal wins over change for one id — `changed.subtracting(removed)`, the
+            // rule Task 12 states — so the index is made to agree with what was
+            // reported. The cost is stated rather than hidden: a thread that lost one
+            // message and gained another IN THE SAME PASS is reported removed, and the
+            // arrival is not re-delivered until the next full walk. That is inherent to
+            // resolving the collision in the delta rather than in the store, and
+            // `IMAPProviderTests` pins the behaviour so a future change to it is
+            // deliberate.
+            await index.forget(threadIDs: Array(removed))
+            // The subtraction here is a SECOND, cross-mailbox guard, not a copy of the
+            // strategy's. `IMAPDeltaStrategy` already subtracts within one mailbox
+            // (`IMAPProviderTests.strategySubtractsRemovedFromChanged` falsifies that
+            // one directly); this one covers a thread whose message in INBOX was expunged
+            // while its message in another folder changed, which only appears once the
+            // per-mailbox results are unioned and which the strategy therefore cannot see.
+            // `IMAPProviderTests.removalWinsAcrossMailboxes` falsifies it, with the same
+            // `Message-ID` filed at INBOX UID 10 and `Folder B` UID 30 — one thread, two
+            // folders. Removing this line fails that test and nothing else.
+            return MailDelta(
+                changedThreadIDs: remapped.subtracting(removed).sorted(),
+                removedThreadIDs: removed.sorted(),
+                newCursor: position.encoded())
+        }
     }
 
     func currentCursor() async throws -> String {
-      try await withSession { working in
-        var position = IMAPSyncCursor()
-        for mailbox in Self.walkable(working.directory) {
-            let selection = try await select(mailbox.name, on: working.session)
-            position.advance(mailbox: mailbox.name, uidValidity: selection.uidValidity,
-                             uidNext: selection.uidNext ?? 1,
-                             highestModSeq: selection.highestModSeq)
+        try await withSession { working in
+            var position = IMAPSyncCursor()
+            for mailbox in Self.walkable(working.directory) {
+                let selection = try await select(mailbox.name, on: working.session)
+                position.advance(
+                    mailbox: mailbox.name, uidValidity: selection.uidValidity,
+                    uidNext: selection.uidNext ?? 1,
+                    highestModSeq: selection.highestModSeq)
+            }
+            return position.encoded()
         }
-        return position.encoded()
-      }
     }
 
     /// The account's mailboxes as labels. `id` is the mailbox name because that is
@@ -437,13 +457,14 @@ final class IMAPProvider: MailProvider, @unchecked Sendable {
     /// `.system` only for a mailbox with a canonical meaning, so a user's own
     /// folder is never presented as one of the server's.
     func fetchLabels() async throws -> [MailLabel] {
-      try await withSession { working in
-        working.directory.mailboxes.map { mailbox in
-            let isSystem: Bool
-            if case .user = mailbox.flag { isSystem = false } else { isSystem = true }
-            return MailLabel(id: mailbox.name, name: mailbox.name,
-                             kind: isSystem ? .system : .user)
+        try await withSession { working in
+            working.directory.mailboxes.map { mailbox in
+                let isSystem: Bool
+                if case .user = mailbox.flag { isSystem = false } else { isSystem = true }
+                return MailLabel(
+                    id: mailbox.name, name: mailbox.name,
+                    kind: isSystem ? .system : .user)
+            }
         }
-      }
     }
 }

@@ -37,13 +37,16 @@ final class StubURLProtocol: URLProtocol {
             return
         }
         guard let handler = StubURLProtocol.handler else {
-            client?.urlProtocol(self, didFailWithError:
-                NSError(domain: "StubURLProtocol", code: -1))
+            client?.urlProtocol(
+                self,
+                didFailWithError:
+                    NSError(domain: "StubURLProtocol", code: -1))
             return
         }
         let (status, headers, data) = handler(request)
-        let response = HTTPURLResponse(url: request.url!, statusCode: status,
-                                       httpVersion: "HTTP/1.1", headerFields: headers)!
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: status,
+            httpVersion: "HTTP/1.1", headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)

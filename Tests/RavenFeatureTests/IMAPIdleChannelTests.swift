@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The two exceptions `IDLE` needs from the command channel, and the guard that
@@ -125,8 +126,10 @@ import Foundation
             try await session.execute(IMAPCommand("NOOP"))
         }
         await #expect(throws: IMAPSessionError.channelReserved(exclusiveTag: nil)) {
-            try await session.execute(IMAPCommand("SELECT", [.text("INBOX")],
-                                                 isExclusive: true))
+            try await session.execute(
+                IMAPCommand(
+                    "SELECT", [.text("INBOX")],
+                    isExclusive: true))
         }
         // Neither refusal reached the wire.
         #expect(await transport.sent.count == 1)
@@ -152,8 +155,9 @@ import Foundation
         let clock = IMAPIdleHarness.FakeClock()
         let server = IMAPIdleHarness.Server(scripts: [
             IMAPIdleHarness.Script(),
-            IMAPIdleHarness.Script(selectFixture: nil, doneCycles: 0,
-                                   extra: [.init("NOOP", "%TAG% OK noop\r\n")]),
+            IMAPIdleHarness.Script(
+                selectFixture: nil, doneCycles: 0,
+                extra: [.init("NOOP", "%TAG% OK noop\r\n")]),
         ])
         let provider = IMAPIdleHarness.provider(server)
         let watcher = IMAPIdleWatcher(provider: provider, clock: clock, onNotification: {})

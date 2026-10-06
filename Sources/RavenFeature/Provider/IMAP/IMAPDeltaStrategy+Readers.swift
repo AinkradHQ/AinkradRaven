@@ -39,8 +39,10 @@ extension IMAPDeltaStrategy {
         fetched.uid.flatMap { UInt32(exactly: $0) }
     }
 
-    func insertThread(for fetched: IMAPFetchResponse, uid: UInt32,
-                              into changed: inout Set<String>) {
+    func insertThread(
+        for fetched: IMAPFetchResponse, uid: UInt32,
+        into changed: inout Set<String>
+    ) {
         // The fetched envelope first, the stored UID second. That order matters
         // for an arrival, which has no stored UID at all; reversing it would make
         // every arrival contribute nothing and the delta silently empty.
@@ -54,8 +56,10 @@ extension IMAPDeltaStrategy {
     /// Both produce removals and neither is preferred: `VANISHED` is QRESYNC's
     /// batched form and `EXPUNGE` is what every other server sends, so a client
     /// that read only one would lose deletions against half the world.
-    func collectRemovals(from lines: [IMAPUntaggedResponse],
-                                 into removed: inout Set<String>) throws {
+    func collectRemovals(
+        from lines: [IMAPUntaggedResponse],
+        into removed: inout Set<String>
+    ) throws {
         for line in lines {
             if line.tokens.first?.stringValue?.uppercased() == "VANISHED" {
                 // Drop the optional `(EARLIER)` modifier list before the set is
@@ -67,10 +71,11 @@ extension IMAPDeltaStrategy {
                 continue
             }
             guard case .number(let sequence)? = line.tokens.first,
-                  line.tokens.dropFirst().first?.stringValue?.uppercased() == "EXPUNGE"
+                line.tokens.dropFirst().first?.stringValue?.uppercased() == "EXPUNGE"
             else { continue }
             guard let uid = identity.uidForSequenceNumber(sequence),
-                  let thread = identity.threadID(uid) else { continue }
+                let thread = identity.threadID(uid)
+            else { continue }
             removed.insert(thread)
         }
     }

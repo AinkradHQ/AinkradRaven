@@ -42,8 +42,10 @@ public struct OAuthConfiguration: Sendable {
     public let clientSecret: String?
     public let scopes: [String]
 
-    public init(authorizationEndpoint: URL, tokenEndpoint: URL, clientID: String,
-                clientSecret: String?, scopes: [String]) {
+    public init(
+        authorizationEndpoint: URL, tokenEndpoint: URL, clientID: String,
+        clientSecret: String?, scopes: [String]
+    ) {
         self.authorizationEndpoint = authorizationEndpoint
         self.tokenEndpoint = tokenEndpoint
         self.clientID = clientID
@@ -98,10 +100,13 @@ public struct OAuthTokenClient: Sendable {
     ///   offline-access and consent-prompt pair one provider needs to actually
     ///   issue a refresh token). Applied last, so a provider can also override
     ///   a default.
-    public func authorizationURL(redirectURI: String, verifier: String, state: String,
-                                 additionalParameters: [String: String] = [:]) -> URL {
-        var components = URLComponents(url: configuration.authorizationEndpoint,
-                                       resolvingAgainstBaseURL: false)!
+    public func authorizationURL(
+        redirectURI: String, verifier: String, state: String,
+        additionalParameters: [String: String] = [:]
+    ) -> URL {
+        var components = URLComponents(
+            url: configuration.authorizationEndpoint,
+            resolvingAgainstBaseURL: false)!
         var items: [URLQueryItem] = [
             .init(name: "client_id", value: configuration.clientID),
             .init(name: "redirect_uri", value: redirectURI),
@@ -123,8 +128,10 @@ public struct OAuthTokenClient: Sendable {
 
     /// The authorization-code exchange. Sends the client secret when the
     /// configuration has one — see `OAuthConfiguration.clientSecret`.
-    public func authorizationCode(_ code: String, verifier: String,
-                                  redirectURI: String) async throws -> TokenPayload {
+    public func authorizationCode(
+        _ code: String, verifier: String,
+        redirectURI: String
+    ) async throws -> TokenPayload {
         var parameters = [
             "client_id": configuration.clientID,
             "code": code,
@@ -160,12 +167,14 @@ public struct OAuthTokenClient: Sendable {
     /// back. This has not bitten in practice only because every parameter value
     /// used so far happened to be URL-safe.
     static func formURLEncode(_ parameters: [String: String]) -> Data {
-        let unreserved = CharacterSet(charactersIn:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        let unreserved = CharacterSet(
+            charactersIn:
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
         func encode(_ value: String) -> String {
             value.addingPercentEncoding(withAllowedCharacters: unreserved) ?? value
         }
-        let body = parameters
+        let body =
+            parameters
             .map { "\(encode($0.key))=\(encode($0.value))" }
             .joined(separator: "&")
         return Data(body.utf8)
@@ -183,8 +192,9 @@ public struct OAuthTokenClient: Sendable {
             // The response body is the provider's error document; the request
             // body (which carries the client secret) is deliberately NOT part
             // of this error.
-            throw MailError.providerFailed(status: status,
-                                           message: String(decoding: data, as: UTF8.self))
+            throw MailError.providerFailed(
+                status: status,
+                message: String(decoding: data, as: UTF8.self))
         }
         struct Wire: Decodable {
             let access_token: String
@@ -194,8 +204,9 @@ public struct OAuthTokenClient: Sendable {
         guard let wire = try? JSONDecoder().decode(Wire.self, from: data) else {
             throw MailError.decodingFailed("token response")
         }
-        return TokenPayload(accessToken: wire.access_token,
-                            refreshToken: wire.refresh_token,
-                            expiresIn: wire.expires_in)
+        return TokenPayload(
+            accessToken: wire.access_token,
+            refreshToken: wire.refresh_token,
+            expiresIn: wire.expires_in)
     }
 }

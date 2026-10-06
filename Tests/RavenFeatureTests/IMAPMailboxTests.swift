@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("IMAP LIST parsing and mailbox↔flag mapping")
@@ -8,13 +9,15 @@ struct IMAPMailboxTests {
     /// The recorded `LIST` capture, lexed through the same path `IMAPSession`
     /// uses. Fixtures are CRLF-exact and the tree is `-text` in `.gitattributes`.
     private func directory(_ fixture: String = "imap-list-mailboxes") throws -> IMAPMailboxDirectory {
-        IMAPMailboxDirectory(untagged: try IMAPFetchWire.untaggedResponses(
-            try IMAPFetchWire.fixture(fixture)))
+        IMAPMailboxDirectory(
+            untagged: try IMAPFetchWire.untaggedResponses(
+                try IMAPFetchWire.fixture(fixture)))
     }
 
     private func mailbox(_ name: String) throws -> IMAPMailbox {
-        try #require(try directory().mailboxes.first { $0.name == name },
-                     "no mailbox named \(name) in the capture")
+        try #require(
+            try directory().mailboxes.first { $0.name == name },
+            "no mailbox named \(name) in the capture")
     }
 
     private func parsedLine(_ wire: String) throws -> IMAPMailbox {
@@ -30,10 +33,11 @@ struct IMAPMailboxTests {
         // Whole-collection compare, in wire order: the `* OK` line is skipped and
         // no mailbox is dropped. Order also pins that the literal-named mailbox
         // did not swallow the line after it.
-        #expect(try directory().mailboxes.map(\.name) == [
-            "INBOX", "Folder A", "Folder A/Trash", "Trash", "Sent Items", "Folder B",
-            "Folder C", "NIL", "Folder A (x)", "Drafts", "Folder E",
-        ])
+        #expect(
+            try directory().mailboxes.map(\.name) == [
+                "INBOX", "Folder A", "Folder A/Trash", "Trash", "Sent Items", "Folder B",
+                "Folder C", "NIL", "Folder A (x)", "Drafts", "Folder E",
+            ])
     }
 
     @Test("one refused LIST line costs that line only, and is counted")
@@ -55,14 +59,19 @@ struct IMAPMailboxTests {
     func lsubAndXListAreListings() throws {
         // `LSUB` appears in the INBOX-namespace capture, so the subscribed-list
         // path is exercised by a recorded response, not only inline.
-        #expect(try directory("imap-list-inbox-namespace").mailboxes.map(\.name)
+        #expect(
+            try directory("imap-list-inbox-namespace").mailboxes.map(\.name)
                 .contains("INBOX.Junk"))
-        #expect(try parsedLine("* LSUB (\\HasNoChildren) \"/\" \"Folder B\"\r\n").name
+        #expect(
+            try parsedLine("* LSUB (\\HasNoChildren) \"/\" \"Folder B\"\r\n").name
                 == "Folder B")
-        #expect(try parsedLine("* XLIST (\\HasNoChildren \\Trash) \"/\" \"Folder B\"\r\n").flag
+        #expect(
+            try parsedLine("* XLIST (\\HasNoChildren \\Trash) \"/\" \"Folder B\"\r\n").flag
                 == .trash)
-        for wire in ["* LSUB (\\HasNoChildren) \"/\" \"Folder B\"\r\n",
-                     "* XLIST (\\HasNoChildren) \"/\" \"Folder B\"\r\n"] {
+        for wire in [
+            "* LSUB (\\HasNoChildren) \"/\" \"Folder B\"\r\n",
+            "* XLIST (\\HasNoChildren) \"/\" \"Folder B\"\r\n",
+        ] {
             let response = try #require(try IMAPFetchWire.untaggedResponses(Data(wire.utf8)).first)
             #expect(IMAPMailboxList.isMailboxListing(response))
         }
@@ -106,7 +115,8 @@ struct IMAPMailboxTests {
         #expect(try mailbox("Folder A").flag == .trash)
         #expect(try mailbox("Folder A (x)").flag == .archive)
         #expect(try mailbox("Folder E").flag == .spam)
-        #expect(try parsedLine("* LIST (\\HasNoChildren \\Drafts) \"/\" \"Folder F\"\r\n").flag
+        #expect(
+            try parsedLine("* LIST (\\HasNoChildren \\Drafts) \"/\" \"Folder F\"\r\n").flag
                 == .draft)
         #expect(try parsedLine("* LIST (\\Inbox) \"/\" \"Folder G\"\r\n").flag == .inbox)
         // Gmail spells "All Mail" `\All`, and "everything, filed out of the
@@ -202,7 +212,8 @@ struct IMAPMailboxTests {
         // two-level `INBOX`→`Sent`→`Items`, not the Sent folder. Dropping the
         // check makes it `.sent` — plausible, and it files sent mail into a
         // stranger's subfolder.
-        #expect(try parsedLine("* LIST () \" \" \"INBOX Sent Items\"\r\n").flag
+        #expect(
+            try parsedLine("* LIST () \" \" \"INBOX Sent Items\"\r\n").flag
                 == .user("INBOX Sent Items"))
         // One component deep under the same delimiter still resolves.
         #expect(try parsedLine("* LIST () \" \" \"INBOX Trash\"\r\n").flag == .trash)
@@ -211,10 +222,12 @@ struct IMAPMailboxTests {
         // other capture is not INBOX-rooted and is unaffected.
         #expect(try self.directory().flag(for: "Folder A/Trash") == .user("Folder A/Trash"))
         // …nor does an unrelated prefix that merely starts with the letters.
-        #expect(try parsedLine("* LIST () \".\" \"INBOXES.Trash\"\r\n").flag
+        #expect(
+            try parsedLine("* LIST () \".\" \"INBOXES.Trash\"\r\n").flag
                 == .user("INBOXES.Trash"))
         // …nor does it fire when the server has no hierarchy at all.
-        #expect(try parsedLine("* LIST () NIL \"INBOX.Trash\"\r\n").flag
+        #expect(
+            try parsedLine("* LIST () NIL \"INBOX.Trash\"\r\n").flag
                 == .user("INBOX.Trash"))
     }
 
@@ -273,14 +286,18 @@ struct IMAPMailboxTests {
 
     @Test("a LIST line with no mailbox name is refused")
     func missingNameRefused() throws {
-        let truncated = try #require(try IMAPFetchWire.untaggedResponses(
-            Data("* LIST (\\HasNoChildren) \"/\"\r\n".utf8)).first)
+        let truncated = try #require(
+            try IMAPFetchWire.untaggedResponses(
+                Data("* LIST (\\HasNoChildren) \"/\"\r\n".utf8)
+            ).first)
         #expect(throws: IMAPFetchParseError.truncated) {
             try IMAPMailboxList.parse(truncated)
         }
 
-        let empty = try #require(try IMAPFetchWire.untaggedResponses(
-            Data("* LIST (\\HasNoChildren) \"/\" \"\"\r\n".utf8)).first)
+        let empty = try #require(
+            try IMAPFetchWire.untaggedResponses(
+                Data("* LIST (\\HasNoChildren) \"/\" \"\"\r\n".utf8)
+            ).first)
         #expect(throws: IMAPFetchParseError.unexpectedToken("LIST mailbox name is missing")) {
             try IMAPMailboxList.parse(empty)
         }

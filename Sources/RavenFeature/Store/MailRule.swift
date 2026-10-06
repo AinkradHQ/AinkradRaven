@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// One user-authored filter rule: an ordered list of conditions (ALL must
 /// match — AND, not OR, mirroring `ThreadSearch`'s existing convention) and
@@ -59,10 +59,16 @@ public struct MailRule: Codable, Equatable, Identifiable, Sendable {
     /// processing more rules" flag.
     public var stopProcessing: Bool
 
-    public init(id: UUID = UUID(), name: String, isEnabled: Bool = true,
-               conditions: [Condition] = [], action: ThreadAction, stopProcessing: Bool = false) {
-        self.id = id; self.name = name; self.isEnabled = isEnabled
-        self.conditions = conditions; self.action = action; self.stopProcessing = stopProcessing
+    public init(
+        id: UUID = UUID(), name: String, isEnabled: Bool = true,
+        conditions: [Condition] = [], action: ThreadAction, stopProcessing: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.isEnabled = isEnabled
+        self.conditions = conditions
+        self.action = action
+        self.stopProcessing = stopProcessing
     }
 
     /// A disabled rule, or one with no conditions at all, never matches — an
@@ -84,7 +90,7 @@ public struct RuleSet: Codable, Equatable, Sendable {
 
     public static func load(documents: PluginDocumentStore) -> RuleSet {
         guard let data = documents.data(forKey: DocumentKeys.rules),
-              let decoded = try? JSONDecoder().decode(RuleSet.self, from: data)
+            let decoded = try? JSONDecoder().decode(RuleSet.self, from: data)
         else { return RuleSet() }
         return decoded
     }
