@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// M4: outbound attachments. `GmailProvider.rfc822` must wrap the existing
@@ -17,8 +18,9 @@ struct AttachmentMIMETests {
 
     @Test("no attachments and no ICS reply: still plain multipart/alternative at the top level")
     func unchangedWhenNoAttachments() {
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
-                                      subject: "hi", bodyText: "body")
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.com")],
+            subject: "hi", bodyText: "body")
         let raw = decodedRaw(message)
         #expect(raw.contains("Content-Type: multipart/alternative;"))
         #expect(raw.contains("multipart/mixed") == false)
@@ -27,11 +29,13 @@ struct AttachmentMIMETests {
     @Test("an Arabic attachment filename survives as a decodable RFC 2231 parameter")
     func arabicFilenameSurvivesRFC2231() {
         let filename = "دعوة.pdf"
-        let attachment = OutgoingAttachment(filename: filename, mimeType: "application/pdf",
-                                            data: Data("pdf-bytes".utf8))
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
-                                      subject: "invite", bodyText: "see attached",
-                                      attachments: [attachment])
+        let attachment = OutgoingAttachment(
+            filename: filename, mimeType: "application/pdf",
+            data: Data("pdf-bytes".utf8))
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.com")],
+            subject: "invite", bodyText: "see attached",
+            attachments: [attachment])
         let raw = decodedRaw(message)
 
         // Extended RFC 2231 form is used (filename is non-ASCII).
@@ -53,30 +57,36 @@ struct AttachmentMIMETests {
 
     @Test("an ASCII attachment filename is still quoted normally")
     func asciiFilenameQuoted() {
-        let attachment = OutgoingAttachment(filename: "report.pdf", mimeType: "application/pdf",
-                                            data: Data("bytes".utf8))
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
-                                      subject: "s", bodyText: "b", attachments: [attachment])
+        let attachment = OutgoingAttachment(
+            filename: "report.pdf", mimeType: "application/pdf",
+            data: Data("bytes".utf8))
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.com")],
+            subject: "s", bodyText: "b", attachments: [attachment])
         let raw = decodedRaw(message)
         #expect(raw.contains("Content-Disposition: attachment; filename=\"report.pdf\""))
     }
 
     @Test("nested multipart/mixed and multipart/alternative boundaries are distinct and absent from every part")
     func nestedBoundariesAreDistinctAndAbsent() {
-        let attachment = OutgoingAttachment(filename: "a.txt", mimeType: "text/plain",
-                                            data: Data("hello attachment".utf8))
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
-                                      subject: "s", bodyText: "the body text",
-                                      attachments: [attachment])
+        let attachment = OutgoingAttachment(
+            filename: "a.txt", mimeType: "text/plain",
+            data: Data("hello attachment".utf8))
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.com")],
+            subject: "s", bodyText: "the body text",
+            attachments: [attachment])
         let raw = decodedRaw(message)
 
         let outerCT = firstLine(in: raw, containing: "Content-Type: multipart/mixed")
         guard let outerBoundary = boundary(fromHeaderLine: outerCT) else {
-            Issue.record("no outer boundary"); return
+            Issue.record("no outer boundary")
+            return
         }
         let innerCT = firstLine(in: raw, containing: "Content-Type: multipart/alternative")
         guard let innerBoundary = boundary(fromHeaderLine: innerCT) else {
-            Issue.record("no inner boundary"); return
+            Issue.record("no inner boundary")
+            return
         }
         #expect(outerBoundary != innerBoundary)
 
@@ -96,8 +106,9 @@ struct AttachmentMIMETests {
             OutgoingAttachment(filename: "one.txt", mimeType: "text/plain", data: Data("1".utf8)),
             OutgoingAttachment(filename: "two.txt", mimeType: "text/plain", data: Data("2".utf8)),
         ]
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
-                                      subject: "s", bodyText: "b", attachments: attachments)
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.com")],
+            subject: "s", bodyText: "b", attachments: attachments)
         let raw = decodedRaw(message)
         #expect(raw.contains("Content-Type: multipart/mixed;"))
         #expect(raw.contains("Content-Type: multipart/alternative;"))
@@ -107,20 +118,24 @@ struct AttachmentMIMETests {
 
     @Test("attachment base64 lines wrap at 76 characters")
     func base64WrapsAt76() {
-        let bigData = Data(repeating: 0x41, count: 300) // forces multiple lines
-        let attachment = OutgoingAttachment(filename: "big.bin", mimeType: "application/octet-stream",
-                                            data: bigData)
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.com")],
-                                      subject: "s", bodyText: "b", attachments: [attachment])
+        let bigData = Data(repeating: 0x41, count: 300)  // forces multiple lines
+        let attachment = OutgoingAttachment(
+            filename: "big.bin", mimeType: "application/octet-stream",
+            data: bigData)
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.com")],
+            subject: "s", bodyText: "b", attachments: [attachment])
         let raw = decodedRaw(message)
 
         guard let filenameRange = raw.range(of: "big.bin") else {
-            Issue.record("attachment part not found"); return
+            Issue.record("attachment part not found")
+            return
         }
         let afterFilename = raw[filenameRange.upperBound...]
         guard let encodingRange = afterFilename.range(of: "Content-Transfer-Encoding: base64\r\n\r\n")
         else {
-            Issue.record("could not locate attachment body"); return
+            Issue.record("could not locate attachment body")
+            return
         }
         let bodyStart = encodingRange.upperBound
         let rest = afterFilename[bodyStart...]
@@ -152,7 +167,8 @@ struct AttachmentMIMETests {
         var iterator = value.makeIterator()
         while let char = iterator.next() {
             if char == "%", let h1 = iterator.next(), let h2 = iterator.next(),
-               let byte = UInt8(String([h1, h2]), radix: 16) {
+                let byte = UInt8(String([h1, h2]), radix: 16)
+            {
                 bytes.append(byte)
             } else {
                 bytes.append(contentsOf: Array(String(char).utf8))

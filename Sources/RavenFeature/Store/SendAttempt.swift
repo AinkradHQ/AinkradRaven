@@ -104,11 +104,13 @@ public enum SendAttempt {
     ///   send) the entry must also wait for. `nil` (the default) means "no
     ///   scheduling — only the hold window, if any, applies".
     @discardableResult
-    public static func send(_ message: OutgoingMessage, draftID: String?,
-                            outbox: Outbox, store: MailStore,
-                            holdUntil: Date? = nil,
-                            sendAt: Date? = nil,
-                            drain: () async -> Void) async throws -> Result {
+    public static func send(
+        _ message: OutgoingMessage, draftID: String?,
+        outbox: Outbox, store: MailStore,
+        holdUntil: Date? = nil,
+        sendAt: Date? = nil,
+        drain: () async -> Void
+    ) async throws -> Result {
         // Refuse an oversized attachment set BEFORE it is ever queued — see
         // `AttachmentSizeGuard`. Nothing is enqueued, so nothing is later
         // dead-lettered on a send that was doomed from the start.
@@ -116,8 +118,9 @@ public enum SendAttempt {
             throw MailError.attachmentsTooLarge(message: refusal)
         }
         let message = withSignature(message, outbox: outbox, store: store)
-        let entryID = try outbox.enqueue(.send(message), accountID: nil,
-                                         holdUntil: holdUntil, sendAt: sendAt, draftID: draftID)
+        let entryID = try outbox.enqueue(
+            .send(message), accountID: nil,
+            holdUntil: holdUntil, sendAt: sendAt, draftID: draftID)
         await drain()
         let outcome = outbox.outcome(for: entryID)
         if outcome.isSent, let draftID {
@@ -141,14 +144,17 @@ public enum SendAttempt {
     /// `message` unchanged if the account is unknown or its signature is
     /// empty. Never mutates `message.subject`, addressing, or threading —
     /// only the body.
-    private static func withSignature(_ message: OutgoingMessage, outbox: Outbox,
-                                      store: MailStore) -> OutgoingMessage {
+    private static func withSignature(
+        _ message: OutgoingMessage, outbox: Outbox,
+        store: MailStore
+    ) -> OutgoingMessage {
         // The message's OWN account first: with several accounts connected,
         // `outbox.accountID` is only a default stamp, so trusting it would
         // sign mail from account A with account B's signature.
         guard let accountID = message.accountID ?? outbox.accountID,
-              let account = store.accounts().first(where: { $0.id == accountID }),
-              !account.signature.isEmpty else { return message }
+            let account = store.accounts().first(where: { $0.id == accountID }),
+            !account.signature.isEmpty
+        else { return message }
         // Every field is carried through explicitly, and that is the point of
         // the long call: this rebuild used to omit `attachments` and
         // `icsReply`, so signing a message SILENTLY DROPPED its attachments and
@@ -165,17 +171,18 @@ public enum SendAttempt {
         // the existing runs keep their offsets because the text is extended at
         // the end, and the appended region is plain, which is correct.
         let signed = message.bodyText + sigdash + account.signature
-        return OutgoingMessage(to: message.to, cc: message.cc, bcc: message.bcc,
-                               subject: message.subject,
-                               bodyText: signed,
-                               inReplyToMessageID: message.inReplyToMessageID,
-                               threadID: message.threadID,
-                               accountID: message.accountID,
-                               attachments: message.attachments,
-                               icsReply: message.icsReply,
-                               richBody: message.richBody.map {
-                                   RichBody(text: signed, spans: $0.spans)
-                               })
+        return OutgoingMessage(
+            to: message.to, cc: message.cc, bcc: message.bcc,
+            subject: message.subject,
+            bodyText: signed,
+            inReplyToMessageID: message.inReplyToMessageID,
+            threadID: message.threadID,
+            accountID: message.accountID,
+            attachments: message.attachments,
+            icsReply: message.icsReply,
+            richBody: message.richBody.map {
+                RichBody(text: signed, spans: $0.spans)
+            })
     }
 
     /// Shared wording, so the composer banner and the agent's tool result say

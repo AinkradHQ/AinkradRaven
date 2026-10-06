@@ -1,6 +1,7 @@
-import Testing
 import Foundation
 import Security
+import Testing
+
 @testable import RavenFeature
 
 /// Exercises the real `CMSEncoder`/`CMSDecoder` code path against a
@@ -67,8 +68,8 @@ struct SMIMETests {
     @Test("decoding a pre-S/MIME persisted MessageBody document (no signatureStatus key) defaults to .unsigned")
     func decodingOlderDocumentDefaultsToUnsigned() throws {
         let json = """
-        {"messageID":"m1","plainText":"hi","html":null}
-        """
+            {"messageID":"m1","plainText":"hi","html":null}
+            """
         let decoded = try JSONDecoder().decode(MessageBody.self, from: Data(json.utf8))
         #expect(decoded.signatureStatus == .unsigned)
     }
@@ -98,9 +99,10 @@ struct SMIMETests {
     // MARK: GmailProvider.rfc822 signing
 
     private func message(accountID: String?) -> OutgoingMessage {
-        OutgoingMessage(to: [MailAddress(email: "bob@example.com", name: nil)],
-                        subject: "Signed?", bodyText: "Hello from a test.",
-                        accountID: accountID)
+        OutgoingMessage(
+            to: [MailAddress(email: "bob@example.com", name: nil)],
+            subject: "Signed?", bodyText: "Hello from a test.",
+            accountID: accountID)
     }
 
     @Test("signing is skipped cleanly (message sent unsigned, no thrown error) when no identity is found")
@@ -122,7 +124,9 @@ struct SMIMETests {
         #expect(decodeRaw(raw).contains("multipart/signed") == false)
     }
 
-    @Test("with a signing identity available, the message becomes multipart/signed with a detached pkcs7-signature part, and it verifies")
+    @Test(
+        "with a signing identity available, the message becomes multipart/signed with a detached pkcs7-signature part, and it verifies"
+    )
     func signedSendProducesValidMultipartSigned() throws {
         try withIdentity { identity in
             let raw = GmailProvider.rfc822(message(accountID: "alice@example.com")) { _ in identity }
@@ -152,7 +156,8 @@ struct SMIMETests {
     // MARK: helpers
 
     private func decodeRaw(_ base64URL: String) -> String {
-        var normalized = base64URL
+        var normalized =
+            base64URL
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
         while normalized.count % 4 != 0 { normalized.append("=") }
@@ -170,9 +175,12 @@ struct SMIMETests {
         }
         let headerBlock = String(raw[..<headerBodySplit.lowerBound])
         let body = String(raw[headerBodySplit.upperBound...])
-        guard let contentTypeLine = headerBlock
-            .components(separatedBy: "\r\n")
-            .first(where: { $0.hasPrefix("Content-Type:") }) else {
+        guard
+            let contentTypeLine =
+                headerBlock
+                .components(separatedBy: "\r\n")
+                .first(where: { $0.hasPrefix("Content-Type:") })
+        else {
             throw TestError.malformed
         }
         return (contentTypeLine, body)

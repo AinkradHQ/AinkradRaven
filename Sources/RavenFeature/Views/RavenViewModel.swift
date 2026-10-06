@@ -85,8 +85,9 @@ import Observation
         // One merged, date-ordered read shared with the MCP layer — see
         // `UnifiedInbox` for why the merge lives there rather than in the store
         // or being re-derived here.
-        summaries = UnifiedInbox.inbox(store: store, accountIDs: scopedAccountIDs,
-                                       months: UnifiedInbox.recentMonths())
+        summaries = UnifiedInbox.inbox(
+            store: store, accountIDs: scopedAccountIDs,
+            months: UnifiedInbox.recentMonths())
         // The selection can point at a thread that just left the window (e.g.
         // archived out from under it); re-resolve so stale detail doesn't
         // linger next to a list that no longer contains it.
@@ -101,7 +102,10 @@ import Observation
     }
 
     public func select(_ threadID: String) {
-        guard var thread = store.thread(threadID) else { selectedThread = nil; return }
+        guard var thread = store.thread(threadID) else {
+            selectedThread = nil
+            return
+        }
         let wasUnread = thread.messages.contains { !$0.isRead }
         // Opening a thread reads it. Apply it locally first so the row
         // updates on the same frame, then queue the SAME mutation on the
@@ -145,7 +149,10 @@ import Observation
     /// press always lands on something visible.
     public func moveFocus(by delta: Int) {
         let ids = visibleThreads.map(\.id)
-        guard !ids.isEmpty else { focusedThreadID = nil; return }
+        guard !ids.isEmpty else {
+            focusedThreadID = nil
+            return
+        }
         guard let current = focusedThreadID, let index = ids.firstIndex(of: current) else {
             focusedThreadID = delta >= 0 ? ids.first : ids.last
             return
@@ -163,14 +170,18 @@ import Observation
     public func clickRow(_ threadID: String, shift: Bool, command: Bool) {
         let ids = visibleThreads.map(\.id)
         if shift, let anchor = focusedThreadID,
-           let anchorIndex = ids.firstIndex(of: anchor), let clickIndex = ids.firstIndex(of: threadID) {
+            let anchorIndex = ids.firstIndex(of: anchor), let clickIndex = ids.firstIndex(of: threadID)
+        {
             let range = anchorIndex <= clickIndex ? anchorIndex...clickIndex : clickIndex...anchorIndex
             multiSelection = Set(ids[range])
             focusedThreadID = threadID
         } else if command {
             if multiSelection.isEmpty, let anchor = focusedThreadID { multiSelection = [anchor] }
-            if multiSelection.contains(threadID) { multiSelection.remove(threadID) }
-            else { multiSelection.insert(threadID) }
+            if multiSelection.contains(threadID) {
+                multiSelection.remove(threadID)
+            } else {
+                multiSelection.insert(threadID)
+            }
             focusedThreadID = threadID
         } else {
             multiSelection = []
@@ -243,8 +254,11 @@ import Observation
         let groups = ThreadAccountGrouping.group(ids, store: store, fallback: accountID)
         for id in ids { rowErrors.removeValue(forKey: id) }
         for (accountID, groupedIDs) in groups {
-            guard let vocabulary = LabelVocabularyResolver.vocabulary(forAccountID: accountID,
-                                                                     store: store) else {
+            guard
+                let vocabulary = LabelVocabularyResolver.vocabulary(
+                    forAccountID: accountID,
+                    store: store)
+            else {
                 // Refuse rather than guess. Falling back to Gmail's vocabulary
                 // here would enqueue Gmail label strings against a backend that
                 // does not use them — a corrupted mailbox instead of a visible

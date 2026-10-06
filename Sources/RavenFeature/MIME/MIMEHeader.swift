@@ -82,7 +82,8 @@ enum MIMEHeader {
         // Unchanged means pure ASCII: it is a literal display name, so any
         // `specials` in it must be quoted rather than left to split the list.
         if encoded == name, name.contains(where: { ",;:<>@\"".contains($0) }) {
-            let quoted = name
+            let quoted =
+                name
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
             return "\"\(quoted)\" <\(email)>"
@@ -115,7 +116,8 @@ enum MIMEHeader {
         var lines: [String] = []
         var index = encoded.startIndex
         while index < encoded.endIndex {
-            let end = encoded.index(index, offsetBy: 76, limitedBy: encoded.endIndex)
+            let end =
+                encoded.index(index, offsetBy: 76, limitedBy: encoded.endIndex)
                 ?? encoded.endIndex
             lines.append(String(encoded[index..<end]))
             index = end
@@ -132,7 +134,8 @@ enum MIMEHeader {
         var lines: [String] = []
         var index = encoded.startIndex
         while index < encoded.endIndex {
-            let end = encoded.index(index, offsetBy: 76, limitedBy: encoded.endIndex)
+            let end =
+                encoded.index(index, offsetBy: 76, limitedBy: encoded.endIndex)
                 ?? encoded.endIndex
             lines.append(String(encoded[index..<end]))
             index = end
@@ -153,7 +156,8 @@ enum MIMEHeader {
     static func contentDispositionAttachment(filename: String) -> String {
         let clean = sanitize(filename)
         if clean.utf8.allSatisfy({ $0 <= 0x7F }) {
-            let escaped = clean
+            let escaped =
+                clean
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
             return "Content-Disposition: attachment; filename=\"\(escaped)\""
@@ -167,8 +171,9 @@ enum MIMEHeader {
     /// UTF-8 scalar — is escaped, which is what lets a non-ASCII filename
     /// survive as a sequence of `%XX` triplets a decoder can reassemble.
     private static func rfc2231Encode(_ value: String) -> String {
-        let unreserved = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-            + "-._~")
+        let unreserved = Set(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+                + "-._~")
         var out = ""
         for byte in value.utf8 {
             if byte < 0x80, unreserved.contains(Character(UnicodeScalar(byte))) {

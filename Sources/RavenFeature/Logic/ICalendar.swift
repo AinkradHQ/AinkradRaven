@@ -6,7 +6,8 @@ public struct CalendarPerson: Equatable, Sendable {
     public let email: String
 
     public init(name: String?, email: String) {
-        self.name = name; self.email = email
+        self.name = name
+        self.email = email
     }
 
     public var displayLabel: String { name ?? email }
@@ -41,14 +42,23 @@ public struct CalendarInvite: Equatable, Sendable {
     public let rawDTStart: String
     public let rawDTStartParams: [String: String]
 
-    public init(method: Method, uid: String?, summary: String, location: String?,
-                organizer: CalendarPerson?, attendees: [CalendarPerson],
-                start: Date, end: Date?, isAllDay: Bool,
-                rawDTStart: String, rawDTStartParams: [String: String]) {
-        self.method = method; self.uid = uid; self.summary = summary
-        self.location = location; self.organizer = organizer; self.attendees = attendees
-        self.start = start; self.end = end; self.isAllDay = isAllDay
-        self.rawDTStart = rawDTStart; self.rawDTStartParams = rawDTStartParams
+    public init(
+        method: Method, uid: String?, summary: String, location: String?,
+        organizer: CalendarPerson?, attendees: [CalendarPerson],
+        start: Date, end: Date?, isAllDay: Bool,
+        rawDTStart: String, rawDTStartParams: [String: String]
+    ) {
+        self.method = method
+        self.uid = uid
+        self.summary = summary
+        self.location = location
+        self.organizer = organizer
+        self.attendees = attendees
+        self.start = start
+        self.end = end
+        self.isAllDay = isAllDay
+        self.rawDTStart = rawDTStart
+        self.rawDTStartParams = rawDTStartParams
     }
 }
 
@@ -74,7 +84,7 @@ public enum ICalendar {
         let rawLines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
         var logical: [String] = []
         for line in rawLines {
-            if let first = line.first, (first == " " || first == "\t"), !logical.isEmpty {
+            if let first = line.first, first == " " || first == "\t", !logical.isEmpty {
                 logical[logical.count - 1] += line.dropFirst()
             } else if !line.isEmpty {
                 logical.append(String(line))
@@ -91,8 +101,14 @@ public enum ICalendar {
         var out = ""
         var iterator = value.makeIterator()
         while let char = iterator.next() {
-            guard char == "\\" else { out.append(char); continue }
-            guard let next = iterator.next() else { out.append(char); break }
+            guard char == "\\" else {
+                out.append(char)
+                continue
+            }
+            guard let next = iterator.next() else {
+                out.append(char)
+                break
+            }
             switch next {
             case "n", "N": out.append("\n")
             case ",": out.append(",")
@@ -120,8 +136,12 @@ public enum ICalendar {
         var index = line.startIndex
         while index < line.endIndex {
             let char = line[index]
-            if char == "\"" { inQuotes.toggle() }
-            else if char == ":" && !inQuotes { colonIndex = index; break }
+            if char == "\"" {
+                inQuotes.toggle()
+            } else if char == ":" && !inQuotes {
+                colonIndex = index
+                break
+            }
             index = line.index(after: index)
         }
         guard let colonIndex else { return nil }
@@ -181,7 +201,7 @@ public enum ICalendar {
         }
 
         guard let eventStart = lines.firstIndex(where: { $0.uppercased() == "BEGIN:VEVENT" }),
-              let eventEnd = lines[eventStart...].firstIndex(where: { $0.uppercased() == "END:VEVENT" })
+            let eventEnd = lines[eventStart...].firstIndex(where: { $0.uppercased() == "END:VEVENT" })
         else { return nil }
 
         var uid: String?
@@ -214,7 +234,8 @@ public enum ICalendar {
                 rawDTStart = property.value
                 rawDTStartParams = property.params
                 if let (date, allDay) = parseDate(property.value, params: property.params) {
-                    start = date; isAllDay = allDay
+                    start = date
+                    isAllDay = allDay
                 }
             case "DTEND":
                 end = parseDate(property.value, params: property.params)?.0
@@ -224,17 +245,19 @@ public enum ICalendar {
         }
 
         guard let start else { return nil }
-        return CalendarInvite(method: method, uid: uid, summary: summary, location: location,
-                              organizer: organizer, attendees: attendees, start: start, end: end,
-                              isAllDay: isAllDay, rawDTStart: rawDTStart,
-                              rawDTStartParams: rawDTStartParams)
+        return CalendarInvite(
+            method: method, uid: uid, summary: summary, location: location,
+            organizer: organizer, attendees: attendees, start: start, end: end,
+            isAllDay: isAllDay, rawDTStart: rawDTStart,
+            rawDTStartParams: rawDTStartParams)
     }
 
     /// `ORGANIZER`/`ATTENDEE` values are `mailto:` URIs with the display name
     /// (if any) carried in the `CN` parameter — `ORGANIZER;CN=Bea Smith:
     /// mailto:bea@example.com`.
     private static func person(from value: String, params: [String: String]) -> CalendarPerson? {
-        let email = value.hasPrefix("mailto:") || value.hasPrefix("MAILTO:")
+        let email =
+            value.hasPrefix("mailto:") || value.hasPrefix("MAILTO:")
             ? String(value.dropFirst("mailto:".count))
             : value
         guard !email.isEmpty else { return nil }

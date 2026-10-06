@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The drafts rail beside the composer.
 ///
@@ -35,7 +35,10 @@ struct ComposeDraftsRail: View {
         // `surfaceElevated` composites over the panel to a dark card in the
         // middle of glass. Same look, appearance-derived fill.
         RavenSectionFrame(title: "Drafts") {
-            let drafts = { _ = version; return DraftBox.shared.all() }()
+            let drafts = {
+                _ = version
+                return DraftBox.shared.all()
+            }()
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(drafts, id: \.id) { entry in
@@ -46,15 +49,18 @@ struct ComposeDraftsRail: View {
                                 // A threaded draft is a reply waiting to be
                                 // finished, which is a different thing from
                                 // an unsent new message.
-                                AinkradIconGlyph(systemName: entry.message.threadID == nil
-                                                 ? "doc.text" : "arrowshape.turn.up.left")
+                                AinkradIconGlyph(
+                                    systemName: entry.message.threadID == nil
+                                        ? "doc.text" : "arrowshape.turn.up.left")
                             },
                             title: entry.message.subject.isEmpty
                                 ? "(no subject)" : entry.message.subject,
                             subtitle: entry.message.to.first?.displayLabel,
                             trailing: {
-                                AinkradIconButton(systemName: "trash", size: 22,
-                                                  tooltip: "Delete draft") {
+                                AinkradIconButton(
+                                    systemName: "trash", size: 22,
+                                    tooltip: "Delete draft"
+                                ) {
                                     onDelete(entry.id)
                                 }
                             })
@@ -93,8 +99,9 @@ struct ComposeUndoBanner: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let remaining = max(0, deadline.timeIntervalSince(context.date))
             HStack(spacing: AinkradSpacing.sm) {
-                AinkradMeter(value: remaining, total: max(holdWindow, 1),
-                            label: "undo", size: 36)
+                AinkradMeter(
+                    value: remaining, total: max(holdWindow, 1),
+                    label: "undo", size: 36)
                 Text("Sending in \(Int(remaining.rounded(.up)))s…")
                     .font(AinkradFontResolver.font(.caption, typography: typo))
                     .foregroundStyle(theme.foreground.opacity(0.7))
@@ -102,12 +109,17 @@ struct ComposeUndoBanner: View {
             }
             .padding(AinkradSpacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(ChamferShape(cut: AinkradRadius.sm)
-                .fill(theme.surfaceElevated
-                    .opacity(appearance.cardFillOpacity(isRead: false))))
-            .overlay(ChamferShape(cut: AinkradRadius.sm)
-                .strokeBorder(theme.accentSecondary
-                    .opacity(appearance.cardBorderOpacity(isRead: false)), lineWidth: 1))
+            .background(
+                ChamferShape(cut: AinkradRadius.sm)
+                    .fill(
+                        theme.surfaceElevated
+                            .opacity(appearance.cardFillOpacity(isRead: false)))
+            )
+            .overlay(
+                ChamferShape(cut: AinkradRadius.sm)
+                    .strokeBorder(
+                        theme.accentSecondary
+                            .opacity(appearance.cardBorderOpacity(isRead: false)), lineWidth: 1))
         }
     }
 }
@@ -134,8 +146,9 @@ struct ComposeTitleBar: View {
                 .font(AinkradFontResolver.font(.headline, weight: .medium, typography: typo))
                 .foregroundStyle(theme.foreground)
             Spacer(minLength: AinkradSpacing.sm)
-            AinkradIconButton(systemName: "xmark", size: 24,
-                              tooltip: "Close (your draft is kept)", action: onClose)
+            AinkradIconButton(
+                systemName: "xmark", size: 24,
+                tooltip: "Close (your draft is kept)", action: onClose)
         }
     }
 

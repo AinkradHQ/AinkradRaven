@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Graph's delta walk and the cursor it round-trips through
@@ -15,10 +16,13 @@ import AinkradAppKit
 struct GraphDeltaTests {
     private func fixture(_ name: String) throws -> Data { try graphFixture(name) }
     private func makeProvider() -> GraphProvider { makeGraphProvider() }
-    private func bounded<T: Sendable>(_ label: String,
-                                      sourceLocation: SourceLocation = #_sourceLocation,
-                                      _ body: @MainActor @escaping () async throws -> T)
-        async throws -> T {
+    private func bounded<T: Sendable>(
+        _ label: String,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        _ body: @MainActor @escaping () async throws -> T
+    )
+        async throws -> T
+    {
         try await graphBounded(label, sourceLocation: sourceLocation, body)
     }
 
@@ -54,9 +58,11 @@ struct GraphDeltaTests {
     @Test("the delta token round-trips through MailAccount.syncCursor as a plain string")
     func cursorRoundTripsThroughSyncCursor() async throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .graph,
-                                          address: "a@example.test", displayName: "A",
-                                          syncCursor: "DELTA-TOKEN-1", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .graph,
+                address: "a@example.test", displayName: "A",
+                syncCursor: "DELTA-TOKEN-1", state: .ready))
         let seen = SeenRequests()
         let delta = try fixture("graph-delta")
         StubURLProtocol.handler = { request in
@@ -93,15 +99,23 @@ struct GraphDeltaTests {
         StubURLProtocol.handler = { request in
             seen.record(request)
             if request.url?.absoluteString.contains("PAGE-2") == true {
-                return (200, [:], Data("""
-                {"@odata.deltaLink":"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$deltatoken=TOKEN-FINAL",
-                 "value":[{"id":"m2","conversationId":"conv-2"}]}
-                """.utf8))
+                return (
+                    200, [:],
+                    Data(
+                        """
+                        {"@odata.deltaLink":"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$deltatoken=TOKEN-FINAL",
+                         "value":[{"id":"m2","conversationId":"conv-2"}]}
+                        """.utf8)
+                )
             }
-            return (200, [:], Data("""
-            {"@odata.nextLink":"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$skiptoken=PAGE-2",
-             "value":[{"id":"m1","conversationId":"conv-1"}]}
-            """.utf8))
+            return (
+                200, [:],
+                Data(
+                    """
+                    {"@odata.nextLink":"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$skiptoken=PAGE-2",
+                     "value":[{"id":"m1","conversationId":"conv-1"}]}
+                    """.utf8)
+            )
         }
         defer { StubURLProtocol.handler = nil }
 
@@ -123,9 +137,11 @@ struct GraphDeltaTests {
     @Test("a 410 on the delta endpoint makes SyncEngine fall back to a full backfill")
     func staleDeltaTokenTriggersBackfill() async throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .graph,
-                                          address: "a@example.test", displayName: "A",
-                                          syncCursor: "STALE-TOKEN", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .graph,
+                address: "a@example.test", displayName: "A",
+                syncCursor: "STALE-TOKEN", state: .ready))
         let messages = try fixture("graph-messages")
         let seen = SeenRequests()
         StubURLProtocol.handler = { request in
@@ -139,10 +155,14 @@ struct GraphDeltaTests {
                 return (410, [:], Data(#"{"error":{"code":"SyncStateNotFound"}}"#.utf8))
             }
             if url.contains("$deltatoken=latest") {
-                return (200, [:], Data("""
-                {"@odata.deltaLink":"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$deltatoken=FRESH-TOKEN",
-                 "value":[]}
-                """.utf8))
+                return (
+                    200, [:],
+                    Data(
+                        """
+                        {"@odata.deltaLink":"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$deltatoken=FRESH-TOKEN",
+                         "value":[]}
+                        """.utf8)
+                )
             }
             return (200, [:], messages)
         }
@@ -155,9 +175,10 @@ struct GraphDeltaTests {
         #expect(store.thread("conv-1") != nil)
         #expect(store.thread("conv-2") != nil)
         #expect(seen.all.contains { $0.url.contains("/delta") })
-        #expect(seen.all.contains {
-            ($0.url.removingPercentEncoding ?? "").contains("$filter=receivedDateTime")
-        })
+        #expect(
+            seen.all.contains {
+                ($0.url.removingPercentEncoding ?? "").contains("$filter=receivedDateTime")
+            })
         // And the cursor advanced to the freshly-seeded token, so the next
         // sync is a delta again rather than another full backfill.
         #expect(store.accounts().first?.syncCursor == "FRESH-TOKEN")
@@ -169,9 +190,11 @@ struct GraphDeltaTests {
     @Test("a 500 on the delta endpoint holds the cursor instead of backfilling")
     func transientDeltaFailureHoldsTheCursor() async throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .graph,
-                                          address: "a@example.test", displayName: "A",
-                                          syncCursor: "GOOD-TOKEN", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .graph,
+                address: "a@example.test", displayName: "A",
+                syncCursor: "GOOD-TOKEN", state: .ready))
         let seen = SeenRequests()
         StubURLProtocol.handler = { request in
             seen.record(request)
@@ -193,10 +216,14 @@ struct GraphDeltaTests {
         let seen = SeenRequests()
         StubURLProtocol.handler = { request in
             seen.record(request)
-            return (200, [:], Data("""
-            {"@odata.deltaLink":"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$deltatoken=SEED-TOKEN",
-             "value":[]}
-            """.utf8))
+            return (
+                200, [:],
+                Data(
+                    """
+                    {"@odata.deltaLink":"https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages/delta?$deltatoken=SEED-TOKEN",
+                     "value":[]}
+                    """.utf8)
+            )
         }
         defer { StubURLProtocol.handler = nil }
 

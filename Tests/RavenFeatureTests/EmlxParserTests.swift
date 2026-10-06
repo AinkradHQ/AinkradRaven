@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite(".emlx parsing")
@@ -10,8 +11,10 @@ struct EmlxParserTests {
         var data = Data("\(messageBytes.count)\n".utf8)
         data.append(messageBytes)
         if let plist {
-            data.append(try! PropertyListSerialization.data(fromPropertyList: plist,
-                                                             format: .xml, options: 0))
+            data.append(
+                try! PropertyListSerialization.data(
+                    fromPropertyList: plist,
+                    format: .xml, options: 0))
         }
         return data
     }
@@ -19,13 +22,13 @@ struct EmlxParserTests {
     @Test("a well-formed .emlx parses headers, body, and flags, reusing RFC 2047 decode")
     func wellFormedParses() {
         let raw = """
-        Subject: =?UTF-8?B?SGVsbG8g8J+YgA==?=\r
-        From: Alice <alice@example.com>\r
-        To: Bob <bob@example.com>\r
-        Message-ID: <m1@example.com>\r
-        \r
-        Hello there.\r
-        """
+            Subject: =?UTF-8?B?SGVsbG8g8J+YgA==?=\r
+            From: Alice <alice@example.com>\r
+            To: Bob <bob@example.com>\r
+            Message-ID: <m1@example.com>\r
+            \r
+            Hello there.\r
+            """
         let data = emlx(rfc822: raw)
 
         let parsed = EmlxParser.parse(data)
@@ -61,7 +64,7 @@ struct EmlxParserTests {
         let messageBytes = Data("Subject: x\r\n\r\nbody".utf8)
         var data = Data("\(messageBytes.count)\n".utf8)
         data.append(messageBytes)
-        data.append(Data([0xFF, 0x00, 0xDE, 0xAD])) // not a valid plist
+        data.append(Data([0xFF, 0x00, 0xDE, 0xAD]))  // not a valid plist
         #expect(EmlxParser.parse(data) == nil)
     }
 

@@ -66,7 +66,8 @@ enum SMIME {
             return CMSDecoderUpdateMessage(decoder, base, buffer.count)
         }
         guard updateStatus == errSecSuccess,
-              CMSDecoderFinalizeMessage(decoder) == errSecSuccess else {
+            CMSDecoderFinalizeMessage(decoder) == errSecSuccess
+        else {
             return .signedInvalid
         }
         var numSigners = 0
@@ -108,7 +109,8 @@ enum SMIME {
         guard updateStatus == errSecSuccess else { return nil }
         var outputRef: CFData?
         guard CMSEncoderCopyEncodedContent(encoder, &outputRef) == errSecSuccess,
-              let output = outputRef else { return nil }
+            let output = outputRef
+        else { return nil }
         return output as Data
     }
 
@@ -136,8 +138,10 @@ enum SMIME {
         let contentPart = String(body[afterFirstMarker..<middleRange.lowerBound])
 
         let afterMiddleMarker = middleRange.upperBound
-        guard let closingRange = body.range(
-            of: closingMarker, range: afterMiddleMarker..<body.endIndex) else { return nil }
+        guard
+            let closingRange = body.range(
+                of: closingMarker, range: afterMiddleMarker..<body.endIndex)
+        else { return nil }
         let signaturePart = String(body[afterMiddleMarker..<closingRange.lowerBound])
 
         guard contentPart.range(of: "\r\n\r\n") != nil else { return nil }
@@ -181,7 +185,8 @@ enum SMIME {
             ]
             var result: CFTypeRef?
             guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-                  let ref = result else { return nil }
+                let ref = result
+            else { return nil }
             guard CFGetTypeID(ref) == SecIdentityGetTypeID() else {
                 Log.auth.error("Keychain returned a non-identity for an identity query")
                 return nil

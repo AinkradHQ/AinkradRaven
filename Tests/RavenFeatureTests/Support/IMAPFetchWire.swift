@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The lexing/framing step every `IMAPFetchParser` suite needs, in one place.
@@ -15,8 +16,9 @@ enum IMAPFetchWire {
     /// tree is marked `-text` in `.gitattributes`, so no newline translation is
     /// applied here either.
     static func fixture(_ name: String) throws -> Data {
-        let url = try #require(Bundle(for: FixtureBundleMarker.self)
-            .url(forResource: name, withExtension: "txt"),
+        let url = try #require(
+            Bundle(for: FixtureBundleMarker.self)
+                .url(forResource: name, withExtension: "txt"),
             "fixture \(name).txt is not in the test bundle")
         return try Data(contentsOf: url)
     }
@@ -39,8 +41,9 @@ enum IMAPFetchWire {
         }
         if !current.isEmpty { lines.append(current) }
         return lines.map { line in
-            IMAPUntaggedResponse(tokens: line.first == .atom("*")
-                ? Array(line.dropFirst()) : line)
+            IMAPUntaggedResponse(
+                tokens: line.first == .atom("*")
+                    ? Array(line.dropFirst()) : line)
         }
     }
 

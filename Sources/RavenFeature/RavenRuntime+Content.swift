@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// On-demand content fetches, and the thread-reply send path.
 ///
@@ -27,7 +27,8 @@ extension RavenRuntime {
     public func loadBody(for message: MailMessage) async -> MessageBody? {
         if let cached = store.body(messageID: message.id) { return cached }
         guard let accountID = store.thread(message.threadID)?.accountID,
-              let provider = providers.provider(for: accountID) else { return nil }
+            let provider = providers.provider(for: accountID)
+        else { return nil }
         do {
             let body = try await Task.detached {
                 try await provider.fetchBody(messageID: message.id)
@@ -49,14 +50,18 @@ extension RavenRuntime {
     /// notes). `nil` when there is no attached provider or the fetch fails;
     /// the caller (the Thread surface's chip tap handler) treats that as "try
     /// again later" rather than crashing.
-    public func fetchAttachment(_ attachment: MailAttachment, messageID: String,
-                                threadID: String) async -> Data? {
+    public func fetchAttachment(
+        _ attachment: MailAttachment, messageID: String,
+        threadID: String
+    ) async -> Data? {
         guard let accountID = store.thread(threadID)?.accountID,
-              let provider = providers.provider(for: accountID) else { return nil }
+            let provider = providers.provider(for: accountID)
+        else { return nil }
         do {
             return try await Task.detached {
-                try await provider.fetchAttachment(messageID: messageID,
-                                                    attachmentID: attachment.attachmentID)
+                try await provider.fetchAttachment(
+                    messageID: messageID,
+                    attachmentID: attachment.attachmentID)
             }.value
         } catch {
             host.log.error("RavenRuntime.fetchAttachment failed for \(attachment.attachmentID): \(error)")
@@ -81,8 +86,9 @@ extension RavenRuntime {
     /// lives in exactly one place. No draft id: a thread reply is not backed
     /// by a `DraftBox` entry.
     public func sendThreadReply(_ message: OutgoingMessage) async throws -> SendAttempt.Result {
-        try await SendAttempt.send(message, draftID: nil, outbox: outbox, store: store,
-                                   holdUntil: Date().addingTimeInterval(holdWindow),
-                                   drain: drainOutbox)
+        try await SendAttempt.send(
+            message, draftID: nil, outbox: outbox, store: store,
+            holdUntil: Date().addingTimeInterval(holdWindow),
+            drain: drainOutbox)
     }
 }

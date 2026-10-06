@@ -167,12 +167,14 @@ actor IMAPIdleWatcher {
     /// Every backoff delay actually waited, in order.
     private(set) var backoffDelays: [Duration] = []
 
-    init(provider: IMAPProvider,
-         clock: any IMAPIdleClock = IMAPIdleSystemClock(),
-         reIdleInterval: Duration = .seconds(29 * 60),
-         coalesceWindow: Duration = .seconds(1),
-         backoff: IMAPIdleBackoff = IMAPIdleBackoff(),
-         onNotification: @escaping @Sendable () async -> Void) {
+    init(
+        provider: IMAPProvider,
+        clock: any IMAPIdleClock = IMAPIdleSystemClock(),
+        reIdleInterval: Duration = .seconds(29 * 60),
+        coalesceWindow: Duration = .seconds(1),
+        backoff: IMAPIdleBackoff = IMAPIdleBackoff(),
+        onNotification: @escaping @Sendable () async -> Void
+    ) {
         self.provider = provider
         self.clock = clock
         self.reIdleInterval = reIdleInterval
@@ -266,8 +268,10 @@ actor IMAPIdleWatcher {
         // tests to run more than one cycle.
         cycleGeneration += 1
         let generation = cycleGeneration
-        let idle = Task { try await session.execute(
-            IMAPCommand("IDLE", isExclusive: true, holdsChannelOpen: true)) }
+        let idle = Task {
+            try await session.execute(
+                IMAPCommand("IDLE", isExclusive: true, holdsChannelOpen: true))
+        }
         // Whichever of these happens first wins; the other two are cancelled.
         let ended = Task { [weak self] in
             _ = try? await idle.value
@@ -344,7 +348,8 @@ actor IMAPIdleWatcher {
                 continue
             }
             guard let keyword = response.keyword,
-                  Self.notificationKeywords.contains(keyword) else { continue }
+                Self.notificationKeywords.contains(keyword)
+            else { continue }
             note()
         }
     }

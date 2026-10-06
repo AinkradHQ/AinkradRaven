@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 8's command channel. Every test here runs over `ScriptedTransport` — no
@@ -103,8 +104,10 @@ struct IMAPSessionTests {
         #expect(await IMAPSessionHarness.waitForInFlight(session, 2))
 
         await transport.enqueue("A0001 NO [NONEXISTENT] no such mailbox\r\n")
-        await #expect(throws: IMAPSessionError.commandFailed(
-            tag: "A0001", status: .no, text: "[NONEXISTENT] no such mailbox")) {
+        await #expect(
+            throws: IMAPSessionError.commandFailed(
+                tag: "A0001", status: .no, text: "[NONEXISTENT] no such mailbox")
+        ) {
             try await doomed.value
         }
         // The other command is untouched: still in flight, still running.
@@ -119,8 +122,10 @@ struct IMAPSessionTests {
     func badCompletion() async throws {
         let (session, transport) = try await IMAPSessionHarness.makeSession()
         await transport.respond(to: "A0001 FROB", with: "A0001 BAD unknown command\r\n")
-        await #expect(throws: IMAPSessionError.commandFailed(
-            tag: "A0001", status: .bad, text: "unknown command")) {
+        await #expect(
+            throws: IMAPSessionError.commandFailed(
+                tag: "A0001", status: .bad, text: "unknown command")
+        ) {
             try await session.execute(IMAPCommand("FROB"))
         }
         #expect(await session.inFlightCount == 0)
@@ -151,8 +156,9 @@ struct IMAPSessionTests {
         // completion, then the SELECT's. Nothing here identifies an owner.
         await transport.enqueue("* 12 EXISTS\r\n* 3 RECENT\r\nA0002 OK noop done\r\n")
         let noopResponse = try #require(await IMAPSessionHarness.expectSuccess(noop))
-        #expect(noopResponse.untagged.isEmpty,
-                "untagged lines were attributed to a command that cannot be proven to own them")
+        #expect(
+            noopResponse.untagged.isEmpty,
+            "untagged lines were attributed to a command that cannot be proven to own them")
 
         await transport.enqueue("A0001 OK [READ-WRITE] selected\r\n")
         let selectResponse = try #require(await IMAPSessionHarness.expectSuccess(select))
@@ -167,8 +173,9 @@ struct IMAPSessionTests {
     @Test("untagged responses are attributed when exactly one command is in flight")
     func untaggedAttributedWhenUnambiguous() async throws {
         let (session, transport) = try await IMAPSessionHarness.makeSession()
-        await transport.respond(to: "A0001 FETCH",
-                               with: "* 1 FETCH (UID 7)\r\nA0001 OK fetch done\r\n")
+        await transport.respond(
+            to: "A0001 FETCH",
+            with: "* 1 FETCH (UID 7)\r\nA0001 OK fetch done\r\n")
         let response = try await session.execute(
             IMAPCommand("FETCH", [.atom("1"), .list([.atom("UID")])]))
         #expect(response.untagged.count == 1)
@@ -190,8 +197,9 @@ struct IMAPSessionTests {
         #expect(response.status == .ok)
 
         let writes = await transport.sent.map { String(decoding: $0, as: UTF8.self) }
-        #expect(writes == ["A0001 APPEND \"Folder A\" {11}\r\n", "Hello World\r\n"],
-                "the payload must be a separate write, sent only after the + request")
+        #expect(
+            writes == ["A0001 APPEND \"Folder A\" {11}\r\n", "Hello World\r\n"],
+            "the payload must be a separate write, sent only after the + request")
         #expect(await session.pendingContinuationTags.isEmpty)
         await session.close()
     }
@@ -206,8 +214,9 @@ struct IMAPSessionTests {
         try await session.execute(
             IMAPCommand("APPEND", [.text("Folder A"), .literal(Data("Hello World".utf8))]))
         let writes = await transport.sent.map { String(decoding: $0, as: UTF8.self) }
-        #expect(writes == ["A0001 APPEND \"Folder A\" {11+}\r\nHello World\r\n"],
-                "with LITERAL+ the whole command is one write and no + is awaited")
+        #expect(
+            writes == ["A0001 APPEND \"Folder A\" {11+}\r\nHello World\r\n"],
+            "with LITERAL+ the whole command is one write and no + is awaited")
         await session.close()
 
         // And the plan itself: identical command, capability absent → {11}.
@@ -251,8 +260,9 @@ struct IMAPSessionTests {
         for command in commands {
             await IMAPSessionHarness.expectFailure(command, .closed)
         }
-        #expect(await session.inFlightCount == 0,
-                "a record left in the table is a leaked continuation")
+        #expect(
+            await session.inFlightCount == 0,
+            "a record left in the table is a leaked continuation")
         #expect(await session.pendingContinuationTags.isEmpty)
         #expect(await transport.isClosed)
         // And the session stays refusing rather than suspending.
@@ -284,8 +294,11 @@ struct IMAPSessionTests {
     @Test("a mid-flight literal command is failed by close, leaving no pending continuation")
     func closeWhileAwaitingContinuation() async throws {
         let (session, transport) = try await IMAPSessionHarness.makeSession()
-        let command = IMAPSessionHarness.issue(session, IMAPCommand("APPEND",
-                                                 [.text("Folder A"), .literal(Data("body".utf8))]))
+        let command = IMAPSessionHarness.issue(
+            session,
+            IMAPCommand(
+                "APPEND",
+                [.text("Folder A"), .literal(Data("body".utf8))]))
         #expect(await IMAPSessionHarness.waitForInFlight(session, 1))
         #expect(await session.pendingContinuationTags == ["A0001"])
         await IMAPSessionHarness.waitForSent(transport, 1)
@@ -302,7 +315,7 @@ struct IMAPSessionTests {
         let (session, transport) = try await IMAPSessionHarness.makeSession()
         let command = IMAPSessionHarness.issue(session, IMAPCommand("NOOP"))
         #expect(await IMAPSessionHarness.waitForInFlight(session, 1))
-        await transport.enqueue("A0001 OK done\n") // bare LF: illegal framing
+        await transport.enqueue("A0001 OK done\n")  // bare LF: illegal framing
         await IMAPSessionHarness.expectFailure(command, .malformedResponse(.malformedLineEnding))
         #expect(await session.inFlightCount == 0)
     }
@@ -351,8 +364,9 @@ struct IMAPSessionTests {
     func capabilityFromTaggedOKOnly() async throws {
         let (session, transport) = try await IMAPSessionHarness.makeSession(greeting: "* OK ready\r\n")
         #expect(await session.cachedCapabilities == nil)
-        await transport.respond(to: "CAPABILITY",
-                               with: "A0001 OK [CAPABILITY IMAP4rev1 IDLE] done\r\n")
+        await transport.respond(
+            to: "CAPABILITY",
+            with: "A0001 OK [CAPABILITY IMAP4rev1 IDLE] done\r\n")
         let capabilities = try await session.capabilities()
         #expect(capabilities == ["IMAP4REV1", "IDLE"])
         await session.close()
@@ -362,15 +376,18 @@ struct IMAPSessionTests {
 
     @Test("arguments are quoted, listed and literalised by the documented rules")
     func commandRendering() {
-        let command = IMAPCommand("UID FETCH", [
-            .atom("1:*"),
-            .list([.atom("UID"), .atom("FLAGS")]),
-            .quoted("a \"b\" \\c"),
-        ])
+        let command = IMAPCommand(
+            "UID FETCH",
+            [
+                .atom("1:*"),
+                .list([.atom("UID"), .atom("FLAGS")]),
+                .quoted("a \"b\" \\c"),
+            ])
         let plan = command.wirePlan(tag: "A0007", allowNonSynchronizingLiterals: false)
         #expect(plan.chunks.count == 1)
-        #expect(String(decoding: plan.chunks[0], as: UTF8.self)
-            == "A0007 UID FETCH 1:* (UID FLAGS) \"a \\\"b\\\" \\\\c\"\r\n")
+        #expect(
+            String(decoding: plan.chunks[0], as: UTF8.self)
+                == "A0007 UID FETCH 1:* (UID FLAGS) \"a \\\"b\\\" \\\\c\"\r\n")
     }
 
     @Test("Argument.text picks a literal exactly when a quoted string is illegal")
@@ -382,8 +399,12 @@ struct IMAPSessionTests {
 
     @Test("a command's description never contains literal bytes")
     func descriptionRedactsLiterals() {
-        let command = IMAPCommand("LOGIN", [.quoted("a@example.test"),
-                                            .literal(Data("s3cret".utf8))])
+        let command = IMAPCommand(
+            "LOGIN",
+            [
+                .quoted("a@example.test"),
+                .literal(Data("s3cret".utf8)),
+            ])
         #expect(command.description == "LOGIN \"a@example.test\" {6 bytes}")
         #expect(command.description.contains("s3cret") == false)
     }

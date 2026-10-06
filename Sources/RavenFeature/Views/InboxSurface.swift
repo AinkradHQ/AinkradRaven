@@ -1,7 +1,7 @@
-import SwiftUI
-import AppKit
 import AinkradAppKit
 import AinkradAppKitUI
+import AppKit
+import SwiftUI
 
 /// The thread list. Search is scoped to whatever `SyncEngine` has actually
 /// synced (90 days by default) — the placeholder says so plainly, and
@@ -53,12 +53,13 @@ public struct InboxSurface: View {
                 text: $model.searchText,
                 placeholder: "Search synced mail — from:, label:, is:unread, is:starred",
                 onSubmit: { Task { await runtime.searchArchive(query: model.searchText) } },
-                focus: $searchFocused)
-                .onChange(of: model.searchText) {
-                    if model.searchText.trimmingCharacters(in: .whitespaces).isEmpty {
-                        runtime.clearArchiveSearch()
-                    }
+                focus: $searchFocused
+            )
+            .onChange(of: model.searchText) {
+                if model.searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    runtime.clearArchiveSearch()
                 }
+            }
 
             actionToolbar
 
@@ -104,20 +105,28 @@ public struct InboxSurface: View {
             }
 
             if actionsEnabled {
-                AinkradIconButton(systemName: "archivebox", size: 26,
-                                  tooltip: archiveTooltip(selectionCount)) {
+                AinkradIconButton(
+                    systemName: "archivebox", size: 26,
+                    tooltip: archiveTooltip(selectionCount)
+                ) {
                     model.archiveActive()
                 }
-                AinkradIconButton(systemName: "star", size: 26,
-                                  tooltip: starTooltip(selectionCount)) {
+                AinkradIconButton(
+                    systemName: "star", size: 26,
+                    tooltip: starTooltip(selectionCount)
+                ) {
                     model.starActive(!allActiveStarred)
                 }
-                AinkradIconButton(systemName: "envelope.badge", size: 26,
-                                  tooltip: unreadTooltip(selectionCount)) {
+                AinkradIconButton(
+                    systemName: "envelope.badge", size: 26,
+                    tooltip: unreadTooltip(selectionCount)
+                ) {
                     model.toggleUnreadActive()
                 }
-                AinkradIconButton(systemName: "trash", size: 26,
-                                  tooltip: trashTooltip(selectionCount)) {
+                AinkradIconButton(
+                    systemName: "trash", size: 26,
+                    tooltip: trashTooltip(selectionCount)
+                ) {
                     model.trashActive()
                 }
             }
@@ -137,9 +146,11 @@ public struct InboxSurface: View {
         // unread/read lifts are the same pair of budgets every other Raven
         // surface picks between — they just differ within the setting instead of
         // on top of it.
-        .background(ChamferShape(cut: AinkradRadius.sm)
-            .fill(theme.surfaceElevated
-                .opacity(appearance.cardFillOpacity(isRead: selectionCount == 0))))
+        .background(
+            ChamferShape(cut: AinkradRadius.sm)
+                .fill(
+                    theme.surfaceElevated
+                        .opacity(appearance.cardFillOpacity(isRead: selectionCount == 0))))
     }
 
     /// Whether the mutating toolbar controls render at all.
@@ -202,8 +213,9 @@ public struct InboxSurface: View {
                 guard let accountID else { return "All" }
                 let address = runtime.accounts.first { $0.id == accountID }?.address ?? accountID
                 return String(address.split(separator: "@").first ?? Substring(address))
-            })
-            .onChange(of: model.accountID) { _, _ in model.reload() }
+            }
+        )
+        .onChange(of: model.accountID) { _, _ in model.reload() }
     }
 
     // MARK: Content
@@ -228,9 +240,11 @@ public struct InboxSurface: View {
         case .results(let hits):
             // `RavenSectionFrame`: inside the translucent rail, the kit
             // component's fixed 0.35 fill reads as a dark card on glass.
-            RavenSectionFrame(title: hits.isEmpty
-                                ? "All mail: no matches"
-                                : "All mail (\(hits.count))") {
+            RavenSectionFrame(
+                title: hits.isEmpty
+                    ? "All mail: no matches"
+                    : "All mail (\(hits.count))"
+            ) {
                 if hits.isEmpty {
                     Text("Gmail's full-archive search found nothing for this query.")
                         .font(AinkradFontResolver.font(.caption, typography: typo))
@@ -312,11 +326,13 @@ public struct InboxSurface: View {
             rowError: model.rowErrors[summary.id],
             onTap: {
                 let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-                model.clickRow(summary.id,
-                               shift: modifiers.contains(.shift),
-                               command: modifiers.contains(.command))
-            })
-            .ainkradContextMenu(contextMenuItems(for: summary))
+                model.clickRow(
+                    summary.id,
+                    shift: modifiers.contains(.shift),
+                    command: modifiers.contains(.command))
+            }
+        )
+        .ainkradContextMenu(contextMenuItems(for: summary))
     }
 
     /// The right-click menu is where a SINGLE row's own actions still live —
@@ -328,8 +344,10 @@ public struct InboxSurface: View {
             AinkradMenuItem(title: summary.isStarred ? "Unstar" : "Star", systemName: "star") {
                 model.star([summary.id], starred: !summary.isStarred)
             },
-            AinkradMenuItem(title: summary.unreadCount > 0 ? "Mark read" : "Mark unread",
-                            systemName: "envelope.badge", shortcut: "U") {
+            AinkradMenuItem(
+                title: summary.unreadCount > 0 ? "Mark read" : "Mark unread",
+                systemName: "envelope.badge", shortcut: "U"
+            ) {
                 model.setRead([summary.id], read: summary.unreadCount == 0)
             },
             AinkradMenuItem(title: "Archive", systemName: "archivebox", shortcut: "E") {
@@ -337,7 +355,7 @@ public struct InboxSurface: View {
             },
             AinkradMenuItem(title: "Trash", systemName: "trash", isDestructive: true) {
                 model.trash([summary.id])
-            }
+            },
         ]
     }
 
@@ -372,11 +390,21 @@ public struct InboxSurface: View {
     private func handle(_ press: KeyPress) -> KeyPress.Result {
         guard press.modifiers.isEmpty, !searchFocused else { return .ignored }
         switch press.characters {
-        case "j": model.moveFocus(by: 1); return .handled
-        case "k": model.moveFocus(by: -1); return .handled
-        case "e": model.archiveActive(); return .handled
-        case "u": model.toggleUnreadActive(); return .handled
-        case "/": searchFocused = true; return .handled
+        case "j":
+            model.moveFocus(by: 1)
+            return .handled
+        case "k":
+            model.moveFocus(by: -1)
+            return .handled
+        case "e":
+            model.archiveActive()
+            return .handled
+        case "u":
+            model.toggleUnreadActive()
+            return .handled
+        case "/":
+            searchFocused = true
+            return .handled
         default: return .ignored
         }
     }

@@ -25,8 +25,9 @@ enum AttachmentSizeGuard {
         guard encodedTotal > maxEncodedMessageBytes else { return nil }
         let rawMB = Double(rawTotal) / 1_000_000
         let limitMB = Double(maxEncodedMessageBytes) / 1_000_000 * 3 / 4
-        return String(format: "These attachments total %.1f MB, which is too large for Gmail " +
-                      "to send (the limit is about %.0f MB of raw attachment data). Remove one " +
-                      "or more files before sending; nothing has been queued.", rawMB, limitMB)
+        return String(
+            format: "These attachments total %.1f MB, which is too large for Gmail "
+                + "to send (the limit is about %.0f MB of raw attachment data). Remove one "
+                + "or more files before sending; nothing has been queued.", rawMB, limitMB)
     }
 }

@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Result of a deliberate "search all mail" act — see `RavenRuntime.
 /// searchArchive`. Distinct `.results([])` vs `.failed` on purpose: a remote
@@ -59,11 +59,16 @@ extension RavenRuntime {
     /// as before.
     public func searchArchive(query: String, accountID: String? = nil) async {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { setArchiveSearchState(.idle); return }
+        guard !trimmed.isEmpty else {
+            setArchiveSearchState(.idle)
+            return
+        }
         let targets = accountID.map { [$0] } ?? providers.attachedAccountIDs
         guard !targets.isEmpty else {
-            setArchiveSearchState(.failed(Self.archiveSearchFailureMessage(
-                MailError.notAuthenticated(accountID: accountID ?? ""))))
+            setArchiveSearchState(
+                .failed(
+                    Self.archiveSearchFailureMessage(
+                        MailError.notAuthenticated(accountID: accountID ?? ""))))
             return
         }
         setArchiveSearchState(.searching)
@@ -72,8 +77,10 @@ extension RavenRuntime {
         var succeeded = false
         for target in targets {
             guard let provider = providers.provider(for: target) else {
-                failure = failure ?? Self.archiveSearchFailureMessage(
-                    MailError.notAuthenticated(accountID: target))
+                failure =
+                    failure
+                    ?? Self.archiveSearchFailureMessage(
+                        MailError.notAuthenticated(accountID: target))
                 continue
             }
             do {

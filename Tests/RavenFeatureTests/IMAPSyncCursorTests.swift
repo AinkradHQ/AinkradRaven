@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("IMAP composite sync cursor")
@@ -42,10 +43,11 @@ struct IMAPSyncCursorTests {
         // comparing two encodes of the same value would pass even with key
         // sorting removed — and it is a *re-save across launches* that must not
         // look changed.
-        #expect(sample().encoded() == """
-        {"mailboxes":{"Folder A":{"uidnext":7,"uidvalidity":222},\
-        "INBOX":{"highestmodseq":9001,"uidnext":42,"uidvalidity":111}},"v":1}
-        """)
+        #expect(
+            sample().encoded() == """
+                {"mailboxes":{"Folder A":{"uidnext":7,"uidvalidity":222},\
+                "INBOX":{"highestmodseq":9001,"uidnext":42,"uidvalidity":111}},"v":1}
+                """)
     }
 
     @Test("the cursor survives storage in an existing accounts document")
@@ -55,11 +57,13 @@ struct IMAPSyncCursorTests {
         // schema change. Two accounts, so a decode failure that stranded the
         // array would be visible.
         let accounts = [
-            MailAccount(id: "acct-imap", provider: .imap, address: "a@example.test",
-                        displayName: "Account One", syncCursor: sample().encoded(),
-                        state: .ready),
-            MailAccount(id: "acct-gmail", provider: .gmail, address: "b@example.test",
-                        displayName: "Account Two", syncCursor: "981223", state: .ready),
+            MailAccount(
+                id: "acct-imap", provider: .imap, address: "a@example.test",
+                displayName: "Account One", syncCursor: sample().encoded(),
+                state: .ready),
+            MailAccount(
+                id: "acct-gmail", provider: .gmail, address: "b@example.test",
+                displayName: "Account Two", syncCursor: "981223", state: .ready),
         ]
         let data = try JSONEncoder().encode(accounts)
         let reloaded = try JSONDecoder().decode([MailAccount].self, from: data)
@@ -90,8 +94,12 @@ struct IMAPSyncCursorTests {
     func unchangedValidityResumes() {
         var cursor = sample()
         let decision = cursor.reconcile(mailbox: "INBOX", uidValidity: 111)
-        #expect(decision == .resume(IMAPMailboxSyncState(uidValidity: 111, uidNext: 42,
-                                                         highestModSeq: 9001)))
+        #expect(
+            decision
+                == .resume(
+                    IMAPMailboxSyncState(
+                        uidValidity: 111, uidNext: 42,
+                        highestModSeq: 9001)))
         #expect(decision.requiresFullWalk == false)
         #expect(cursor.mailboxes["INBOX"]?.uidNext == 42)
     }
@@ -116,7 +124,8 @@ struct IMAPSyncCursorTests {
         let folder = try #require(cursor.mailboxes["Folder A"])
         #expect(folder.uidValidity == 222)
         #expect(folder.uidNext == 7)
-        #expect(cursor.decision(for: "Folder A", uidValidity: 222)
+        #expect(
+            cursor.decision(for: "Folder A", uidValidity: 222)
                 == .resume(IMAPMailboxSyncState(uidValidity: 222, uidNext: 7)))
     }
 
@@ -133,7 +142,8 @@ struct IMAPSyncCursorTests {
     @Test("detection does not mutate, so a change can be reported before it is applied")
     func decisionIsPure() {
         let cursor = sample()
-        #expect(cursor.decision(for: "INBOX", uidValidity: 999)
+        #expect(
+            cursor.decision(for: "INBOX", uidValidity: 999)
                 == .rewalk(previousUIDValidity: 111))
         // Unchanged: the report happened without discarding anything.
         #expect(cursor.mailboxes["INBOX"]?.uidValidity == 111)
@@ -180,12 +190,12 @@ struct IMAPSyncCursorTests {
         // an unknown per-mailbox key, one entry that is not an object at all,
         // and one object with no `uidvalidity`.
         let future = """
-        {"v":9,"unknownTopLevel":{"x":1},"mailboxes":{\
-        "INBOX":{"uidvalidity":111,"uidnext":42,"highestmodseq":9001,"quotaRoot":"root"},\
-        "Folder A":{"uidvalidity":222},\
-        "Folder B":"a future scalar",\
-        "Folder C":{"uidnext":5}}}
-        """
+            {"v":9,"unknownTopLevel":{"x":1},"mailboxes":{\
+            "INBOX":{"uidvalidity":111,"uidnext":42,"highestmodseq":9001,"quotaRoot":"root"},\
+            "Folder A":{"uidvalidity":222},\
+            "Folder B":"a future scalar",\
+            "Folder C":{"uidnext":5}}}
+            """
         let cursor = IMAPSyncCursor(encoded: future)
 
         // Usable subset: the two decodable mailboxes survive with correct

@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 // The send-path half of `RichBodyTests`, in its own file to keep both under the
@@ -16,11 +17,14 @@ import Foundation
     /// Everything here is in-process (`FakeMailProvider`), but the call is
     /// send-shaped, so it gets a deadline rather than the ability to hang the
     /// suite.
-    private func send(_ message: OutgoingMessage, store: DocumentMailStore,
-                      outbox: Outbox) async throws {
+    private func send(
+        _ message: OutgoingMessage, store: DocumentMailStore,
+        outbox: Outbox
+    ) async throws {
         let work = Task {
-            _ = try await SendAttempt.send(message, draftID: nil, outbox: outbox,
-                                           store: store, drain: outbox.drain)
+            _ = try await SendAttempt.send(
+                message, draftID: nil, outbox: outbox,
+                store: store, drain: outbox.drain)
         }
         let deadline = Task {
             try await Task.sleep(for: .seconds(5))
@@ -33,16 +37,21 @@ import Foundation
     @Test("signing a formatted message keeps its formatting and both bodies in step")
     func signaturePreservesTheRichBody() async throws {
         let provider = FakeMailProvider()
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            accountID: "a1")
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a@example.test",
-                                          displayName: "A", signature: "Best,\nA"))
-        let rich = RichBody(text: "Hello there",
-                            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
-        let message = OutgoingMessage(to: [MailAddress(email: "b@example.test")],
-                                      subject: "Subject 1", bodyText: "Hello there",
-                                      accountID: "a1", richBody: rich)
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "a@example.test",
+                displayName: "A", signature: "Best,\nA"))
+        let rich = RichBody(
+            text: "Hello there",
+            spans: [RichBody.Span(start: 0, length: 5, kind: .bold)])
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "b@example.test")],
+            subject: "Subject 1", bodyText: "Hello there",
+            accountID: "a1", richBody: rich)
 
         try await send(message, store: store, outbox: outbox)
 
@@ -76,8 +85,9 @@ import Foundation
     }
 
     private func message(_ subject: String, rich: RichBody? = nil) -> OutgoingMessage {
-        OutgoingMessage(to: [MailAddress(email: "b@example.test")], subject: subject,
-                        bodyText: rich?.text ?? "There", richBody: rich)
+        OutgoingMessage(
+            to: [MailAddress(email: "b@example.test")], subject: subject,
+            bodyText: rich?.text ?? "There", richBody: rich)
     }
 
     /// The stored queue as mutable JSON, so one entry can be aged back to the
@@ -96,8 +106,10 @@ import Foundation
     /// built on it asserts nothing. The `#require`s below fail loudly if that
     /// nesting ever changes, rather than letting the tests go quietly vacuous
     /// again.
-    private func editingMessage(_ entry: inout [String: Any],
-                                _ edit: (inout [String: Any]) -> Void) throws {
+    private func editingMessage(
+        _ entry: inout [String: Any],
+        _ edit: (inout [String: Any]) -> Void
+    ) throws {
         var operation = try #require(entry["operation"] as? [String: Any])
         var send = try #require(operation["send"] as? [String: Any])
         var message = try #require(send["_0"] as? [String: Any])
@@ -109,8 +121,9 @@ import Foundation
 
     @Test("a queue holding one new-format and one old-format entry decodes to two")
     func mixedFormatQueueDecodesWhole() throws {
-        let rich = RichBody(text: "Formatted",
-                            spans: [RichBody.Span(start: 0, length: 9, kind: .bold)])
+        let rich = RichBody(
+            text: "Formatted",
+            spans: [RichBody.Span(start: 0, length: 9, kind: .bold)])
         let new = OutboxEntry(operation: .send(message("new", rich: rich)))
         // Written WITH a rich body and then aged back to the pre-M6 shape
         // below, so this really is one document containing both formats —
@@ -131,7 +144,8 @@ import Foundation
         #expect(load.unreadableEntryCount == 0)
         #expect(load.documentUnreadable == false)
         guard case .send(let first) = load.entries[0].operation,
-              case .send(let second) = load.entries[1].operation else {
+            case .send(let second) = load.entries[1].operation
+        else {
             Issue.record("expected two sends")
             return
         }

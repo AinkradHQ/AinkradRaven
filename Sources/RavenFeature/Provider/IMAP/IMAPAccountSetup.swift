@@ -53,12 +53,15 @@ enum IMAPAccountSetup {
         "fastmail.com": HostPreset(imapHost: "imap.fastmail.com", smtpHost: "smtp.fastmail.com"),
         "gmail.com": HostPreset(imapHost: "imap.gmail.com", smtpHost: "smtp.gmail.com"),
         "googlemail.com": HostPreset(imapHost: "imap.gmail.com", smtpHost: "smtp.gmail.com"),
-        "outlook.com": HostPreset(imapHost: "outlook.office365.com",
-                                  smtpHost: "smtp.office365.com"),
-        "hotmail.com": HostPreset(imapHost: "outlook.office365.com",
-                                  smtpHost: "smtp.office365.com"),
-        "yahoo.com": HostPreset(imapHost: "imap.mail.yahoo.com",
-                                smtpHost: "smtp.mail.yahoo.com"),
+        "outlook.com": HostPreset(
+            imapHost: "outlook.office365.com",
+            smtpHost: "smtp.office365.com"),
+        "hotmail.com": HostPreset(
+            imapHost: "outlook.office365.com",
+            smtpHost: "smtp.office365.com"),
+        "yahoo.com": HostPreset(
+            imapHost: "imap.mail.yahoo.com",
+            smtpHost: "smtp.mail.yahoo.com"),
     ]
 
     /// The known servers for an address, or `nil` for a domain this build has never
@@ -82,8 +85,10 @@ enum IMAPAccountSetup {
     /// custom servers typed underneath it. `hostsAreCustom`/`portsAreCustom` are the
     /// view's record of "the user has touched this"; everything else about the
     /// decision is here, where a test can reach it.
-    static func applyingAddress(_ address: String, to draft: Draft,
-                                hostsAreCustom: Bool, portsAreCustom: Bool) -> Draft {
+    static func applyingAddress(
+        _ address: String, to draft: Draft,
+        hostsAreCustom: Bool, portsAreCustom: Bool
+    ) -> Draft {
         var updated = draft
         updated.address = address
         // An unknown domain — the self-hosted case this feature exists for — leaves
@@ -98,8 +103,10 @@ enum IMAPAccountSetup {
 
     /// A new TLS mode, with the ports it implies — again, only when the user has
     /// not typed their own. A mailbox on 9930 must survive a mode change.
-    static func applyingMode(_ mode: TLSMode, to draft: Draft,
-                             portsAreCustom: Bool) -> Draft {
+    static func applyingMode(
+        _ mode: TLSMode, to draft: Draft,
+        portsAreCustom: Bool
+    ) -> Draft {
         var updated = draft
         updated.mode = mode
         return portsAreCustom ? updated : applyingDefaultPorts(to: updated)
@@ -187,15 +194,18 @@ enum IMAPAccountSetup {
     /// `Draft` and NOT part of the returned settings — it goes to `host.secrets`
     /// alone. This function returns it to no one; the caller already has it.
     static func validate(_ draft: Draft, password: String)
-        -> Result<(address: String, settings: IMAPAccountSettings), ValidationFailure> {
+        -> Result<(address: String, settings: IMAPAccountSettings), ValidationFailure>
+    {
         var issues: [FieldIssue] = []
 
         let address = draft.address.trimmingCharacters(in: .whitespaces)
         if address.isEmpty {
             issues.append(FieldIssue(field: .address, message: "Enter your email address."))
         } else if !address.contains("@") || address.hasPrefix("@") || address.hasSuffix("@") {
-            issues.append(FieldIssue(field: .address,
-                                     message: "That does not look like an email address."))
+            issues.append(
+                FieldIssue(
+                    field: .address,
+                    message: "That does not look like an email address."))
         }
 
         if let issue = hostIssue(draft.imapHost, field: .imapHost, label: "IMAP server") {
@@ -207,18 +217,24 @@ enum IMAPAccountSetup {
 
         let imapPort = port(from: draft.imapPort)
         if imapPort == nil {
-            issues.append(FieldIssue(field: .imapPort,
-                                     message: "Enter a port between 1 and 65535."))
+            issues.append(
+                FieldIssue(
+                    field: .imapPort,
+                    message: "Enter a port between 1 and 65535."))
         }
         let smtpPort = port(from: draft.smtpPort)
         if smtpPort == nil {
-            issues.append(FieldIssue(field: .smtpPort,
-                                     message: "Enter a port between 1 and 65535."))
+            issues.append(
+                FieldIssue(
+                    field: .smtpPort,
+                    message: "Enter a port between 1 and 65535."))
         }
 
         if password.isEmpty {
-            issues.append(FieldIssue(field: .password,
-                                     message: "Enter this account's app password."))
+            issues.append(
+                FieldIssue(
+                    field: .password,
+                    message: "Enter this account's app password."))
         }
 
         guard issues.isEmpty, let imapPort, let smtpPort else {
@@ -229,8 +245,9 @@ enum IMAPAccountSetup {
             port: imapPort,
             username: draft.effectiveUsername,
             tls: draft.mode.transport,
-            smtp: SMTPAccountSettings(host: draft.smtpHost.trimmingCharacters(in: .whitespaces),
-                                      port: smtpPort, tls: draft.mode.transport))
+            smtp: SMTPAccountSettings(
+                host: draft.smtpHost.trimmingCharacters(in: .whitespaces),
+                port: smtpPort, tls: draft.mode.transport))
         return .success((address, settings))
     }
 
@@ -287,10 +304,10 @@ enum IMAPAccountSetup {
                 return "Could not reach the server. Check the server name and port. (\(detail))"
             case .tls(let detail):
                 return "Could not secure the connection. Check the encryption mode "
-                     + "for this port. (\(detail))"
+                    + "for this port. (\(detail))"
             case .auth(let detail):
                 return "The server refused the sign-in. Check the username and app "
-                     + "password. (\(detail))"
+                    + "password. (\(detail))"
             case .server(let detail):
                 // Deliberately does NOT say "signed in": two of the five routes here
                 // are pre-auth `CAPABILITY` failures, so claiming the credential was
@@ -303,7 +320,7 @@ enum IMAPAccountSetup {
                 // that mentions it only to exonerate it sends the reader to the one
                 // control that is not the problem.
                 return "The server refused a command this account needs, and no "
-                     + "detail on this form will change that. (\(detail))"
+                    + "detail on this form will change that. (\(detail))"
             }
         }
 

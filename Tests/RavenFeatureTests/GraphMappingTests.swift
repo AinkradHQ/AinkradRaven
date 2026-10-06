@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Pure wire→domain mapping, against the recorded Graph fixtures. Every
@@ -16,8 +17,9 @@ import Foundation
 @Suite("Graph mapping")
 struct GraphMappingTests {
     private func fixture(_ name: String) throws -> Data {
-        let url = try #require(Bundle(for: FixtureBundleMarker.self)
-            .url(forResource: name, withExtension: "json"))
+        let url = try #require(
+            Bundle(for: FixtureBundleMarker.self)
+                .url(forResource: name, withExtension: "json"))
         return try Data(contentsOf: url)
     }
 
@@ -31,7 +33,7 @@ struct GraphMappingTests {
     @Test("threads are grouped by conversationId, not by subject")
     func groupsByConversationID() throws {
         let dtos = try messages()
-        #expect(dtos.count == 3)   // the fixture reached this code at all
+        #expect(dtos.count == 3)  // the fixture reached this code at all
         let threads = GraphMapping.threads(dtos, accountID: "a1")
 
         // conv-1 owns m1 ("Subject 1") and m3 ("Subject 3"); conv-2 owns m2,
@@ -86,9 +88,9 @@ struct GraphMappingTests {
         let dtos = try messages()
         let mapped = dtos.map(GraphMapping.message)
         #expect(mapped.count == 3)
-        #expect(mapped[0].isStarred == false)   // "complete"
-        #expect(mapped[1].isStarred)            // "flagged"
-        #expect(mapped[2].isStarred == false)   // absent
+        #expect(mapped[0].isStarred == false)  // "complete"
+        #expect(mapped[1].isStarred)  // "flagged"
+        #expect(mapped[2].isStarred == false)  // absent
     }
 
     /// Graph's field is positive where Gmail's is a negative label, so this is
@@ -100,7 +102,7 @@ struct GraphMappingTests {
         #expect(mapped.count == 3)
         #expect(mapped[0].isRead)
         #expect(mapped[1].isRead == false)
-        #expect(mapped[2].isRead == false)      // absent
+        #expect(mapped[2].isRead == false)  // absent
     }
 
     @Test("a fractional-seconds timestamp parses rather than falling back to the epoch")
@@ -108,7 +110,9 @@ struct GraphMappingTests {
         let mapped = try messages().map(GraphMapping.message)
         #expect(mapped.count == 3)
         #expect(mapped[1].date != Date(timeIntervalSince1970: 0))
-        #expect(abs(mapped[1].date.timeIntervalSince1970
+        #expect(
+            abs(
+                mapped[1].date.timeIntervalSince1970
                     - 1_767_348_000.5) < 0.001)
     }
 
@@ -161,10 +165,11 @@ struct GraphMappingTests {
     /// produce readable text rather than an empty pane.
     @Test("with no uniqueBody, plainText falls back to the sanitised full body")
     func plainTextFallsBackToBody() throws {
-        let json = Data("""
-        {"id":"m5","body":{"contentType":"html",
-         "content":"<p>Reply 1</p><blockquote>Quoted history 1</blockquote>"}}
-        """.utf8)
+        let json = Data(
+            """
+            {"id":"m5","body":{"contentType":"html",
+             "content":"<p>Reply 1</p><blockquote>Quoted history 1</blockquote>"}}
+            """.utf8)
         let dto = try JSONDecoder().decode(GraphMessageDTO.self, from: json)
         let body = GraphMapping.body(dto)
         #expect(body.plainText.contains("Reply 1"))
@@ -176,9 +181,10 @@ struct GraphMappingTests {
     /// sanitiser, which would eat a literal `<` in ordinary prose.
     @Test("a text/plain body is passed through verbatim and stores no html")
     func textBodyIsNotSanitised() throws {
-        let json = Data("""
-        {"id":"m6","body":{"contentType":"text","content":"5 < 6 and 7 > 6"}}
-        """.utf8)
+        let json = Data(
+            """
+            {"id":"m6","body":{"contentType":"text","content":"5 < 6 and 7 > 6"}}
+            """.utf8)
         let dto = try JSONDecoder().decode(GraphMessageDTO.self, from: json)
         let body = GraphMapping.body(dto)
         #expect(body.plainText == "5 < 6 and 7 > 6")
@@ -244,8 +250,9 @@ struct GraphMappingTests {
     @Test("a link with no delta token yields nil rather than a bogus cursor")
     func deltaTokenAbsent() {
         #expect(GraphMapping.deltaToken(inLink: nil) == nil)
-        #expect(GraphMapping.deltaToken(
-            inLink: "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=PAGE-2") == nil)
+        #expect(
+            GraphMapping.deltaToken(
+                inLink: "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=PAGE-2") == nil)
         #expect(GraphMapping.deltaToken(inLink: "https://x.test/d?$deltatoken=") == nil)
     }
 
@@ -274,12 +281,15 @@ struct GraphMappingTests {
                     return String(line[line.startIndex..<comment.lowerBound])
                 }
                 .joined(separator: "\n")
-            #expect(code.contains("LocalThreading") == false,
-                    "\(name): Graph threads server-side via conversationId")
+            #expect(
+                code.contains("LocalThreading") == false,
+                "\(name): Graph threads server-side via conversationId")
         }
-        let mapping = try String(contentsOf: directory.appending(path: "GraphMapping.swift"),
-                                 encoding: .utf8)
-        #expect(mapping.contains("LocalThreading"),
-                "GraphMapping must state, in prose, why local threading is not used")
+        let mapping = try String(
+            contentsOf: directory.appending(path: "GraphMapping.swift"),
+            encoding: .utf8)
+        #expect(
+            mapping.contains("LocalThreading"),
+            "GraphMapping must state, in prose, why local threading is not used")
     }
 }

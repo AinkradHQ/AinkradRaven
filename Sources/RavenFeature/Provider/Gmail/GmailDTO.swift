@@ -8,7 +8,9 @@ public struct GmailThreadDTO: Decodable {
     public let messages: [GmailMessageDTO]?
 
     public init(id: String, historyId: String?, messages: [GmailMessageDTO]?) {
-        self.id = id; self.historyId = historyId; self.messages = messages
+        self.id = id
+        self.historyId = historyId
+        self.messages = messages
     }
 }
 
@@ -16,7 +18,10 @@ public struct GmailMessageDTO: Decodable {
     public struct Header: Decodable {
         public let name: String
         public let value: String
-        public init(name: String, value: String) { self.name = name; self.value = value }
+        public init(name: String, value: String) {
+            self.name = name
+            self.value = value
+        }
     }
     public struct Body: Decodable {
         public let data: String?
@@ -25,7 +30,9 @@ public struct GmailMessageDTO: Decodable {
         /// must be fetched separately via `messages.attachments.get`.
         public let attachmentId: String?
         public init(data: String?, size: Int?, attachmentId: String? = nil) {
-            self.data = data; self.size = size; self.attachmentId = attachmentId
+            self.data = data
+            self.size = size
+            self.attachmentId = attachmentId
         }
     }
     public struct Payload: Decodable {
@@ -34,10 +41,15 @@ public struct GmailMessageDTO: Decodable {
         public let filename: String?
         public let body: Body?
         public let parts: [Payload]?
-        public init(headers: [Header], mimeType: String?, filename: String? = nil,
-                    body: Body?, parts: [Payload]?) {
-            self.headers = headers; self.mimeType = mimeType; self.filename = filename
-            self.body = body; self.parts = parts
+        public init(
+            headers: [Header], mimeType: String?, filename: String? = nil,
+            body: Body?, parts: [Payload]?
+        ) {
+            self.headers = headers
+            self.mimeType = mimeType
+            self.filename = filename
+            self.body = body
+            self.parts = parts
         }
     }
 
@@ -48,10 +60,16 @@ public struct GmailMessageDTO: Decodable {
     public let internalDate: String?
     public let payload: Payload?
 
-    public init(id: String, threadId: String, labelIds: [String]?, snippet: String?,
-                internalDate: String?, payload: Payload?) {
-        self.id = id; self.threadId = threadId; self.labelIds = labelIds
-        self.snippet = snippet; self.internalDate = internalDate; self.payload = payload
+    public init(
+        id: String, threadId: String, labelIds: [String]?, snippet: String?,
+        internalDate: String?, payload: Payload?
+    ) {
+        self.id = id
+        self.threadId = threadId
+        self.labelIds = labelIds
+        self.snippet = snippet
+        self.internalDate = internalDate
+        self.payload = payload
     }
 }
 

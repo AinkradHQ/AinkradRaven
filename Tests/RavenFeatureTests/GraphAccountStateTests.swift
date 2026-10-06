@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The "not configured" state: no Azure app registration in this build.
@@ -11,8 +12,9 @@ import AinkradAppKit
 @MainActor
 struct GraphNotConfiguredTests {
     private func account(_ id: String, kind: MailAccount.ProviderKind) -> MailAccount {
-        MailAccount(id: id, provider: kind, address: "\(id)@example.test",
-                    displayName: id, state: .ready)
+        MailAccount(
+            id: id, provider: kind, address: "\(id)@example.test",
+            displayName: id, state: .ready)
     }
 
     /// An EMPTY credential slot: no baked Azure id (none is baked in any build
@@ -64,15 +66,19 @@ struct GraphNotConfiguredTests {
                 try? await Task.sleep(for: .seconds(5))
                 continuation.yield(.timedOut)
             }
-            continuation.onTermination = { _ in work.cancel(); deadline.cancel() }
+            continuation.onTermination = { _ in
+                work.cancel()
+                deadline.cancel()
+            }
         }
         var outcome: AuthorizeOutcome?
         for await first in stream {
             outcome = first
             break
         }
-        #expect(outcome == .refused(.notAuthenticated(accountID: "")),
-                "expected an immediate refusal, got \(String(describing: outcome))")
+        #expect(
+            outcome == .refused(.notAuthenticated(accountID: "")),
+            "expected an immediate refusal, got \(String(describing: outcome))")
     }
 
     /// **The credential must not outlive the sign-out that revoked it**, and
@@ -155,10 +161,12 @@ struct GraphNotConfiguredTests {
     @Test("with a saved Azure registration the factory builds a Graph provider")
     func savedRegistrationBuildsAProvider() throws {
         let host = FakeHostServices()
-        host.documents.setData(Data("azure-client-id".utf8),
-                               forKey: ProviderFactory.azureClientIDKey)
-        host.documents.setData(Data("tenant-abc".utf8),
-                               forKey: ProviderFactory.azureTenantIDKey)
+        host.documents.setData(
+            Data("azure-client-id".utf8),
+            forKey: ProviderFactory.azureClientIDKey)
+        host.documents.setData(
+            Data("tenant-abc".utf8),
+            forKey: ProviderFactory.azureTenantIDKey)
         let factory = ProviderFactory(host: host, securityScopedBookmarks: false)
 
         #expect(factory.hasGraphCredentials)

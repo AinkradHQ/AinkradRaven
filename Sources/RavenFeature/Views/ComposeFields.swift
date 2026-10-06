@@ -1,8 +1,8 @@
-import SwiftUI
-import AppKit
-import UniformTypeIdentifiers
 import AinkradAppKit
 import AinkradAppKitUI
+import AppKit
+import SwiftUI
+import UniformTypeIdentifiers
 
 /// To/Cc chip field: typed text commits into a `RecipientChip` on return,
 /// comma, or tab; backspace on an empty text field pops the last chip;
@@ -42,25 +42,29 @@ struct RecipientChipField: View {
             ComposeFieldWrap(label: label) {
                 WrappingChips {
                     ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
-                        AinkradChip(label: chip.displayLabel,
-                                   systemName: chip.isValid ? nil : "exclamationmark.triangle",
-                                   onRemove: { chips.remove(at: index) })
-                            .onTapGesture { detailIndex = index }
-                            .ainkradContextMenu(menuItems(for: chip, at: index))
-                            // The kit's anchored HUD popover, not the system
-                            // `.popover`: a recipient's full address and how
-                            // often this account has mailed them is a detail
-                            // ABOUT the chip, and a chip is too small to carry
-                            // it inline without wrecking the wrap layout.
-                            // The index guard is not belt-and-braces: removing a
-                            // chip shifts every index after it, so a stale
-                            // `detailIndex` would open a popover for whichever
-                            // recipient slid into that slot.
-                            .ainkradPopover(isPresented: Binding(
+                        AinkradChip(
+                            label: chip.displayLabel,
+                            systemName: chip.isValid ? nil : "exclamationmark.triangle",
+                            onRemove: { chips.remove(at: index) }
+                        )
+                        .onTapGesture { detailIndex = index }
+                        .ainkradContextMenu(menuItems(for: chip, at: index))
+                        // The kit's anchored HUD popover, not the system
+                        // `.popover`: a recipient's full address and how
+                        // often this account has mailed them is a detail
+                        // ABOUT the chip, and a chip is too small to carry
+                        // it inline without wrecking the wrap layout.
+                        // The index guard is not belt-and-braces: removing a
+                        // chip shifts every index after it, so a stale
+                        // `detailIndex` would open a popover for whichever
+                        // recipient slid into that slot.
+                        .ainkradPopover(
+                            isPresented: Binding(
                                 get: { detailIndex == index && chips.indices.contains(index) },
-                                set: { if !$0, detailIndex == index { detailIndex = nil } })) {
-                                RecipientDetail(chip: chip, candidates: candidates)
-                            }
+                                set: { if !$0, detailIndex == index { detailIndex = nil } })
+                        ) {
+                            RecipientDetail(chip: chip, candidates: candidates)
+                        }
                     }
                     TextField("", text: $typed)
                         .textFieldStyle(.plain)
@@ -108,13 +112,15 @@ struct RecipientChipField: View {
                             chips.append(RecipientChip(raw: rfc5322(for: candidate.address)))
                             typed = ""
                         } label: {
-                            Text(candidate.address.name.map { "\($0) <\(candidate.address.email)>" }
-                                ?? candidate.address.email)
-                                .font(AinkradFontResolver.font(.caption, typography: typo))
-                                .foregroundStyle(theme.foreground.opacity(0.85))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, AinkradSpacing.sm)
-                                .padding(.vertical, AinkradSpacing.xs)
+                            Text(
+                                candidate.address.name.map { "\($0) <\(candidate.address.email)>" }
+                                    ?? candidate.address.email
+                            )
+                            .font(AinkradFontResolver.font(.caption, typography: typo))
+                            .foregroundStyle(theme.foreground.opacity(0.85))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, AinkradSpacing.sm)
+                            .padding(.vertical, AinkradSpacing.xs)
                         }
                         .buttonStyle(.plain)
                     }
@@ -145,19 +151,25 @@ struct RecipientChipField: View {
             AinkradMenuItem(title: "Copy Address", systemName: "doc.on.doc") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(chip.address?.email ?? chip.raw, forType: .string)
-            },
+            }
         ]
         if let onIsolate, chip.isValid {
-            items.append(AinkradMenuItem(title: "Reply Only To This Person",
-                                         systemName: "arrowshape.turn.up.left") {
-                onIsolate(chip)
-            })
+            items.append(
+                AinkradMenuItem(
+                    title: "Reply Only To This Person",
+                    systemName: "arrowshape.turn.up.left"
+                ) {
+                    onIsolate(chip)
+                })
         }
-        items.append(AinkradMenuItem(title: "Remove", systemName: "xmark",
-                                     isDestructive: true) {
-            guard chips.indices.contains(index) else { return }
-            chips.remove(at: index)
-        })
+        items.append(
+            AinkradMenuItem(
+                title: "Remove", systemName: "xmark",
+                isDestructive: true
+            ) {
+                guard chips.indices.contains(index) else { return }
+                chips.remove(at: index)
+            })
         return items
     }
 
@@ -201,11 +213,13 @@ struct RecipientDetail: View {
             if !chip.isValid {
                 AinkradBanner(message: "Not a valid address", status: .danger)
             } else if let candidate {
-                Text("On \(candidate.frequency) thread\(candidate.frequency == 1 ? "" : "s") "
-                     + "you have loaded, most recently "
-                     + MailDateLabel.short(for: candidate.mostRecent))
-                    .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.55))
+                Text(
+                    "On \(candidate.frequency) thread\(candidate.frequency == 1 ? "" : "s") "
+                        + "you have loaded, most recently "
+                        + MailDateLabel.short(for: candidate.mostRecent)
+                )
+                .font(AinkradFontResolver.font(.caption, typography: typo))
+                .foregroundStyle(theme.foreground.opacity(0.55))
             } else {
                 // Said plainly rather than left blank: "you have never mailed
                 // this person" is the single most useful thing to know before
@@ -263,23 +277,26 @@ struct ComposeFieldChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-        // Theme surface, not `Color.gray`: the field has to sit correctly on
-        // whichever theme the host is running, and a fixed grey wash reads as
-        // dirty on the light ones and invisible on the dark ones. Matches
-        // `AinkradTextField`'s own treatment (chamfer + elevated fill + accent
-        // hairline) so a chip field and a text field are visibly one family.
-        //
-        // The fill is the shared card budget, not the fixed 0.45 it was. 0.45
-        // over a compose panel that itself sits on the scrim composites to
-        // roughly 0.7 — a field well darker than the modal holding it, and the
-        // second-most solid thing in the overlay after the suggestion popover
-        // above. `cardFillOpacity(isRead: false)` is the same lift a hovered
-        // inbox row and an unread message card spend, so a field reads as
-        // raised without being a slab.
-        .background(ChamferShape(cut: AinkradRadius.sm)
-            .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false))))
-        .overlay(ChamferShape(cut: AinkradRadius.sm)
-            .strokeBorder(theme.accentPrimary.opacity(0.2), lineWidth: 1))
+            // Theme surface, not `Color.gray`: the field has to sit correctly on
+            // whichever theme the host is running, and a fixed grey wash reads as
+            // dirty on the light ones and invisible on the dark ones. Matches
+            // `AinkradTextField`'s own treatment (chamfer + elevated fill + accent
+            // hairline) so a chip field and a text field are visibly one family.
+            //
+            // The fill is the shared card budget, not the fixed 0.45 it was. 0.45
+            // over a compose panel that itself sits on the scrim composites to
+            // roughly 0.7 — a field well darker than the modal holding it, and the
+            // second-most solid thing in the overlay after the suggestion popover
+            // above. `cardFillOpacity(isRead: false)` is the same lift a hovered
+            // inbox row and an unread message card spend, so a field reads as
+            // raised without being a slab.
+            .background(
+                ChamferShape(cut: AinkradRadius.sm)
+                    .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)))
+            )
+            .overlay(
+                ChamferShape(cut: AinkradRadius.sm)
+                    .strokeBorder(theme.accentPrimary.opacity(0.2), lineWidth: 1))
     }
 }
 
@@ -287,11 +304,15 @@ struct ComposeFieldChrome: ViewModifier {
 struct WrappingChips: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
             if x + size.width > width, x > 0 {
-                x = 0; y += rowHeight + AinkradSpacing.xs; rowHeight = 0
+                x = 0
+                y += rowHeight + AinkradSpacing.xs
+                rowHeight = 0
             }
             x += size.width + AinkradSpacing.xs
             rowHeight = max(rowHeight, size.height)
@@ -300,11 +321,15 @@ struct WrappingChips: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x: CGFloat = bounds.minX, y: CGFloat = bounds.minY, rowHeight: CGFloat = 0
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var rowHeight: CGFloat = 0
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
             if x + size.width > bounds.maxX, x > bounds.minX {
-                x = bounds.minX; y += rowHeight + AinkradSpacing.xs; rowHeight = 0
+                x = bounds.minX
+                y += rowHeight + AinkradSpacing.xs
+                rowHeight = 0
             }
             subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
             x += size.width + AinkradSpacing.xs
@@ -331,10 +356,13 @@ enum ComposeAttachmentPicker {
         var picked: [OutgoingAttachment] = []
         for url in panel.urls {
             guard let data = try? Data(contentsOf: url) else { continue }
-            let mimeType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+            let mimeType =
+                UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
                 ?? "application/octet-stream"
-            picked.append(OutgoingAttachment(filename: url.lastPathComponent,
-                                             mimeType: mimeType, data: data))
+            picked.append(
+                OutgoingAttachment(
+                    filename: url.lastPathComponent,
+                    mimeType: mimeType, data: data))
         }
         return picked
     }
@@ -349,10 +377,11 @@ struct ComposeAttachmentsRow: View {
         if !attachments.isEmpty {
             WrappingChips {
                 ForEach(attachments) { attachment in
-                    AinkradChip(label: label(attachment), systemName: "paperclip",
-                                onRemove: {
-                                    attachments.removeAll { $0.id == attachment.id }
-                                })
+                    AinkradChip(
+                        label: label(attachment), systemName: "paperclip",
+                        onRemove: {
+                            attachments.removeAll { $0.id == attachment.id }
+                        })
                 }
             }
         }

@@ -1,7 +1,7 @@
-import SwiftUI
-import AppKit
 import AinkradAppKit
 import AinkradAppKitUI
+import AppKit
+import SwiftUI
 
 /// `.ainkradModal(isPresented:contentWidth:)` with the panel's translucency
 /// taken from the user's setting instead of the kit's fixed 0.94.
@@ -129,8 +129,9 @@ extension View {
     ) -> some View {
         self
             .environment(\.ravenModalPresented, isPresented.wrappedValue)
-            .modifier(RavenTranslucentModalModifier(
-                isPresented: isPresented, contentWidth: contentWidth,
-                appearance: appearance, modalContent: content))
+            .modifier(
+                RavenTranslucentModalModifier(
+                    isPresented: isPresented, contentWidth: contentWidth,
+                    appearance: appearance, modalContent: content))
     }
 }

@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// One instance per `HostServices`, so the on-screen UI and the MCP server
 /// (`RavenApp.makeMCPServer`) drive the SAME store, outbox, and account state
@@ -105,7 +105,10 @@ import AinkradAppKit
     var syncEngine: SyncEngine? {
         get { syncEngines.count == 1 ? syncEngines.values.first : nil }
         set {
-            guard let newValue else { syncEngines = [:]; return }
+            guard let newValue else {
+                syncEngines = [:]
+                return
+            }
             syncEngines[newValue.accountID] = newValue
         }
     }
@@ -251,8 +254,8 @@ import AinkradAppKit
             // Never silent: a document that exists but cannot be decoded is
             // surfaced, and the store refuses to overwrite it (see
             // `DocumentMailStore.loadStrict`).
-            host.log.error("Raven: document '\(corrupt)' is present but could not be decoded; " +
-                           "it will not be overwritten.")
+            host.log.error(
+                "Raven: document '\(corrupt)' is present but could not be decoded; " + "it will not be overwritten.")
         }
 
         let registration = RavenAgentBridge.register(host: host, model: model)
@@ -373,12 +376,15 @@ import AinkradAppKit
     /// so the account's kind is now recorded from the argument rather than
     /// hardcoded, and a kind whose flow does not exist yet fails with
     /// `MailError.unsupportedProvider` *before* anything is saved.
-    public func connectAccount(kind: MailAccount.ProviderKind = .gmail,
-                               onAuthorizationURL: (@Sendable (URL) -> Void)? = nil) async throws {
+    public func connectAccount(
+        kind: MailAccount.ProviderKind = .gmail,
+        onAuthorizationURL: (@Sendable (URL) -> Void)? = nil
+    ) async throws {
         let (accountID, address) = try await providerFactory.authorize(
             kind: kind, onAuthorizationURL: onAuthorizationURL)
-        let account = MailAccount(id: accountID, provider: kind, address: address,
-                                  displayName: address, state: .syncing)
+        let account = MailAccount(
+            id: accountID, provider: kind, address: address,
+            displayName: address, state: .syncing)
         try store.saveAccount(account)
         attach(provider: try providerFactory.makeProvider(for: account), accountID: accountID)
         // Deliberately does NOT scope the Inbox to the account just added:
@@ -421,8 +427,7 @@ import AinkradAppKit
         } catch {
             // A corrupt document can block the purge. Say so rather than
             // pretending the mail is gone.
-            host.log.error("Raven: signing out \(accountID) could not fully purge local mail: " +
-                           "\(error)")
+            host.log.error("Raven: signing out \(accountID) could not fully purge local mail: " + "\(error)")
         }
         refreshOutboxSnapshots()
         // A backfill in flight for THIS account must stop — it would otherwise
@@ -507,8 +512,7 @@ import AinkradAppKit
 
     /// Records whether `accountID`'s most recent backfill stopped early.
     func setTruncated(_ truncated: Bool, for accountID: String) {
-        if truncated { truncatedBackfills.insert(accountID) }
-        else { truncatedBackfills.remove(accountID) }
+        if truncated { truncatedBackfills.insert(accountID) } else { truncatedBackfills.remove(accountID) }
     }
 
     /// Recomputes the one-line roll-up from the per-account errors. Ordered by

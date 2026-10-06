@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The wiring, not the logic.
@@ -19,11 +20,14 @@ import AinkradAppKit
 @Suite("Backfill folds multi-mailbox pages")
 @MainActor struct BackfillFoldingTests {
 
-    private func message(_ messageID: String, labels: [String], id: String,
-                         date: Date = Date(timeIntervalSince1970: 1_000)) -> MailMessage {
-        MailMessage(id: id, threadID: "t1", rfc822MessageID: messageID,
-                    from: MailAddress(email: "s@example.test"), subject: "Subject 1",
-                    date: date, isRead: true, labelIDs: labels, snippet: "s")
+    private func message(
+        _ messageID: String, labels: [String], id: String,
+        date: Date = Date(timeIntervalSince1970: 1_000)
+    ) -> MailMessage {
+        MailMessage(
+            id: id, threadID: "t1", rfc822MessageID: messageID,
+            from: MailAddress(email: "s@example.test"), subject: "Subject 1",
+            date: date, isRead: true, labelIDs: labels, snippet: "s")
     }
 
     private func engine(_ pages: [ThreadPage]) -> (SyncEngine, DocumentMailStore, FakeMailProvider) {
@@ -42,14 +46,18 @@ import AinkradAppKit
         // copy the server also lists under a label. Same `Message-ID`, same thread
         // id, different locators — precisely what `IMAPProvider.fetchThreads`
         // emits when it pages from one mailbox to the next.
-        let inboxPage = ThreadPage(threads: [
-            MailThread(id: "t1", accountID: "a1",
-                       messages: [message("<m1@example.test>", labels: ["INBOX"], id: "imap.7.1.aW5ib3g")])
-        ], nextPageToken: "p2")
-        let labelPage = ThreadPage(threads: [
-            MailThread(id: "t1", accountID: "a1",
-                       messages: [message("<m1@example.test>", labels: ["Work"], id: "imap.7.9.V29yaw")])
-        ], nextPageToken: nil)
+        let inboxPage = ThreadPage(
+            threads: [
+                MailThread(
+                    id: "t1", accountID: "a1",
+                    messages: [message("<m1@example.test>", labels: ["INBOX"], id: "imap.7.1.aW5ib3g")])
+            ], nextPageToken: "p2")
+        let labelPage = ThreadPage(
+            threads: [
+                MailThread(
+                    id: "t1", accountID: "a1",
+                    messages: [message("<m1@example.test>", labels: ["Work"], id: "imap.7.9.V29yaw")])
+            ], nextPageToken: nil)
         let (engine, store, _) = engine([inboxPage, labelPage])
 
         try await engine.backfill()
@@ -64,11 +72,23 @@ import AinkradAppKit
     @Test("one message listed in two mailboxes is stored once, not twice")
     func foldingDoesNotDuplicateTheMessage() async throws {
         let (engine, store, _) = engine([
-            ThreadPage(threads: [MailThread(id: "t1", accountID: "a1", messages: [
-                message("<m1@example.test>", labels: ["INBOX"], id: "imap.7.1.aW5ib3g")])],
+            ThreadPage(
+                threads: [
+                    MailThread(
+                        id: "t1", accountID: "a1",
+                        messages: [
+                            message("<m1@example.test>", labels: ["INBOX"], id: "imap.7.1.aW5ib3g")
+                        ])
+                ],
                 nextPageToken: "p2"),
-            ThreadPage(threads: [MailThread(id: "t1", accountID: "a1", messages: [
-                message("<m1@example.test>", labels: ["Work"], id: "imap.7.9.V29yaw")])],
+            ThreadPage(
+                threads: [
+                    MailThread(
+                        id: "t1", accountID: "a1",
+                        messages: [
+                            message("<m1@example.test>", labels: ["Work"], id: "imap.7.9.V29yaw")
+                        ])
+                ],
                 nextPageToken: nil),
         ])
 
@@ -82,16 +102,30 @@ import AinkradAppKit
     @Test("a message only the first page carried is not dropped by the second")
     func foldingCarriesOverUnmentionedMessages() async throws {
         let (engine, store, _) = engine([
-            ThreadPage(threads: [MailThread(id: "t1", accountID: "a1", messages: [
-                message("<m1@example.test>", labels: ["INBOX"], id: "imap.7.1.a"),
-                message("<m2@example.test>", labels: ["INBOX"], id: "imap.7.2.b",
-                        date: Date(timeIntervalSince1970: 2_000))])],
+            ThreadPage(
+                threads: [
+                    MailThread(
+                        id: "t1", accountID: "a1",
+                        messages: [
+                            message("<m1@example.test>", labels: ["INBOX"], id: "imap.7.1.a"),
+                            message(
+                                "<m2@example.test>", labels: ["INBOX"], id: "imap.7.2.b",
+                                date: Date(timeIntervalSince1970: 2_000)),
+                        ])
+                ],
                 nextPageToken: "p2"),
             // The label mailbox holds only the second message. Replacing would
             // delete the first from the thread on every sync.
-            ThreadPage(threads: [MailThread(id: "t1", accountID: "a1", messages: [
-                message("<m2@example.test>", labels: ["Work"], id: "imap.7.9.c",
-                        date: Date(timeIntervalSince1970: 2_000))])],
+            ThreadPage(
+                threads: [
+                    MailThread(
+                        id: "t1", accountID: "a1",
+                        messages: [
+                            message(
+                                "<m2@example.test>", labels: ["Work"], id: "imap.7.9.c",
+                                date: Date(timeIntervalSince1970: 2_000))
+                        ])
+                ],
                 nextPageToken: nil),
         ])
 
@@ -99,7 +133,8 @@ import AinkradAppKit
 
         let thread = try #require(store.thread("t1"))
         #expect(thread.messages.count == 2)
-        #expect(thread.messages.compactMap(\.rfc822MessageID)
+        #expect(
+            thread.messages.compactMap(\.rfc822MessageID)
                 == ["<m1@example.test>", "<m2@example.test>"])
     }
 
@@ -108,11 +143,23 @@ import AinkradAppKit
     @Test("the synced count counts threads, not writes")
     func syncedCountIsByIdentity() async throws {
         let (engine, _, _) = engine([
-            ThreadPage(threads: [MailThread(id: "t1", accountID: "a1", messages: [
-                message("<m1@example.test>", labels: ["INBOX"], id: "imap.7.1.a")])],
+            ThreadPage(
+                threads: [
+                    MailThread(
+                        id: "t1", accountID: "a1",
+                        messages: [
+                            message("<m1@example.test>", labels: ["INBOX"], id: "imap.7.1.a")
+                        ])
+                ],
                 nextPageToken: "p2"),
-            ThreadPage(threads: [MailThread(id: "t1", accountID: "a1", messages: [
-                message("<m1@example.test>", labels: ["Work"], id: "imap.7.9.b")])],
+            ThreadPage(
+                threads: [
+                    MailThread(
+                        id: "t1", accountID: "a1",
+                        messages: [
+                            message("<m1@example.test>", labels: ["Work"], id: "imap.7.9.b")
+                        ])
+                ],
                 nextPageToken: nil),
         ])
 

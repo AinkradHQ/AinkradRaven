@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// `RFC822Builder` is the backend-independent half of what used to be
@@ -26,8 +27,10 @@ struct RFC822BuilderTests {
         let message = OutgoingMessage(
             to: [to], cc: [MailAddress(email: "c@example.test")], bcc: [blind],
             subject: "Subject 1", bodyText: "Body 1",
-            attachments: [OutgoingAttachment(
-                filename: "a.pdf", mimeType: "application/pdf", data: Data("bytes".utf8))])
+            attachments: [
+                OutgoingAttachment(
+                    filename: "a.pdf", mimeType: "application/pdf", data: Data("bytes".utf8))
+            ])
 
         let direct = normalisedBoundaries(build(message))
         let viaGmail = normalisedBoundaries(
@@ -53,9 +56,10 @@ struct RFC822BuilderTests {
         #expect(without.lowercased().contains("bcc:") == false)
         #expect(without.contains("\r\nCc: c@example.test\r\n"))
         #expect(without.contains("Content-Type: multipart/alternative;"))
-        #expect(normalisedBoundaries(withHeader)
-            .replacingOccurrences(of: "Bcc: blind@example.test\r\n", with: "")
-            == normalisedBoundaries(without))
+        #expect(
+            normalisedBoundaries(withHeader)
+                .replacingOccurrences(of: "Bcc: blind@example.test\r\n", with: "")
+                == normalisedBoundaries(without))
     }
 
     @Test("a plain message is multipart/alternative with base64 parts and CRLF throughout")
@@ -78,8 +82,10 @@ struct RFC822BuilderTests {
     func mixedWrapperStructure() {
         let message = OutgoingMessage(
             to: [to], subject: "Subject 1", bodyText: "Body 1",
-            attachments: [OutgoingAttachment(
-                filename: "a.pdf", mimeType: "application/pdf", data: Data("bytes".utf8))],
+            attachments: [
+                OutgoingAttachment(
+                    filename: "a.pdf", mimeType: "application/pdf", data: Data("bytes".utf8))
+            ],
             icsReply: ICSReply(icsText: "BEGIN:VCALENDAR\r\nEND:VCALENDAR"))
         let raw = build(message)
 
@@ -98,9 +104,9 @@ struct RFC822BuilderTests {
         // A guard against the extraction quietly regrowing a Gmail dependency:
         // asserted on the source text because that is exactly the criterion.
         let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // RavenFeatureTests
-            .deletingLastPathComponent()   // Tests
-            .deletingLastPathComponent()   // repo root
+            .deletingLastPathComponent()  // RavenFeatureTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // repo root
             .appendingPathComponent("Sources/RavenFeature/MIME/RFC822Builder.swift")
         let source = try String(contentsOf: url, encoding: .utf8)
         #expect(source.isEmpty == false)

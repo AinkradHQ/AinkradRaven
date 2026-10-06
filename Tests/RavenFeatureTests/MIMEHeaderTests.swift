@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The header-emission chokepoint. Header injection was possible because
@@ -34,20 +35,24 @@ struct MIMEHeaderTests {
 
     @Test("an address's email and display name are each sanitized before the list is joined")
     func addressFieldsSanitized() {
-        let line = MIMEHeader.addressLine("To", [
-            MailAddress(email: "a@example.com\r\nBcc: attacker@evil.com", name: nil),
-            MailAddress(email: "b@example.com", name: "Bea\r\nBcc: attacker@evil.com"),
-        ])
+        let line = MIMEHeader.addressLine(
+            "To",
+            [
+                MailAddress(email: "a@example.com\r\nBcc: attacker@evil.com", name: nil),
+                MailAddress(email: "b@example.com", name: "Bea\r\nBcc: attacker@evil.com"),
+            ])
         #expect(line.contains("\r") == false)
         #expect(line.contains("\n") == false)
     }
 
     @Test("an ASCII display name containing a comma is quoted so it cannot split the address list")
     func commaInDisplayNameIsQuoted() {
-        let line = MIMEHeader.addressLine("To", [
-            MailAddress(email: "bea@example.com", name: "Smith, Bea"),
-            MailAddress(email: "c@example.com", name: nil),
-        ])
+        let line = MIMEHeader.addressLine(
+            "To",
+            [
+                MailAddress(email: "bea@example.com", name: "Smith, Bea"),
+                MailAddress(email: "c@example.com", name: nil),
+            ])
         #expect(line.contains("\"Smith, Bea\" <bea@example.com>"))
         // Round-trips back to two addresses, not three.
         let value = String(line.dropFirst("To: ".count))
@@ -66,7 +71,7 @@ struct MIMEHeaderTests {
             #expect(index > 0 && Array(line)[index - 1] == "\r")
             #expect(index + 1 < line.count && Array(line)[index + 1] == " ")
         }
-        #expect(RFC2047.decode(line).contains("Bcc") )
+        #expect(RFC2047.decode(line).contains("Bcc"))
         // …decoded back it is TEXT inside the subject, not a header.
         #expect(RFC2047.decode(line).contains("\r\nBcc") == false)
     }
@@ -92,8 +97,9 @@ struct MIMEHeaderTests {
         let joined = encoded.replacingOccurrences(of: "\r\n", with: "")
         let data = Data(base64Encoded: joined)
         #expect(data != nil)
-        #expect(String(data: data ?? Data(), encoding: .utf8)
-            == MIMEHeader.normalizeCRLF(text))
+        #expect(
+            String(data: data ?? Data(), encoding: .utf8)
+                == MIMEHeader.normalizeCRLF(text))
     }
 }
 
@@ -115,15 +121,16 @@ struct AddressListParserTests {
     @Test("the naive split's failure mode is gone: no participant is dropped")
     func participantIsNotDropped() {
         let header = "\"Smith, Bea\" <bea@x.com>, \"Jones, Cal\" <cal@y.com>"
-        #expect("\(header)".split(separator: ",").count == 4)   // what used to happen
-        #expect(AddressListParser.parse(header).count == 2)     // what happens now
+        #expect("\(header)".split(separator: ",").count == 4)  // what used to happen
+        #expect(AddressListParser.parse(header).count == 2)  // what happens now
     }
 
     @Test("ordinary lists, extra whitespace and bare addresses still parse as before")
     func ordinaryListsUnaffected() {
         #expect(AddressListParser.parse("a@x.com, b@y.com").map(\.email) == ["a@x.com", "b@y.com"])
-        #expect(AddressListParser.parse("  a@x.com ,b@y.com  ").map(\.email)
-            == ["a@x.com", "b@y.com"])
+        #expect(
+            AddressListParser.parse("  a@x.com ,b@y.com  ").map(\.email)
+                == ["a@x.com", "b@y.com"])
         #expect(AddressListParser.parse("Bea <bea@x.com>").first?.name == "Bea")
         #expect(AddressListParser.parse("").isEmpty)
         #expect(AddressListParser.parse("not an address").isEmpty)

@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// Attach, schedule, save and send on one row, plus the schedule control.
 ///
@@ -25,11 +25,15 @@ struct ComposeFooterBar: View {
         VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
             if isScheduling { scheduleControl }
             HStack(spacing: AinkradSpacing.xs) {
-                AinkradIconButton(systemName: "paperclip", size: 26, tooltip: "Attach files…",
-                                  action: onAttach)
-                AinkradIconButton(systemName: "clock", size: 26,
-                                  tooltip: isScheduling ? "Cancel scheduling"
-                                                        : "Schedule for later") {
+                AinkradIconButton(
+                    systemName: "paperclip", size: 26, tooltip: "Attach files…",
+                    action: onAttach)
+                AinkradIconButton(
+                    systemName: "clock", size: 26,
+                    tooltip: isScheduling
+                        ? "Cancel scheduling"
+                        : "Schedule for later"
+                ) {
                     isScheduling.toggle()
                     if !isScheduling { scheduledSendAt = nil }
                 }
@@ -46,10 +50,12 @@ struct ComposeFooterBar: View {
                 }
                 Spacer(minLength: AinkradSpacing.xs)
                 AinkradButton(title: "Save Draft", style: .ghost, action: onSaveDraft)
-                AinkradButton(title: scheduledSendAt == nil ? "Send" : "Schedule Send",
-                              style: .primary, icon: "paperplane",
-                              isLoading: isSending, action: onSend)
-                    .disabled(!canSend || isSending)
+                AinkradButton(
+                    title: scheduledSendAt == nil ? "Send" : "Schedule Send",
+                    style: .primary, icon: "paperplane",
+                    isLoading: isSending, action: onSend
+                )
+                .disabled(!canSend || isSending)
             }
         }
     }
@@ -68,25 +74,31 @@ struct ComposeFooterBar: View {
         VStack(alignment: .leading, spacing: AinkradSpacing.xs) {
             HStack(spacing: AinkradSpacing.xs) {
                 ForEach(SchedulePresets.presets(now: Date())) { preset in
-                    AinkradButton(title: preset.title,
-                                  style: isSelected(preset.date) ? .primary : .ghost) {
+                    AinkradButton(
+                        title: preset.title,
+                        style: isSelected(preset.date) ? .primary : .ghost
+                    ) {
                         scheduledSendAt = preset.date
                     }
                 }
                 Spacer(minLength: 0)
             }
             HStack(spacing: AinkradSpacing.xs) {
-                DatePicker("", selection: Binding(
-                    get: { scheduledSendAt ?? Date().addingTimeInterval(3600) },
-                    set: { scheduledSendAt = $0 }),
+                DatePicker(
+                    "",
+                    selection: Binding(
+                        get: { scheduledSendAt ?? Date().addingTimeInterval(3600) },
+                        set: { scheduledSendAt = $0 }),
                     in: Date()...,
-                    displayedComponents: [.date, .hourAndMinute])
-                    .labelsHidden()
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+                .labelsHidden()
                 AinkradIconGlyph(systemName: "info.circle")
-                    .ainkradTooltip("Raven must be running at the scheduled time for this to "
-                                    + "send — a message scheduled while your Mac is asleep sends "
-                                    + "when the app next wakes, not exactly at the time you "
-                                    + "picked.")
+                    .ainkradTooltip(
+                        "Raven must be running at the scheduled time for this to "
+                            + "send — a message scheduled while your Mac is asleep sends "
+                            + "when the app next wakes, not exactly at the time you "
+                            + "picked.")
                 Spacer(minLength: 0)
             }
         }

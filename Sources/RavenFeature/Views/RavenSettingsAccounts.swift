@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The account list: every connected mailbox, its live state, its errors, and
 /// the destructive actions that act on exactly one of them.
@@ -76,16 +76,17 @@ struct RavenAccountsPane: View {
                     set: { if !$0 { pendingSignOut = nil } }),
                 title: "Sign out",
                 // Names the address it will erase — never a bare "Sign out?".
-                message: "Sign out of \(pendingSignOut?.address ?? "this account")? Every local " +
-                         "copy of its mail and any queued sends for it will be removed from " +
-                         "this device. Other connected accounts are not affected.",
+                message: "Sign out of \(pendingSignOut?.address ?? "this account")? Every local "
+                    + "copy of its mail and any queued sends for it will be removed from "
+                    + "this device. Other connected accounts are not affected.",
                 confirmTitle: "Sign Out",
                 isDestructive: true,
                 onConfirm: {
                     guard let account = pendingSignOut else { return }
                     runtime.signOut(account.id)
                     accountsVersion += 1
-                })
+                }
+            )
             .onAppear {
                 for account in runtime.accounts { signatures[account.id] = account.signature }
             }
@@ -104,30 +105,37 @@ struct RavenAccountsPane: View {
 
     @ViewBuilder
     private var accountsBody: some View {
-        let accounts = { _ = accountsVersion; return runtime.accounts }()
+        let accounts = {
+            _ = accountsVersion
+            return runtime.accounts
+        }()
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
             if accounts.isEmpty {
                 AinkradEmptyState(
                     icon: "envelope.badge",
                     title: "No accounts connected",
                     message: "Connect a Gmail account, or add any IMAP mailbox, to start "
-                           + "syncing mail into Raven.",
+                        + "syncing mail into Raven.",
                     actionTitle: "Connect Gmail",
-                    action: { connect() })
-                    .frame(height: 220)
-                    .disabled(!runtime.canConnectAccount || isConnecting)
+                    action: { connect() }
+                )
+                .frame(height: 220)
+                .disabled(!runtime.canConnectAccount || isConnecting)
             } else {
                 ForEach(accounts) { account in
                     accountRow(account)
                 }
             }
             HStack(spacing: AinkradSpacing.sm) {
-                AinkradButton(title: accounts.isEmpty ? "Connect Gmail"
-                                                      : "Connect Another Account",
-                              style: .secondary,
-                              icon: "person.badge.plus", isLoading: isConnecting,
-                              action: { connect() })
-                    .disabled(!runtime.canConnectAccount || isConnecting)
+                AinkradButton(
+                    title: accounts.isEmpty
+                        ? "Connect Gmail"
+                        : "Connect Another Account",
+                    style: .secondary,
+                    icon: "person.badge.plus", isLoading: isConnecting,
+                    action: { connect() }
+                )
+                .disabled(!runtime.canConnectAccount || isConnecting)
                 // Graph is the second browser flow and needs no form of its own —
                 // an Azure app registration is app-level configuration, not a
                 // per-mailbox one, so there is nothing for the user to type here.
@@ -137,15 +145,19 @@ struct RavenAccountsPane: View {
                 // Google credentials and refuse it to a build with only Azure
                 // ones. Both are wrong in the direction of a button that cannot
                 // work, which is the state this pane exists to avoid.
-                AinkradButton(title: "Connect Outlook", style: .ghost, icon: "cloud",
-                              isLoading: isConnectingGraph,
-                              action: { connect(kind: .graph) })
-                    .disabled(!runtime.canConnectGraphAccount || isConnectingGraph)
+                AinkradButton(
+                    title: "Connect Outlook", style: .ghost, icon: "cloud",
+                    isLoading: isConnectingGraph,
+                    action: { connect(kind: .graph) }
+                )
+                .disabled(!runtime.canConnectGraphAccount || isConnectingGraph)
                 // Deliberately NOT gated on `canConnectAccount`: that asks whether a
                 // Gmail OAuth client is available, and an IMAP mailbox needs none.
-                AinkradButton(title: "Add IMAP Mailbox", style: .ghost, icon: "server.rack",
-                              action: { isAddingIMAP.toggle() })
-                    .disabled(!runtime.canAddIMAPAccount)
+                AinkradButton(
+                    title: "Add IMAP Mailbox", style: .ghost, icon: "server.rack",
+                    action: { isAddingIMAP.toggle() }
+                )
+                .disabled(!runtime.canAddIMAPAccount)
                 Spacer(minLength: 0)
             }
             if isAddingIMAP {
@@ -161,8 +173,9 @@ struct RavenAccountsPane: View {
                     onCancel: { isAddingIMAP = false })
             }
             if let connectError {
-                AinkradBanner(message: connectError, status: .danger,
-                              onDismiss: { self.connectError = nil })
+                AinkradBanner(
+                    message: connectError, status: .danger,
+                    onDismiss: { self.connectError = nil })
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -181,8 +194,7 @@ struct RavenAccountsPane: View {
                 isExpanded: Binding(
                     get: { expandedAccounts.contains(account.id) },
                     set: { isOpen in
-                        if isOpen { expandedAccounts.insert(account.id) }
-                        else { expandedAccounts.remove(account.id) }
+                        if isOpen { expandedAccounts.insert(account.id) } else { expandedAccounts.remove(account.id) }
                     })
             ) {
                 accountDetail(account)
@@ -192,8 +204,9 @@ struct RavenAccountsPane: View {
                 statusBadge(account)
                 if runtime.isReadOnly(accountID: account.id) {
                     AinkradBadge(text: "Read-only", status: .neutral)
-                        .ainkradTooltip("An Apple Mail import. It has no transport, so it "
-                                        + "cannot send or change labels.")
+                        .ainkradTooltip(
+                            "An Apple Mail import. It has no transport, so it "
+                                + "cannot send or change labels.")
                 }
                 if case .backfilling(let threadsSynced) = runtime.syncState(for: account.id) {
                     // Live progress for the backfill `connectAccount`/
@@ -205,10 +218,12 @@ struct RavenAccountsPane: View {
                 }
                 Spacer(minLength: AinkradSpacing.sm)
                 if let lastSyncedAt = account.lastSyncedAt {
-                    Text("Last synced "
-                         + lastSyncedAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(AinkradFontResolver.font(.caption, typography: typo))
-                        .foregroundStyle(theme.foreground.opacity(0.55))
+                    Text(
+                        "Last synced "
+                            + lastSyncedAt.formatted(date: .abbreviated, time: .shortened)
+                    )
+                    .font(AinkradFontResolver.font(.caption, typography: typo))
+                    .foregroundStyle(theme.foreground.opacity(0.55))
                 }
             }
             .padding(.leading, AinkradSpacing.lg)
@@ -224,9 +239,10 @@ struct RavenAccountsPane: View {
                 AinkradBanner(message: pushStatus, status: .warning)
             }
             if runtime.lastBackfillTruncated(for: account.id) {
-                AinkradBanner(message: "The last backfill stopped early (page limit reached). " +
-                              "Some older mail in the sync window may be missing.",
-                              status: .warning)
+                AinkradBanner(
+                    message: "The last backfill stopped early (page limit reached). "
+                        + "Some older mail in the sync window may be missing.",
+                    status: .warning)
             }
         }
         .padding(.vertical, AinkradSpacing.xs)
@@ -238,22 +254,26 @@ struct RavenAccountsPane: View {
             // Read-only accounts cannot send, so a signature for one is a field
             // that can never take effect.
             if showsSignature, !runtime.isReadOnly(accountID: account.id) {
-                AinkradFormRow(title: "Signature",
-                              help: "Appended to every message sent from this account.") {
+                AinkradFormRow(
+                    title: "Signature",
+                    help: "Appended to every message sent from this account."
+                ) {
                     AinkradTextArea(
-                        text: Binding(get: { signatures[account.id] ?? account.signature },
-                                      set: { signatures[account.id] = $0 }),
-                        placeholder: "Signature", minHeight: 60)
-                        // Read-modify-write the CURRENT row rather than writing
-                        // back `account`, which is a snapshot captured when this
-                        // row was rendered: writing that back on every keystroke
-                        // clobbered syncCursor/lastSyncedAt/state/lastError with
-                        // stale values, silently re-walking (or fully
-                        // re-backfilling) the mailbox.
-                        .onChange(of: signatures[account.id]) { _, newValue in
-                            guard let newValue else { return }
-                            runtime.updateSignature(newValue, accountID: account.id)
-                        }
+                        text: Binding(
+                            get: { signatures[account.id] ?? account.signature },
+                            set: { signatures[account.id] = $0 }),
+                        placeholder: "Signature", minHeight: 60
+                    )
+                    // Read-modify-write the CURRENT row rather than writing
+                    // back `account`, which is a snapshot captured when this
+                    // row was rendered: writing that back on every keystroke
+                    // clobbered syncCursor/lastSyncedAt/state/lastError with
+                    // stale values, silently re-walking (or fully
+                    // re-backfilling) the mailbox.
+                    .onChange(of: signatures[account.id]) { _, newValue in
+                        guard let newValue else { return }
+                        runtime.updateSignature(newValue, accountID: account.id)
+                    }
                 }
             }
             HStack(spacing: AinkradSpacing.sm) {
@@ -263,8 +283,10 @@ struct RavenAccountsPane: View {
                         accountsVersion += 1
                     }
                 }
-                AinkradButton(title: "Resync From Scratch", style: .ghost,
-                              icon: "arrow.triangle.2.circlepath") {
+                AinkradButton(
+                    title: "Resync From Scratch", style: .ghost,
+                    icon: "arrow.triangle.2.circlepath"
+                ) {
                     // Kicks off and returns immediately — see
                     // `RavenRuntime.resyncFromScratch`. Progress reaches this
                     // view via `.onChange(of: runtime.syncState)`, not a poll.
@@ -297,7 +319,8 @@ struct RavenAccountsPane: View {
     private func connect(kind: MailAccount.ProviderKind = .gmail) {
         let isGraph = kind == .graph
         guard isGraph ? runtime.canConnectGraphAccount : runtime.canConnectAccount else {
-            connectError = isGraph
+            connectError =
+                isGraph
                 ? "Add an Azure app registration (tenant id, client id, client secret) "
                     + "before connecting an Outlook account."
                 : "Enter a Gmail OAuth client id and secret before connecting."
@@ -306,22 +329,25 @@ struct RavenAccountsPane: View {
         if isGraph { isConnectingGraph = true } else { isConnecting = true }
         Task {
             do {
-                try await runtime.connectAccount(kind: kind, onAuthorizationURL: { url in
-                    // `authorize` already opens this in the default browser;
-                    // logging it too covers the case (a bare command-line
-                    // host, or a browser that fails to focus) where that
-                    // doesn't visibly happen. The URL carries no secret — see
-                    // `GmailAuth.authorize`'s own documentation of this point.
-                    //
-                    // Goes to `host.log`, not `print()`: a shipped plugin's
-                    // stdout is not somewhere the user or the host can read.
-                    // This callback is `@Sendable` and arrives off the main
-                    // actor, hence the hop.
-                    Task { @MainActor in
-                        runtime.log("Raven: open this URL to finish connecting "
+                try await runtime.connectAccount(
+                    kind: kind,
+                    onAuthorizationURL: { url in
+                        // `authorize` already opens this in the default browser;
+                        // logging it too covers the case (a bare command-line
+                        // host, or a browser that fails to focus) where that
+                        // doesn't visibly happen. The URL carries no secret — see
+                        // `GmailAuth.authorize`'s own documentation of this point.
+                        //
+                        // Goes to `host.log`, not `print()`: a shipped plugin's
+                        // stdout is not somewhere the user or the host can read.
+                        // This callback is `@Sendable` and arrives off the main
+                        // actor, hence the hop.
+                        Task { @MainActor in
+                            runtime.log(
+                                "Raven: open this URL to finish connecting "
                                     + "\(isGraph ? "Outlook" : "Gmail"): \(url)")
-                    }
-                })
+                        }
+                    })
                 accountsVersion += 1
                 for account in runtime.accounts where signatures[account.id] == nil {
                     signatures[account.id] = account.signature

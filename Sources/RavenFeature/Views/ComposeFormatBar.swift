@@ -1,7 +1,7 @@
-import SwiftUI
-import AppKit
 import AinkradAppKit
 import AinkradAppKitUI
+import AppKit
+import SwiftUI
 
 /// One formatting action, and the only way the format bar is allowed to change
 /// the document.
@@ -25,15 +25,18 @@ enum RichTextCommand: Equatable {
     @MainActor func apply(to textView: NSTextView) {
         let range = effectiveRange(in: textView)
         guard range.length > 0, let storage = textView.textStorage else { return }
-        let baseFont = (textView as? RichComposeTextView)?.baseFont
+        let baseFont =
+            (textView as? RichComposeTextView)?.baseFont
             ?? textView.font ?? .systemFont(ofSize: 13)
-        let baseColor = (textView as? RichComposeTextView)?.baseColor
+        let baseColor =
+            (textView as? RichComposeTextView)?.baseColor
             ?? textView.textColor ?? .textColor
         Self.mutate(textView, range: range) {
             switch self {
             case .clearFormatting:
-                storage.setAttributes([.font: baseFont, .foregroundColor: baseColor],
-                                      range: range)
+                storage.setAttributes(
+                    [.font: baseFont, .foregroundColor: baseColor],
+                    range: range)
             case .toggle(let kind):
                 if Self.covers(kind, storage, range) {
                     Self.remove(kind, from: storage, range: range, baseFont: baseFont)
@@ -45,10 +48,12 @@ enum RichTextCommand: Equatable {
                     // format command — the allowlist is applied on this path
                     // exactly as it is on paste.
                     let existing = RichTextBridge.spans(in: storage, range: range)
-                    storage.setAttributes([.font: baseFont, .foregroundColor: baseColor],
-                                          range: range)
-                    let added = RichBody.Span(start: range.location, length: range.length,
-                                              kind: kind)
+                    storage.setAttributes(
+                        [.font: baseFont, .foregroundColor: baseColor],
+                        range: range)
+                    let added = RichBody.Span(
+                        start: range.location, length: range.length,
+                        kind: kind)
                     for span in existing + [added] {
                         RichTextBridge.applyKind(
                             span.kind, to: storage,
@@ -69,16 +74,20 @@ enum RichTextCommand: Equatable {
         return (textView.string as NSString).paragraphRange(for: selected)
     }
 
-    private static func covers(_ kind: RichBody.Kind, _ storage: NSTextStorage,
-                               _ range: NSRange) -> Bool {
+    private static func covers(
+        _ kind: RichBody.Kind, _ storage: NSTextStorage,
+        _ range: NSRange
+    ) -> Bool {
         RichTextBridge.spans(in: storage, range: range).contains {
             $0.kind == kind && $0.start <= range.location
                 && $0.start + $0.length >= NSMaxRange(range)
         }
     }
 
-    private static func remove(_ kind: RichBody.Kind, from storage: NSTextStorage,
-                               range: NSRange, baseFont: NSFont) {
+    private static func remove(
+        _ kind: RichBody.Kind, from storage: NSTextStorage,
+        range: NSRange, baseFont: NSFont
+    ) {
         switch kind {
         case .bold: removeTrait(.boldFontMask, from: storage, range: range)
         case .italic: removeTrait(.italicFontMask, from: storage, range: range)
@@ -93,8 +102,10 @@ enum RichTextCommand: Equatable {
         }
     }
 
-    private static func removeTrait(_ trait: NSFontTraitMask, from storage: NSTextStorage,
-                                    range: NSRange) {
+    private static func removeTrait(
+        _ trait: NSFontTraitMask, from storage: NSTextStorage,
+        range: NSRange
+    ) {
         storage.enumerateAttribute(.font, in: range) { value, sub, _ in
             guard let font = value as? NSFont else { return }
             storage.addAttribute(
@@ -114,8 +125,10 @@ enum RichTextCommand: Equatable {
     /// invisible to ⌘Z and invisible to the binding until the next keystroke.
     /// `ComposeRichEditorTests.commandIsUndoable` is what holds this in place;
     /// it fails if the pair is bypassed.
-    @MainActor private static func mutate(_ textView: NSTextView, range: NSRange,
-                                          _ change: () -> Void) {
+    @MainActor private static func mutate(
+        _ textView: NSTextView, range: NSRange,
+        _ change: () -> Void
+    ) {
         guard textView.shouldChangeText(in: range, replacementString: nil) else { return }
         change()
         textView.didChangeText()
@@ -159,7 +172,8 @@ struct ComposeFormatBar: View {
                     AinkradTextField(text: $linkURLText, placeholder: "https://")
                     AinkradButton(title: "Add Link", style: .primary, action: addLink)
                     AinkradButton(title: "Cancel", style: .ghost) {
-                        isEnteringLink = false; linkURLText = ""
+                        isEnteringLink = false
+                        linkURLText = ""
                     }
                 }
             }
@@ -183,8 +197,10 @@ struct ComposeFormatBar: View {
         }
     }
 
-    private func button(_ systemName: String, _ tooltip: String,
-                        _ command: RichTextCommand) -> some View {
+    private func button(
+        _ systemName: String, _ tooltip: String,
+        _ command: RichTextCommand
+    ) -> some View {
         AinkradIconButton(systemName: systemName, size: 24, tooltip: tooltip) {
             guard let textView = handle.textView else { return }
             command.apply(to: textView)
@@ -192,12 +208,16 @@ struct ComposeFormatBar: View {
     }
 
     private func addLink() {
-        defer { linkURLText = ""; isEnteringLink = false }
+        defer {
+            linkURLText = ""
+            isEnteringLink = false
+        }
         // A link whose address is not a URL is refused rather than stored as
         // one: `RichBody` carries a real `URL`, and inventing one here would
         // put a broken `href` in a sent message.
         guard let url = URL(string: linkURLText.trimmingCharacters(in: .whitespaces)),
-              url.scheme != nil, let textView = handle.textView else { return }
+            url.scheme != nil, let textView = handle.textView
+        else { return }
         RichTextCommand.toggle(.link(url)).apply(to: textView)
     }
 }

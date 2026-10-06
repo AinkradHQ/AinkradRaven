@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 14's last mile: `IMAPIdleWatcher` reachable from a running `RavenRuntime`.
@@ -32,8 +33,9 @@ import AinkradAppKit
     /// path and reaches the provider either way — what matters is only that it
     /// reaches the provider at all.
     private func imapAccount(_ id: String) -> MailAccount {
-        MailAccount(id: id, provider: .imap, address: "\(id)@example.test",
-                    displayName: id, state: .ready)
+        MailAccount(
+            id: id, provider: .imap, address: "\(id)@example.test",
+            displayName: id, state: .ready)
     }
 
     /// One scripted IMAP server whose FIRST lease idles and whose SECOND lease
@@ -44,7 +46,8 @@ import AinkradAppKit
     /// cannot be produced by the runtime on its own. A pass that never reached the
     /// provider leaves `syncErrors` nil, which is exactly the negative case.
     private func idlingServer(capabilities: String = "IMAP4rev1 IDLE")
-        -> IMAPIdleHarness.Server {
+        -> IMAPIdleHarness.Server
+    {
         IMAPIdleHarness.Server(scripts: [IMAPIdleHarness.Script(capabilities: capabilities)])
     }
 
@@ -149,16 +152,24 @@ import AinkradAppKit
         await connection.transport.enqueue(
             try IMAPDeltaHarness.fixtureText("imap-idle-one-arrival"))
         let watcher = try #require(runtime.idleWatchers["a-imap"])
-        guard await IMAPIdleHarness.waitUntil("the notification", {
-            await watcher.notificationCount == 1
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntil(
+                "the notification",
+                {
+                    await watcher.notificationCount == 1
+                })
+        else { return }
         // Nothing yet: the arrival is still inside the coalesce window.
         #expect(runtime.lastSyncError(for: "a-imap") == nil)
 
         #expect(await clock.release(.seconds(1)))
-        guard await IMAPIdleHarness.waitUntilOnMain("the IDLE-driven delta pass", {
-            runtime.lastSyncError(for: "a-imap") != nil
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntilOnMain(
+                "the IDLE-driven delta pass",
+                {
+                    runtime.lastSyncError(for: "a-imap") != nil
+                })
+        else { return }
         #expect(runtime.lastSyncError(for: "a-imap")?.contains("noScriptLeft") == true)
         // The pass asked for a lease of ITS OWN rather than reusing the idling
         // one: the watcher still holds the only granted lease, and the second
@@ -207,15 +218,20 @@ import AinkradAppKit
         let clock = IMAPIdleHarness.FakeClock()
         let runtime = self.runtime(clock)
         let server = IMAPIdleHarness.Server(scripts: [
-            IMAPIdleHarness.Script(capabilities: "IMAP4rev1",
-                                   selectFixture: nil, doneCycles: 0),
+            IMAPIdleHarness.Script(
+                capabilities: "IMAP4rev1",
+                selectFixture: nil, doneCycles: 0)
         ])
         try runtime.store.saveAccount(imapAccount("a-imap"))
         runtime.attach(provider: IMAPIdleHarness.provider(server), accountID: "a-imap")
 
-        guard await IMAPIdleHarness.waitUntilOnMain("the terminal outcome", {
-            runtime.pushStates["a-imap"] == .notAdvertised
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntilOnMain(
+                "the terminal outcome",
+                {
+                    runtime.pushStates["a-imap"] == .notAdvertised
+                })
+        else { return }
         #expect(runtime.pushStatus(for: "a-imap")?.contains("does not support IMAP IDLE") == true)
         // Terminal means terminal: no reconnect schedule was ever entered.
         #expect(await clock.requested.isEmpty)
@@ -239,9 +255,13 @@ import AinkradAppKit
         try runtime.store.saveAccount(imapAccount("a-imap"))
         runtime.attach(provider: IMAPIdleHarness.provider(server), accountID: "a-imap")
 
-        guard await IMAPIdleHarness.waitUntilOnMain("the terminal outcome", {
-            runtime.pushStates["a-imap"] == .noSelectableMailbox
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntilOnMain(
+                "the terminal outcome",
+                {
+                    runtime.pushStates["a-imap"] == .noSelectableMailbox
+                })
+        else { return }
         #expect(runtime.pushStatus(for: "a-imap")?.contains("two-minute check") == true)
         #expect(await server.isBalanced)
         runtime.teardown()
@@ -270,9 +290,13 @@ import AinkradAppKit
         await connection.transport.enqueue(
             try IMAPDeltaHarness.fixtureText("imap-idle-one-arrival"))
         let watcher = try #require(runtime.idleWatchers["a-imap"])
-        guard await IMAPIdleHarness.waitUntil("the pending notification", {
-            await watcher.notificationCount == 1
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntil(
+                "the pending notification",
+                {
+                    await watcher.notificationCount == 1
+                })
+        else { return }
 
         runtime.signOut("a-imap")
 
@@ -283,9 +307,12 @@ import AinkradAppKit
         #expect(runtime.store.accounts().contains { $0.id == "a-imap" } == false)
         // The socket really came back: `stop()` sent its DONE and `withSession`
         // released the lease.
-        #expect(await IMAPIdleHarness.waitUntil("the lease to come back", {
-            await server.isBalanced
-        }))
+        #expect(
+            await IMAPIdleHarness.waitUntil(
+                "the lease to come back",
+                {
+                    await server.isBalanced
+                }))
         #expect(await IMAPIdleHarness.wire(server, 0).hasSuffix("DONE\r\n"))
         #expect(await connection.session.inFlightCount == 0)
 
@@ -333,16 +360,23 @@ import AinkradAppKit
         let clock = IMAPIdleHarness.FakeClock()
         let runtime = self.runtime(clock)
         let server = IMAPIdleHarness.Server(
-            scripts: [IMAPIdleHarness.Script(capabilities: "IMAP4rev1",
-                                             selectFixture: nil, doneCycles: 0)],
+            scripts: [
+                IMAPIdleHarness.Script(
+                    capabilities: "IMAP4rev1",
+                    selectFixture: nil, doneCycles: 0)
+            ],
             gateAcquire: true)
         try runtime.store.saveAccount(imapAccount("a-imap"))
         runtime.attach(provider: IMAPIdleHarness.provider(server), accountID: "a-imap")
 
         // Parked inside `acquire`: started, outcome undecided.
-        guard await IMAPIdleHarness.waitUntil("the acquire attempt", {
-            await server.acquireAttempts == 1
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntil(
+                "the acquire attempt",
+                {
+                    await server.acquireAttempts == 1
+                })
+        else { return }
         #expect(runtime.pushStates["a-imap"] == .idling)
 
         let stopping = try #require(runtime.stopIdleWatcher(accountID: "a-imap"))
@@ -379,11 +413,14 @@ import AinkradAppKit
         #expect(runtime.idleWatchers.isEmpty)
         #expect(runtime.idleTasks.isEmpty)
         #expect(runtime.pushStates.isEmpty)
-        #expect(await IMAPIdleHarness.waitUntil("both leases to come back", {
-            let firstBalanced = await first.isBalanced
-            let secondBalanced = await second.isBalanced
-            return firstBalanced && secondBalanced
-        }))
+        #expect(
+            await IMAPIdleHarness.waitUntil(
+                "both leases to come back",
+                {
+                    let firstBalanced = await first.isBalanced
+                    let secondBalanced = await second.isBalanced
+                    return firstBalanced && secondBalanced
+                }))
         #expect(await IMAPIdleHarness.wire(first, 0).hasSuffix("DONE\r\n"))
         #expect(await IMAPIdleHarness.wire(second, 0).hasSuffix("DONE\r\n"))
     }

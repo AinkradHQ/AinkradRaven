@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 13: the `MailProvider` conformance, asserted on recorded bytes.
@@ -45,9 +46,13 @@ struct IMAPProviderTests {
     func backfillWalksOneMailbox() async throws {
         let (provider, transport, session, _) = try await IMAPProviderHarness.provider(
             steps: Self.backfillSteps)
-        guard let page = await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) else { return }
+        guard
+            let page = await IMAPProviderHarness.expect(
+                "fetchThreads",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                })
+        else { return }
 
         #expect(page.threads.map(\.id) == [Self.m1Thread])
         #expect(page.threads.first?.messages.count == 3)
@@ -56,7 +61,10 @@ struct IMAPProviderTests {
         // form. A locale-dependent formatter would send `15-juin-2025`.
         #expect(wire.contains("UID SEARCH SINCE 15-Jun-2025"))
         // Newest first, and every UID of the page in ONE fetch.
-        #expect(wire.contains("UID FETCH 20,11,10 (UID FLAGS INTERNALDATE ENVELOPE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (MESSAGE-ID REFERENCES IN-REPLY-TO)])"))
+        #expect(
+            wire.contains(
+                "UID FETCH 20,11,10 (UID FLAGS INTERNALDATE ENVELOPE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (MESSAGE-ID REFERENCES IN-REPLY-TO)])"
+            ))
         // A `\Noselect` container is part of the hierarchy and can never be
         // SELECTed; doing so is a tagged NO that fails the whole walk.
         #expect(!wire.contains("SELECT \"Folder D\""))
@@ -76,9 +84,13 @@ struct IMAPProviderTests {
             .init("UID SEARCH SINCE", "imap-provider-search-two"),
             .init("UID FETCH 11,10", "imap-provider-fetch-two-threads"),
         ])
-        guard let page = await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) else { return }
+        guard
+            let page = await IMAPProviderHarness.expect(
+                "fetchThreads",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                })
+        else { return }
         #expect(Set(page.threads.map(\.id)) == [Self.m1Thread, Self.m2Thread])
         let wire = await transport.sentText
         // An empty SEARCH must not be followed by a fetch of the empty set: `UID
@@ -104,11 +116,15 @@ struct IMAPProviderTests {
     func staleGenerationIsRefused() async throws {
         let (provider, transport, session, _) = try await IMAPProviderHarness.provider(
             steps: Self.backfillSteps + [
-                .init("SELECT \"INBOX\"", "imap-provider-select-revalidated"),
+                .init("SELECT \"INBOX\"", "imap-provider-select-revalidated")
             ])
-        guard await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "fetchThreads",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                }) != nil
+        else { return }
         let error = await IMAPProviderHarness.expectFailure("fetchThread") {
             _ = try await provider.fetchThread(id: Self.m1Thread)
         }
@@ -130,9 +146,13 @@ struct IMAPProviderTests {
             .init("UID FETCH 10 (BODYSTRUCTURE BODY.PEEK[TEXT])", "imap-provider-body-text"),
         ])
         let locator = IMAPMessageLocator(mailbox: "INBOX", uidValidity: 7, uid: 10)
-        guard let body = await IMAPProviderHarness.expect("fetchBody", {
-            try await provider.fetchBody(messageID: locator.encoded)
-        }) else { return }
+        guard
+            let body = await IMAPProviderHarness.expect(
+                "fetchBody",
+                {
+                    try await provider.fetchBody(messageID: locator.encoded)
+                })
+        else { return }
         #expect(body.plainText == "Body 1")
         let wire = await transport.sentText
         // `BODY[…]` (no PEEK) sets `\Seen`. Opening a thread must not mark it read
@@ -151,16 +171,24 @@ struct IMAPProviderTests {
             .init("BODY.PEEK[2]", "imap-provider-attachment"),
         ])
         let locator = IMAPMessageLocator(mailbox: "INBOX", uidValidity: 7, uid: 10)
-        guard let first = await IMAPProviderHarness.expect("fetchAttachment", {
-            try await provider.fetchAttachment(messageID: locator.encoded, attachmentID: "2")
-        }) else { return }
+        guard
+            let first = await IMAPProviderHarness.expect(
+                "fetchAttachment",
+                {
+                    try await provider.fetchAttachment(messageID: locator.encoded, attachmentID: "2")
+                })
+        else { return }
         // `QUJD` is base64 for `ABC`. Returning the base64 TEXT is the
         // plausible-but-wrong output: it is non-empty, printable, and would show up
         // as a corrupt file rather than as an error.
         #expect(first == Data("ABC".utf8))
-        guard let second = await IMAPProviderHarness.expect("fetchAttachment again", {
-            try await provider.fetchAttachment(messageID: locator.encoded, attachmentID: "2")
-        }) else { return }
+        guard
+            let second = await IMAPProviderHarness.expect(
+                "fetchAttachment again",
+                {
+                    try await provider.fetchAttachment(messageID: locator.encoded, attachmentID: "2")
+                })
+        else { return }
         #expect(second == first)
         let wire = await transport.sentText
         // TWO fetches for two calls: nothing was cached, on disk or in memory. A
@@ -182,9 +210,13 @@ struct IMAPProviderTests {
             .init("UID SEARCH TEXT", "imap-provider-search-two"),
             .init("UID FETCH 11,10", "imap-provider-fetch-two-threads"),
         ])
-        guard let threads = await IMAPProviderHarness.expect("searchThreads", {
-            try await provider.searchThreads(query: "from:a@example.test", limit: 10)
-        }) else { return }
+        guard
+            let threads = await IMAPProviderHarness.expect(
+                "searchThreads",
+                {
+                    try await provider.searchThreads(query: "from:a@example.test", limit: 10)
+                })
+        else { return }
         #expect(Set(threads.map(\.id)) == [Self.m1Thread, Self.m2Thread])
         let wire = await transport.sentText
         // The query travels verbatim as a SEARCH TEXT argument. Translating
@@ -203,9 +235,13 @@ struct IMAPProviderTests {
     @Test("fetchLabels reports the account's mailboxes, system only where canonical")
     func labelsComeFromTheMailboxList() async throws {
         let (provider, _, session, _) = try await IMAPProviderHarness.provider(steps: [])
-        guard let labels = await IMAPProviderHarness.expect("fetchLabels", {
-            try await provider.fetchLabels()
-        }) else { return }
+        guard
+            let labels = await IMAPProviderHarness.expect(
+                "fetchLabels",
+                {
+                    try await provider.fetchLabels()
+                })
+        else { return }
         #expect(labels.map(\.id).sorted() == ["Folder B", "Folder C", "Folder D", "INBOX"])
         // The id is the mailbox name because that is what a mutation must round-trip
         // back to the server.
@@ -220,9 +256,10 @@ struct IMAPProviderTests {
     func sendIsRefusedUntilSMTPLands() async throws {
         let (provider, _, session, _) = try await IMAPProviderHarness.provider(steps: [])
         let error = await IMAPProviderHarness.expectFailure("send") {
-            try await provider.send(OutgoingMessage(
-                to: [MailAddress(email: "a@example.test")],
-                subject: "Subject 1", bodyText: "Body 1"))
+            try await provider.send(
+                OutgoingMessage(
+                    to: [MailAddress(email: "a@example.test")],
+                    subject: "Subject 1", bodyText: "Body 1"))
         }
         #expect(error is MailError)
         await session.close()

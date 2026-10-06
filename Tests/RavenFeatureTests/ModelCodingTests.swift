@@ -1,12 +1,15 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Model coding")
 struct ModelCodingTests {
     private func roundTrip<T: Codable & Equatable>(_ value: T) throws -> T {
-        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(T.self, from: encoder.encode(value))
     }
 

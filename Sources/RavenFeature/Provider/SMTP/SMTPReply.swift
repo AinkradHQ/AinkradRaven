@@ -81,8 +81,8 @@ enum SMTPSessionError: Error, Equatable {
         case .transientFailure(let code, let text):
             return .providerFailed(status: code, message: text)
         case .permanentFailure(let code, let text),
-             .authenticationRefused(let code, let text),
-             .unexpectedReply(let code, let text):
+            .authenticationRefused(let code, let text),
+            .unexpectedReply(let code, let text):
             return .sendRefused(status: code, message: text)
         case .outcomeUnknown(let detail):
             return .sendOutcomeUnknown(message: detail)
@@ -91,14 +91,17 @@ enum SMTPSessionError: Error, Equatable {
         case .startTLSUnadvertised:
             return .sendRefused(status: -1, message: "the server did not offer STARTTLS")
         case .tlsUpgradeUnsupported:
-            return .sendRefused(status: -1,
-                                message: "this transport cannot upgrade a connection to TLS")
+            return .sendRefused(
+                status: -1,
+                message: "this transport cannot upgrade a connection to TLS")
         case .notEncrypted:
-            return .sendRefused(status: -1,
-                                message: "refused to authenticate on an unencrypted connection")
+            return .sendRefused(
+                status: -1,
+                message: "refused to authenticate on an unencrypted connection")
         case .mechanismUnavailable(let mechanism):
-            return .sendRefused(status: -1,
-                                message: "the server did not offer SASL \(mechanism)")
+            return .sendRefused(
+                status: -1,
+                message: "the server did not offer SASL \(mechanism)")
         }
     }
 }

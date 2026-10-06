@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// `ComposeContext` is the threading/routing logic lifted out of the old
@@ -10,12 +11,14 @@ import Foundation
 /// whatever the composer resolved.
 @Suite("Compose context")
 struct ComposeContextTests {
-    private let thread = ComposeThreadReference(threadID: "t-1", accountID: "acct-b",
-                                               lastMessageRFC822ID: "<msg-9@example.com>")
+    private let thread = ComposeThreadReference(
+        threadID: "t-1", accountID: "acct-b",
+        lastMessageRFC822ID: "<msg-9@example.com>")
 
     private func typed() -> OutgoingMessage {
-        OutgoingMessage(to: [MailAddress(email: "bea@example.com")], subject: "Re: hello",
-                        bodyText: "body")
+        OutgoingMessage(
+            to: [MailAddress(email: "bea@example.com")], subject: "Re: hello",
+            bodyText: "body")
     }
 
     @Test("a new message is attributed to the composer's resolved account and threads onto nothing")
@@ -45,18 +48,21 @@ struct ComposeContextTests {
         #expect(stamped.accountID == "acct-b")
         #expect(stamped.threadID == nil)
         #expect(stamped.inReplyToMessageID == nil)
-        #expect(ComposeContext.reply(mode: .forward, thread: thread)
-            .threadsOntoExistingConversation == false)
+        #expect(
+            ComposeContext.reply(mode: .forward, thread: thread)
+                .threadsOntoExistingConversation == false)
     }
 
     @Test("stamping preserves everything the user actually typed or attached")
     func preservesTypedContent() {
-        let attachment = OutgoingAttachment(filename: "a.txt", mimeType: "text/plain",
-                                            data: Data("hi".utf8))
-        let message = OutgoingMessage(to: [MailAddress(email: "bea@example.com")],
-                                      cc: [MailAddress(email: "cec@example.com")],
-                                      subject: "Re: hello", bodyText: "body",
-                                      attachments: [attachment])
+        let attachment = OutgoingAttachment(
+            filename: "a.txt", mimeType: "text/plain",
+            data: Data("hi".utf8))
+        let message = OutgoingMessage(
+            to: [MailAddress(email: "bea@example.com")],
+            cc: [MailAddress(email: "cec@example.com")],
+            subject: "Re: hello", bodyText: "body",
+            attachments: [attachment])
         let stamped = ComposeContext.reply(mode: .reply, thread: thread)
             .stamp(message, fallbackAccountID: nil)
         #expect(stamped.to.map(\.email) == ["bea@example.com"])

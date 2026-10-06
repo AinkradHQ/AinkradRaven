@@ -86,13 +86,20 @@ public struct MailAccount: Codable, Equatable, Sendable, Identifiable {
     public var lastError: String?
     public var signature: String
 
-    public init(id: String, provider: ProviderKind, address: String,
-                displayName: String, syncCursor: String? = nil,
-                state: State = .needsAuth, lastSyncedAt: Date? = nil,
-                lastError: String? = nil, signature: String = "") {
-        self.id = id; self.provider = provider; self.address = address
-        self.displayName = displayName; self.syncCursor = syncCursor
-        self.state = state; self.lastSyncedAt = lastSyncedAt
-        self.lastError = lastError; self.signature = signature
+    public init(
+        id: String, provider: ProviderKind, address: String,
+        displayName: String, syncCursor: String? = nil,
+        state: State = .needsAuth, lastSyncedAt: Date? = nil,
+        lastError: String? = nil, signature: String = ""
+    ) {
+        self.id = id
+        self.provider = provider
+        self.address = address
+        self.displayName = displayName
+        self.syncCursor = syncCursor
+        self.state = state
+        self.lastSyncedAt = lastSyncedAt
+        self.lastError = lastError
+        self.signature = signature
     }
 }

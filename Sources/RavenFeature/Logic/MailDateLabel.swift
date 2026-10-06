@@ -11,18 +11,21 @@ import Foundation
 public enum MailDateLabel {
     /// - Parameter now: injected so the boundaries can be tested; callers in
     ///   the UI pass the real current date.
-    public static func short(for date: Date, now: Date = Date(),
-                            calendar: Calendar = .current) -> String {
+    public static func short(
+        for date: Date, now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
         // The style is built from the SAME calendar the day/year comparisons
         // use — including its time zone and locale. `.dateTime` and
         // `formatted(date:time:)` always render in the autoupdating current
         // calendar, which would let the label disagree with the branch that
         // chose it (a message at 23:00 UTC is "yesterday" by a UTC calendar and
         // "today" by a +03:00 one).
-        let base = Date.FormatStyle(date: nil, time: nil,
-                                    locale: calendar.locale ?? .current,
-                                    calendar: calendar,
-                                    timeZone: calendar.timeZone)
+        let base = Date.FormatStyle(
+            date: nil, time: nil,
+            locale: calendar.locale ?? .current,
+            calendar: calendar,
+            timeZone: calendar.timeZone)
         if calendar.isDate(date, inSameDayAs: now) {
             return date.formatted(base.hour().minute())
         }

@@ -1,7 +1,7 @@
-import Testing
 import Foundation
-@testable import RavenFeature
+import Testing
 
+@testable import RavenFeature
 
 /// The invariant Task 8 built and Task 9 nearly broke: `continuationOrder` is an
 /// EXACT FIFO of tags that are guaranteed a `+ `, so a continuation request is
@@ -34,8 +34,10 @@ struct IMAPChannelExclusivityTests {
         _ = greeting
         // No scripted answer: AUTHENTICATE stays in flight, exactly as it would
         // while the server thinks about the credential.
-        let authenticate = IMAPSessionHarness.issue(session, IMAPAuthenticator.xoauth2Command(
-            username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true))
+        let authenticate = IMAPSessionHarness.issue(
+            session,
+            IMAPAuthenticator.xoauth2Command(
+                username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true))
         #expect(await IMAPSessionHarness.waitForInFlight(session, 1))
 
         // A synchronising literal — the command whose `+ ready for literal` used
@@ -47,8 +49,12 @@ struct IMAPChannelExclusivityTests {
         // reports as an infrastructure timeout rather than as the bug it is. The
         // first mutation run of this test hung the whole suite for exactly that
         // reason.
-        let login = IMAPCommand("LOGIN", [.text("a@b.test"),
-                                          .literal(Data("secret-literal".utf8))])
+        let login = IMAPCommand(
+            "LOGIN",
+            [
+                .text("a@b.test"),
+                .literal(Data("secret-literal".utf8)),
+            ])
         await IMAPSessionHarness.expectFailure(
             IMAPSessionHarness.issue(session, login),
             .channelReserved(exclusiveTag: "A0001"))
@@ -82,8 +88,10 @@ struct IMAPChannelExclusivityTests {
 
         // Deadline-bounded for the same reason as the test above.
         await IMAPSessionHarness.expectFailure(
-            IMAPSessionHarness.issue(session, IMAPAuthenticator.plainCommand(
-                username: Fixture.address, password: Fixture.password, saslIR: true)),
+            IMAPSessionHarness.issue(
+                session,
+                IMAPAuthenticator.plainCommand(
+                    username: Fixture.address, password: Fixture.password, saslIR: true)),
             .channelReserved(exclusiveTag: nil))
         // Refused BEFORE the write, so the credential is not on the wire at all.
         #expect(await transport.sentText.contains(Fixture.password) == false)
@@ -118,8 +126,10 @@ struct IMAPChannelExclusivityTests {
 
         // In flight with no answer scripted, exactly as it would be while the
         // server thinks about the credential.
-        let authenticate = IMAPSessionHarness.issue(session, IMAPAuthenticator.xoauth2Command(
-            username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true))
+        let authenticate = IMAPSessionHarness.issue(
+            session,
+            IMAPAuthenticator.xoauth2Command(
+                username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true))
         #expect(await IMAPSessionHarness.waitForInFlight(session, 1))
 
         authenticate.cancel()
@@ -134,8 +144,9 @@ struct IMAPChannelExclusivityTests {
 
         // The reservation is released: an ordinary command now succeeds. This is
         // the assertion that fails on the pre-fix code.
-        let noop = try #require(await IMAPSessionHarness.expectSuccess(
-            IMAPSessionHarness.issue(session, IMAPCommand("NOOP"))))
+        let noop = try #require(
+            await IMAPSessionHarness.expectSuccess(
+                IMAPSessionHarness.issue(session, IMAPCommand("NOOP"))))
         #expect(noop.status == .ok)
         #expect(await session.isRunning)
 
@@ -145,16 +156,19 @@ struct IMAPChannelExclusivityTests {
         await transport.enqueue("A0001 NO Invalid credentials\r\n")
         await IMAPSessionHarness.waitForSuspendedRead(transport)
         #expect(await session.isRunning)
-        let second = try #require(await IMAPSessionHarness.expectSuccess(
-            IMAPSessionHarness.issue(session, IMAPCommand("NOOP"))))
+        let second = try #require(
+            await IMAPSessionHarness.expectSuccess(
+                IMAPSessionHarness.issue(session, IMAPCommand("NOOP"))))
         #expect(second.status == .ok)
-        #expect(await session.abandonedTagCount == 0)   // drained by the completion
+        #expect(await session.abandonedTagCount == 0)  // drained by the completion
 
         // A tag the server never answers would otherwise sit in `abandonedTags` for
         // the whole session, since the set only drains on a completion. `close()`
         // prunes it: nothing can arrive after that.
-        let orphan = IMAPSessionHarness.issue(session, IMAPAuthenticator.xoauth2Command(
-            username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true))
+        let orphan = IMAPSessionHarness.issue(
+            session,
+            IMAPAuthenticator.xoauth2Command(
+                username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true))
         #expect(await IMAPSessionHarness.waitForInFlight(session, 1))
         orphan.cancel()
         await IMAPSessionHarness.expectAnyFailure(orphan)
@@ -180,16 +194,19 @@ struct IMAPChannelExclusivityTests {
         defer { Task { await session.close() } }
         await transport.respond(to: "A0002 NOOP", with: "A0002 OK NOOP completed\r\n")
 
-        let authenticate = IMAPSessionHarness.issue(session, IMAPAuthenticator.xoauth2Command(
-            username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true))
+        let authenticate = IMAPSessionHarness.issue(
+            session,
+            IMAPAuthenticator.xoauth2Command(
+                username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true))
         #expect(await IMAPSessionHarness.waitForInFlight(session, 1))
         authenticate.cancel()
         await IMAPSessionHarness.expectAnyFailure(authenticate)
 
         // First completion for the abandoned tag: expected, swallowed, session lives.
         await transport.enqueue("A0001 NO Invalid credentials\r\n")
-        let noop = try #require(await IMAPSessionHarness.expectSuccess(
-            IMAPSessionHarness.issue(session, IMAPCommand("NOOP"))))
+        let noop = try #require(
+            await IMAPSessionHarness.expectSuccess(
+                IMAPSessionHarness.issue(session, IMAPCommand("NOOP"))))
         #expect(noop.status == .ok)
         #expect(await session.isRunning)
 
@@ -221,15 +238,19 @@ struct IMAPChannelExclusivityTests {
 
         // A synchronising literal: chunk 0 ends with `{14}` and the payload waits
         // for a `+ ` that this test never scripts.
-        let login = IMAPSessionHarness.issue(session, IMAPCommand(
-            "LOGIN", [.text("a@b.test"), .literal(Data("secret-literal".utf8))]))
+        let login = IMAPSessionHarness.issue(
+            session,
+            IMAPCommand(
+                "LOGIN", [.text("a@b.test"), .literal(Data("secret-literal".utf8))]))
         #expect(await IMAPSessionHarness.waitForInFlight(session, 1))
         #expect(await session.pendingContinuationTags == ["A0001"])
         #expect(await transport.sentText.hasSuffix("{14}\r\n"))
 
         login.cancel()
-        await IMAPSessionHarness.expectFailure(login, .protocolError(
-            "command A0001 cancelled with an unwritten literal; the stream cannot be resynchronised"))
+        await IMAPSessionHarness.expectFailure(
+            login,
+            .protocolError(
+                "command A0001 cancelled with an unwritten literal; the stream cannot be resynchronised"))
 
         // Torn down, not merely unreserved: the payload can never be written, so
         // every later command on this connection would be read as literal octets.
@@ -247,7 +268,7 @@ struct IMAPChannelExclusivityTests {
     @Test("a reactive SASL ack is written only when the server actually asks for it")
     func reactiveAckIsNotSpeculative() async throws {
         let (session, transport, greeting) = try await makeAuthSession(
-            capabilities: "IMAP4rev1 AUTH=XOAUTH2")   // no SASL-IR
+            capabilities: "IMAP4rev1 AUTH=XOAUTH2")  // no SASL-IR
         defer { Task { await session.close() } }
         // Without SASL-IR the FIRST `+` is certain and carries the credential; the
         // SECOND is the failure challenge. Both are reactive lines, in order.
@@ -272,11 +293,12 @@ struct IMAPChannelExclusivityTests {
         //
         // The wording here avoids quoting the trap and relaunch banners verbatim,
         // so that grepping a run's log for those banners cannot match this comment.
-        #expect(await transport.sent == [
-            Data("A0001 AUTHENTICATE XOAUTH2\r\n".utf8),
-            Data("dXNlcj1hQGV4YW1wbGUudGVzdAFhdXRoPUJlYXJlciBhY2Nlc3MtdG9rZW4tc2VjcmV0AQE=\r\n".utf8),
-            Data("\r\n".utf8),
-        ])
+        #expect(
+            await transport.sent == [
+                Data("A0001 AUTHENTICATE XOAUTH2\r\n".utf8),
+                Data("dXNlcj1hQGV4YW1wbGUudGVzdAFhdXRoPUJlYXJlciBhY2Nlc3MtdG9rZW4tc2VjcmV0AQE=\r\n".utf8),
+                Data("\r\n".utf8),
+            ])
         // NOTE: no `pendingContinuationTags.isEmpty` assertion here. It used to be,
         // with a comment claiming the tag was "never registered as an expected
         // continuation at any point" — but this runs AFTER the command settled, and
@@ -309,8 +331,10 @@ struct IMAPCredentialLeakTests {
         let error = try #require(captured)
         #expect(error as? IMAPAuthError == .rejected("[AUTHENTICATIONFAILED] bad"))
         // Every string form an error could reach a log through.
-        for rendered in [String(describing: error), String(reflecting: error),
-                         (error as? IMAPAuthError).map { "\($0)" } ?? ""] {
+        for rendered in [
+            String(describing: error), String(reflecting: error),
+            (error as? IMAPAuthError).map { "\($0)" } ?? "",
+        ] {
             #expect(rendered.contains(Fixture.password) == false, "\(rendered)")
         }
     }
@@ -325,15 +349,19 @@ struct IMAPCredentialLeakTests {
         let xoauth2 = IMAPAuthenticator.xoauth2Command(
             username: Fixture.address, accessToken: Fixture.accessToken, saslIR: true)
         #expect(xoauth2.description == "AUTHENTICATE XOAUTH2 <redacted>")
-        let encoded = IMAPAuthenticator.base64(IMAPAuthenticator.xoauth2InitialResponse(
-            username: Fixture.address, accessToken: Fixture.accessToken))
+        let encoded = IMAPAuthenticator.base64(
+            IMAPAuthenticator.xoauth2InitialResponse(
+                username: Fixture.address, accessToken: Fixture.accessToken))
         // Base64 is not encryption: the encoded form is the credential too.
         #expect(xoauth2.description.contains(encoded) == false)
         #expect(xoauth2.description.contains(Fixture.accessToken) == false)
 
         // Redaction is a rendering concern only — the wire bytes are unchanged.
-        #expect(String(decoding: login.wirePlan(tag: "A1", allowNonSynchronizingLiterals: false)
-            .chunks[0], as: UTF8.self).contains(Fixture.password))
+        #expect(
+            String(
+                decoding: login.wirePlan(tag: "A1", allowNonSynchronizingLiterals: false)
+                    .chunks[0], as: UTF8.self
+            ).contains(Fixture.password))
     }
 
     @Test("a credential's only string form names the mechanism, never the secret")
@@ -355,9 +383,9 @@ struct IMAPCredentialLeakTests {
     @Test("the IMAP auth path has no store dependency to leak a credential through")
     func authPathCannotReachStores() throws {
         let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()      // RavenFeatureTests
-            .deletingLastPathComponent()      // Tests
-            .deletingLastPathComponent()      // repo root
+            .deletingLastPathComponent()  // RavenFeatureTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // repo root
         func code(of path: String) throws -> String {
             let source = try String(contentsOf: root.appending(path: path), encoding: .utf8)
             return source.split(separator: "\n", omittingEmptySubsequences: false)
@@ -367,13 +395,16 @@ struct IMAPCredentialLeakTests {
                 }
                 .joined(separator: "\n")
         }
-        for path in ["Sources/RavenFeature/Provider/IMAP/IMAPAuth.swift",
-                     "Sources/RavenFeature/Provider/IMAP/IMAPCredential.swift",
-                     "Sources/RavenFeature/Provider/IMAP/IMAPSession.swift",
-                     "Sources/RavenFeature/Provider/IMAP/IMAPCommand.swift"] {
+        for path in [
+            "Sources/RavenFeature/Provider/IMAP/IMAPAuth.swift",
+            "Sources/RavenFeature/Provider/IMAP/IMAPCredential.swift",
+            "Sources/RavenFeature/Provider/IMAP/IMAPSession.swift",
+            "Sources/RavenFeature/Provider/IMAP/IMAPCommand.swift",
+        ] {
             let source = try code(of: path)
-            #expect(source.contains("PluginDocumentStore") == false,
-                    "\(path) must not reach a document store — credentials live in secrets only")
+            #expect(
+                source.contains("PluginDocumentStore") == false,
+                "\(path) must not reach a document store — credentials live in secrets only")
             #expect(source.contains("host.documents") == false, "\(path)")
         }
         // Stronger for the authenticator itself: it holds no secret store either,
@@ -391,12 +422,14 @@ struct IMAPCredentialStorageTests {
     @Test("the app password comes from host.secrets and nothing else is stored beside it")
     func appPasswordFromSecrets() throws {
         let secrets = InMemorySecretStore()
-        #expect(IMAPAppPasswordStore.credential(
-            accountID: Fixture.address, username: Fixture.address, secrets: secrets) == nil)
+        #expect(
+            IMAPAppPasswordStore.credential(
+                accountID: Fixture.address, username: Fixture.address, secrets: secrets) == nil)
 
         IMAPAppPasswordStore.store(Fixture.password, accountID: Fixture.address, secrets: secrets)
-        let credential = try #require(IMAPAppPasswordStore.credential(
-            accountID: Fixture.address, username: Fixture.address, secrets: secrets))
+        let credential = try #require(
+            IMAPAppPasswordStore.credential(
+                accountID: Fixture.address, username: Fixture.address, secrets: secrets))
         guard case .appPassword(let username, let password) = credential else {
             Issue.record("expected an app-password credential")
             return
@@ -415,17 +448,22 @@ struct IMAPCredentialStorageTests {
     func emptyPasswordIsAbsent() {
         let secrets = InMemorySecretStore()
         IMAPAppPasswordStore.store("", accountID: Fixture.address, secrets: secrets)
-        #expect(IMAPAppPasswordStore.credential(
-            accountID: Fixture.address, username: Fixture.address, secrets: secrets) == nil)
+        #expect(
+            IMAPAppPasswordStore.credential(
+                accountID: Fixture.address, username: Fixture.address, secrets: secrets) == nil)
     }
 
     @Test("the refresh token persists in host.secrets and the access token only in memory")
     func oauthTokenSplit() async throws {
         let secrets = InMemorySecretStore()
         StubURLProtocol.handler = { _ in
-            (200, [:], Data("""
-            {"access_token":"\(Fixture.accessToken)","expires_in":3599}
-            """.utf8))
+            (
+                200, [:],
+                Data(
+                    """
+                    {"access_token":"\(Fixture.accessToken)","expires_in":3599}
+                    """.utf8)
+            )
         }
         defer { StubURLProtocol.handler = nil }
 

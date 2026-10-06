@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import RavenFeature
 
 /// Scriptable provider double. Every behaviour the sync engine must survive is

@@ -83,8 +83,10 @@ enum RFC2047 {
         }
 
         for match in matches {
-            let between = ns.substring(with: NSRange(location: lastEnd,
-                                                      length: match.range.location - lastEnd))
+            let between = ns.substring(
+                with: NSRange(
+                    location: lastEnd,
+                    length: match.range.location - lastEnd))
             if between.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 // Folding whitespace between two encoded words: keep
                 // accumulating bytes across the boundary rather than

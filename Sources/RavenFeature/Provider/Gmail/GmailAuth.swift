@@ -1,6 +1,6 @@
-import Foundation
-import AppKit
 import AinkradAppKit
+import AppKit
+import Foundation
 
 /// Gmail's OAuth configuration, on top of the provider-neutral `Auth/` layer.
 ///
@@ -90,17 +90,20 @@ import AinkradAppKit
     ///   Never logged, never interpolated into a `MailError`, never printed.
     /// - Parameter session: injectable so tests can drive the token and userinfo
     ///   requests through a stubbed protocol. Defaults to `.shared`.
-    public init(secrets: PluginSecretStore, clientID: String, clientSecret: String,
-                session: URLSession = .shared,
-                refreshExchange: (@MainActor (String) async throws -> (String, TimeInterval))? = nil) {
+    public init(
+        secrets: PluginSecretStore, clientID: String, clientSecret: String,
+        session: URLSession = .shared,
+        refreshExchange: (@MainActor (String) async throws -> (String, TimeInterval))? = nil
+    ) {
         self.secrets = secrets
         self.session = session
         self.tokens = OAuthTokenClient(
-            configuration: OAuthConfiguration(authorizationEndpoint: Self.authorizationEndpoint,
-                                              tokenEndpoint: Self.tokenEndpoint,
-                                              clientID: clientID,
-                                              clientSecret: clientSecret,
-                                              scopes: Self.scopes),
+            configuration: OAuthConfiguration(
+                authorizationEndpoint: Self.authorizationEndpoint,
+                tokenEndpoint: Self.tokenEndpoint,
+                clientID: clientID,
+                clientSecret: clientSecret,
+                scopes: Self.scopes),
             session: session)
         self.refreshExchangeOverride = refreshExchange
     }
@@ -108,19 +111,23 @@ import AinkradAppKit
     /// Gmail's authorization URL: the shared builder plus Google's offline-access
     /// parameters. Kept as a `static` so it can be built (and asserted on)
     /// without a `GmailAuth` instance.
-    public nonisolated static func authorizationURL(clientID: String, redirectURI: String,
-                                                    verifier: String, state: String) -> URL {
-        let client = OAuthTokenClient(configuration: OAuthConfiguration(
-            authorizationEndpoint: authorizationEndpoint,
-            tokenEndpoint: tokenEndpoint,
-            clientID: clientID,
-            // Not needed to build an authorization URL, and deliberately not
-            // accepted here: the secret is never a query parameter.
-            clientSecret: nil,
-            scopes: scopes))
-        return client.authorizationURL(redirectURI: redirectURI, verifier: verifier,
-                                       state: state,
-                                       additionalParameters: offlineParameters)
+    public nonisolated static func authorizationURL(
+        clientID: String, redirectURI: String,
+        verifier: String, state: String
+    ) -> URL {
+        let client = OAuthTokenClient(
+            configuration: OAuthConfiguration(
+                authorizationEndpoint: authorizationEndpoint,
+                tokenEndpoint: tokenEndpoint,
+                clientID: clientID,
+                // Not needed to build an authorization URL, and deliberately not
+                // accepted here: the secret is never a query parameter.
+                clientSecret: nil,
+                scopes: scopes))
+        return client.authorizationURL(
+            redirectURI: redirectURI, verifier: verifier,
+            state: state,
+            additionalParameters: offlineParameters)
     }
 
     // MARK: Token exchange
@@ -164,9 +171,12 @@ import AinkradAppKit
     ///   dev harness can ask for a deliberately short wait and observe the
     ///   whole bind-and-open path terminate with a definite `timedOut` error,
     ///   without a human having to sit through the consent screen.
-    public func authorize(timeout: Duration? = nil,
-                          onAuthorizationURL: (@Sendable (URL) -> Void)? = nil) async throws
-        -> (accountID: String, address: String) {
+    public func authorize(
+        timeout: Duration? = nil,
+        onAuthorizationURL: (@Sendable (URL) -> Void)? = nil
+    ) async throws
+        -> (accountID: String, address: String)
+    {
         let verifier = PKCE.codeVerifier()
         let state = PKCE.randomState()
         let clientID = tokens.configuration.clientID
@@ -181,16 +191,18 @@ import AinkradAppKit
                 // the listener still guarantees it receives this regardless
                 // of whether "localhost" resolves to the IPv4 or IPv6 loop.
                 let redirectURI = "http://localhost:\(port)"
-                let url = Self.authorizationURL(clientID: clientID, redirectURI: redirectURI,
-                                                 verifier: verifier, state: state)
+                let url = Self.authorizationURL(
+                    clientID: clientID, redirectURI: redirectURI,
+                    verifier: verifier, state: state)
                 onAuthorizationURL?(url)
                 NSWorkspace.shared.open(url)
                 return redirectURI
             },
             expectedState: state)
 
-        return try await completeAuthorization(code: code, verifier: verifier,
-                                               redirectURI: redirectURI)
+        return try await completeAuthorization(
+            code: code, verifier: verifier,
+            redirectURI: redirectURI)
     }
 
     /// The half of `authorize` that runs after the browser callback: the
@@ -199,11 +211,15 @@ import AinkradAppKit
     /// exact production code path over a stubbed `URLSession` — the browser and
     /// the loopback socket are the only untestable parts, and they are not in
     /// here.
-    func completeAuthorization(code: String, verifier: String,
-                               redirectURI: String) async throws
-        -> (accountID: String, address: String) {
-        let payload = try await tokens.authorizationCode(code, verifier: verifier,
-                                                         redirectURI: redirectURI)
+    func completeAuthorization(
+        code: String, verifier: String,
+        redirectURI: String
+    ) async throws
+        -> (accountID: String, address: String)
+    {
+        let payload = try await tokens.authorizationCode(
+            code, verifier: verifier,
+            redirectURI: redirectURI)
         let address = try await fetchAddress(accessToken: payload.accessToken)
         let accountID = address
         // The refresh token's ONLY destination: the host's Keychain-backed
@@ -212,8 +228,10 @@ import AinkradAppKit
             secrets.setSecret(refresh, forKey: "refresh-\(accountID)")
         }
         // The access token's ONLY destination: memory, for this process.
-        accessTokens[accountID] = (payload.accessToken,
-                                   Date().addingTimeInterval(payload.expiresIn))
+        accessTokens[accountID] = (
+            payload.accessToken,
+            Date().addingTimeInterval(payload.expiresIn)
+        )
         return (accountID, address)
     }
 

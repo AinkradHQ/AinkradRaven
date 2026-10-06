@@ -63,12 +63,14 @@ enum RichTextBridge {
     // MARK: Model → editor
 
     static func attributedString(_ body: RichBody, font: NSFont, color: NSColor)
-        -> NSAttributedString {
+        -> NSAttributedString
+    {
         let out = NSMutableAttributedString(
             string: body.text, attributes: [.font: font, .foregroundColor: color])
         for span in body.spans {
-            applyKind(span.kind, to: out,
-                      range: NSRange(location: span.start, length: span.length), baseFont: font)
+            applyKind(
+                span.kind, to: out,
+                range: NSRange(location: span.start, length: span.length), baseFont: font)
         }
         return out
     }
@@ -76,20 +78,25 @@ enum RichTextBridge {
     /// Writes one kind's attributes over `range`. Internal, not private: a
     /// format-bar command applies the same kinds and must not get a second,
     /// drifting copy of the rule.
-    static func applyKind(_ kind: RichBody.Kind, to out: NSMutableAttributedString,
-                          range: NSRange, baseFont: NSFont) {
+    static func applyKind(
+        _ kind: RichBody.Kind, to out: NSMutableAttributedString,
+        range: NSRange, baseFont: NSFont
+    ) {
         switch kind {
         case .bold: addTrait(.boldFontMask, to: out, range: range)
         case .italic: addTrait(.italicFontMask, to: out, range: range)
         case .underline:
-            out.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue,
-                             range: range)
+            out.addAttribute(
+                .underlineStyle, value: NSUnderlineStyle.single.rawValue,
+                range: range)
         case .code:
             out.addAttribute(codeAttribute, value: true, range: range)
-            out.addAttribute(.font,
-                             value: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize,
-                                                                weight: .regular),
-                             range: range)
+            out.addAttribute(
+                .font,
+                value: NSFont.monospacedSystemFont(
+                    ofSize: baseFont.pointSize,
+                    weight: .regular),
+                range: range)
         case .link(let url):
             out.addAttribute(.link, value: url, range: range)
         case .bulletItem, .numberItem, .blockquote:
@@ -98,13 +105,16 @@ enum RichTextBridge {
         }
     }
 
-    private static func addTrait(_ trait: NSFontTraitMask, to out: NSMutableAttributedString,
-                                 range: NSRange) {
+    private static func addTrait(
+        _ trait: NSFontTraitMask, to out: NSMutableAttributedString,
+        range: NSRange
+    ) {
         out.enumerateAttribute(.font, in: range) { value, sub, _ in
             guard let font = value as? NSFont else { return }
-            out.addAttribute(.font,
-                             value: NSFontManager.shared.convert(font, toHaveTrait: trait),
-                             range: sub)
+            out.addAttribute(
+                .font,
+                value: NSFontManager.shared.convert(font, toHaveTrait: trait),
+                range: sub)
         }
     }
 
@@ -114,9 +124,11 @@ enum RichTextBridge {
     /// whatever else is in the storage cannot reach the model — and therefore
     /// cannot reach the wire.
     static func richBody(from attributed: NSAttributedString) -> RichBody {
-        RichBody(text: attributed.string,
-                 spans: spans(in: attributed,
-                              range: NSRange(location: 0, length: attributed.length)))
+        RichBody(
+            text: attributed.string,
+            spans: spans(
+                in: attributed,
+                range: NSRange(location: 0, length: attributed.length)))
     }
 
     /// The allowlisted runs inside `range`, coalesced and ordered by start.
@@ -179,7 +191,8 @@ enum RichTextBridge {
             }
             merged[kind] = list
         }
-        return merged
+        return
+            merged
             .flatMap { kind, ranges in
                 ranges.map { RichBody.Span(start: $0.location, length: $0.length, kind: kind) }
             }
@@ -211,15 +224,18 @@ enum RichTextBridge {
     /// link — while the source document's font stack, sizes, colours and
     /// background do not survive the round trip through `spans(in:range:)`,
     /// because that function cannot express them.
-    static func normalize(_ storage: NSTextStorage, in range: NSRange,
-                          font: NSFont, color: NSColor) {
+    static func normalize(
+        _ storage: NSTextStorage, in range: NSRange,
+        font: NSFont, color: NSColor
+    ) {
         guard range.length > 0, NSMaxRange(range) <= storage.length else { return }
         let found = spans(in: storage, range: range)
         storage.beginEditing()
         storage.setAttributes([.font: font, .foregroundColor: color], range: range)
         for span in found {
-            applyKind(span.kind, to: storage,
-                  range: NSRange(location: span.start, length: span.length), baseFont: font)
+            applyKind(
+                span.kind, to: storage,
+                range: NSRange(location: span.start, length: span.length), baseFont: font)
         }
         storage.endEditing()
     }

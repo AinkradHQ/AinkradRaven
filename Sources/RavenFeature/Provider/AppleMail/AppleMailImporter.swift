@@ -67,9 +67,11 @@ import Foundation
     }
 
     private func listEmlxFiles(_ directory: URL) throws -> [URL] {
-        guard let enumerator = fileManager.enumerator(
-            at: directory, includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]) else {
+        guard
+            let enumerator = fileManager.enumerator(
+                at: directory, includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles])
+        else {
             return []
         }
         var files: [URL] = []
@@ -89,7 +91,8 @@ import Foundation
             var results: [(EmlxMessage, path: URL)] = []
             for path in paths {
                 guard let data = try? Data(contentsOf: path),
-                      let parsed = EmlxParser.parse(data) else { continue }
+                    let parsed = EmlxParser.parse(data)
+                else { continue }
                 results.append((parsed, path))
             }
             return results
@@ -107,8 +110,9 @@ import Foundation
         }
         let byID = Dictionary(uniqueKeysWithValues: withIDs)
         let nodes = withIDs.map { id, emlx in
-            LocalThreading.Node(messageID: id, references: emlx.message.references,
-                               inReplyTo: emlx.message.inReplyTo)
+            LocalThreading.Node(
+                messageID: id, references: emlx.message.references,
+                inReplyTo: emlx.message.inReplyTo)
         }
         let groups = LocalThreading.group(nodes)
 

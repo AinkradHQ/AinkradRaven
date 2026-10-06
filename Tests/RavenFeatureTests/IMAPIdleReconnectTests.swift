@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// What a dropped IDLE connection does: reconnect on a doubling backoff, keep the
@@ -19,9 +20,12 @@ import Foundation
     @Test func backoffDoublesFromOneSecondAndCapsAtTwoMinutes() {
         let backoff = IMAPIdleBackoff()
         let schedule = (1...10).map { backoff.delay(attempt: $0) }
-        #expect(schedule == [.seconds(1), .seconds(2), .seconds(4), .seconds(8),
-                             .seconds(16), .seconds(32), .seconds(64),
-                             .seconds(120), .seconds(120), .seconds(120)])
+        #expect(
+            schedule == [
+                .seconds(1), .seconds(2), .seconds(4), .seconds(8),
+                .seconds(16), .seconds(32), .seconds(64),
+                .seconds(120), .seconds(120), .seconds(120),
+            ])
     }
 
     /// Attempt 0 and negative attempts are the first delay, not a zero-length wait:
@@ -61,8 +65,9 @@ import Foundation
         let server = IMAPIdleHarness.Server(scripts: [
             IMAPIdleHarness.Script(), IMAPIdleHarness.Script(), IMAPIdleHarness.Script(),
         ])
-        let watcher = IMAPIdleWatcher(provider: IMAPIdleHarness.provider(server),
-                                      clock: clock, onNotification: recorder.trigger)
+        let watcher = IMAPIdleWatcher(
+            provider: IMAPIdleHarness.provider(server),
+            clock: clock, onNotification: recorder.trigger)
         let (task, box) = IMAPIdleHarness.start(watcher)
         defer { task.cancel() }
 
@@ -105,8 +110,9 @@ import Foundation
         let server = IMAPIdleHarness.Server(scripts: [
             IMAPIdleHarness.Script(), IMAPIdleHarness.Script(), IMAPIdleHarness.Script(),
         ])
-        let watcher = IMAPIdleWatcher(provider: IMAPIdleHarness.provider(server),
-                                      clock: clock, onNotification: {})
+        let watcher = IMAPIdleWatcher(
+            provider: IMAPIdleHarness.provider(server),
+            clock: clock, onNotification: {})
         let (task, box) = IMAPIdleHarness.start(watcher)
         defer { task.cancel() }
 
@@ -122,15 +128,23 @@ import Foundation
         // goes out), THEN drop.
         guard await IMAPIdleHarness.waitUntilIdling(server, clock, connection: 1) else { return }
         #expect(await clock.release(.seconds(29 * 60)))
-        guard await IMAPIdleHarness.waitUntil("a completed cycle", {
-            await watcher.cycleCount == 1
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntil(
+                "a completed cycle",
+                {
+                    await watcher.cycleCount == 1
+                })
+        else { return }
         guard let second = await server.connection(1) else { return }
         await second.transport.close()
 
-        guard await IMAPIdleHarness.waitUntil("the reset backoff", {
-            await watcher.backoffDelays.count == 2
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntil(
+                "the reset backoff",
+                {
+                    await watcher.backoffDelays.count == 2
+                })
+        else { return }
         #expect(await watcher.backoffDelays == [.seconds(1), .seconds(1)])
 
         await watcher.stop()
@@ -170,9 +184,13 @@ import Foundation
         guard let first = await server.connection(0) else { return }
         await first.transport.enqueue(
             try IMAPDeltaHarness.fixtureText("imap-idle-one-arrival"))
-        guard await IMAPIdleHarness.waitUntil("the arrival", {
-            await watcher.notificationCount == 1
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntil(
+                "the arrival",
+                {
+                    await watcher.notificationCount == 1
+                })
+        else { return }
         #expect(await recorder.syncCount == 0)
 
         // Drop BEFORE the window closes: the pending arrival is in the debounce, not
@@ -185,9 +203,13 @@ import Foundation
         // Now let the window close. The arrival seen on the dead connection is
         // still owed a pass.
         #expect(await clock.release(.seconds(1)))
-        guard await IMAPIdleHarness.waitUntil("the surviving pass", {
-            await recorder.syncCount == 1
-        }) else { return }
+        guard
+            await IMAPIdleHarness.waitUntil(
+                "the surviving pass",
+                {
+                    await recorder.syncCount == 1
+                })
+        else { return }
         #expect(await recorder.syncCount == 1)
         #expect(await recorder.cursor == before)
 
@@ -208,8 +230,9 @@ import Foundation
         let server = IMAPIdleHarness.Server(scripts: [
             IMAPIdleHarness.Script(), IMAPIdleHarness.Script(),
         ])
-        let watcher = IMAPIdleWatcher(provider: IMAPIdleHarness.provider(server),
-                                      clock: clock, onNotification: recorder.trigger)
+        let watcher = IMAPIdleWatcher(
+            provider: IMAPIdleHarness.provider(server),
+            clock: clock, onNotification: recorder.trigger)
         let (task, box) = IMAPIdleHarness.start(watcher)
         defer { task.cancel() }
 
@@ -223,7 +246,7 @@ import Foundation
         #expect(await recorder.syncCount == 0)
         #expect(await recorder.cursor == before)
         // No coalesce window was ever opened, so there is nothing pending either.
-        #expect(await clock.requestCount(of: .seconds(1)) == 1) // the backoff only
+        #expect(await clock.requestCount(of: .seconds(1)) == 1)  // the backoff only
         #expect(await watcher.notificationCount == 0)
 
         await watcher.stop()
@@ -235,8 +258,9 @@ import Foundation
     @Test func cancellingTheRunTaskStopsAndReleases() async throws {
         let clock = IMAPIdleHarness.FakeClock()
         let server = IMAPIdleHarness.Server(scripts: [IMAPIdleHarness.Script()])
-        let watcher = IMAPIdleWatcher(provider: IMAPIdleHarness.provider(server),
-                                      clock: clock, onNotification: {})
+        let watcher = IMAPIdleWatcher(
+            provider: IMAPIdleHarness.provider(server),
+            clock: clock, onNotification: {})
         let (task, box) = IMAPIdleHarness.start(watcher)
         guard await IMAPIdleHarness.waitUntilIdling(server, clock) else { return }
 

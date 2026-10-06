@@ -1,7 +1,7 @@
-import SwiftUI
-import AppKit
 import AinkradAppKit
 import AinkradAppKitUI
+import AppKit
+import SwiftUI
 
 /// One thread row in the inbox rail.
 ///
@@ -70,8 +70,10 @@ struct InboxRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(summary.subject.isEmpty ? "(no subject)" : summary.subject)
-                    .font(AinkradFontResolver.font(
-                        .body, weight: isUnread ? .semibold : .medium, typography: typo))
+                    .font(
+                        AinkradFontResolver.font(
+                            .body, weight: isUnread ? .semibold : .medium, typography: typo)
+                    )
                     .foregroundStyle(theme.foreground)
                     .lineLimit(Self.subjectLines)
                     .truncationMode(.tail)

@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// `label_with_reason`: that it IS the plain `label` tool plus a local record,
@@ -16,21 +17,29 @@ import AinkradAppKit
     /// document store behind the mail store and the outbox, so
     /// `InMemoryDocumentStore.writeLog` records both families of write in one
     /// ordered list and "store first, outbox second" becomes observable.
-    private func reasonFixture() throws -> (store: DocumentMailStore, outbox: Outbox,
-                                            provider: FakeMailProvider,
-                                            documents: InMemoryDocumentStore) {
+    private func reasonFixture() throws -> (
+        store: DocumentMailStore, outbox: Outbox,
+        provider: FakeMailProvider,
+        documents: InMemoryDocumentStore
+    ) {
         let documents = InMemoryDocumentStore()
         let store = DocumentMailStore(documents: documents)
         let provider = FakeMailProvider()
         let outbox = Outbox(documents: documents, provider: provider)
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a1@example.test",
-                                          displayName: "A1", state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "a1@example.test",
+                displayName: "A1", state: .ready))
         for id in ["t1", "t2"] {
-            try store.upsertThread(MailThread(id: id, accountID: "a1", messages: [
-                MailMessage(id: "m-\(id)", threadID: id, from: MailAddress(email: "b@example.test"),
+            try store.upsertThread(
+                MailThread(
+                    id: id, accountID: "a1",
+                    messages: [
+                        MailMessage(
+                            id: "m-\(id)", threadID: id, from: MailAddress(email: "b@example.test"),
                             subject: "Subject \(id)", date: Date(), labelIDs: ["INBOX"],
                             snippet: "s")
-            ]))
+                    ]))
         }
         #expect(store.summaries(accountID: "a1", months: UnifiedInbox.recentMonths()).count == 2)
         return (store, outbox, provider, documents)
@@ -60,7 +69,8 @@ import AinkradAppKit
             store: plain.store, outbox: plain.outbox)
         let reasonedResult = await RavenMCPOperations.run(
             "label_with_reason",
-            arguments: #"{"thread_ids":["t1","t2"],"add":["L1"],"remove":["INBOX"],"reason":"Receipts, per the filing rule."}"#,
+            arguments:
+                #"{"thread_ids":["t1","t2"],"add":["L1"],"remove":["INBOX"],"reason":"Receipts, per the filing rule."}"#,
             store: reasoned.store, outbox: reasoned.outbox)
 
         #expect(plainResult.isError == false)
@@ -72,7 +82,8 @@ import AinkradAppKit
         // Identical, field for field — thread ids, adds and removes.
         #expect(reasonedMutations == plainMutations)
         // And the local application matches too: same stored labels on both.
-        #expect(reasoned.store.thread("t1")?.messages.first?.labelIDs
+        #expect(
+            reasoned.store.thread("t1")?.messages.first?.labelIDs
                 == plain.store.thread("t1")?.messages.first?.labelIDs)
         #expect(reasoned.store.thread("t1")?.messages.first?.labelIDs == ["L1"])
         // The one difference is the record — which the plain tool does not write.
@@ -179,8 +190,9 @@ import AinkradAppKit
         #expect(result.isError == false)
         // The sentinel IS in the local record — the search below is therefore
         // looking for something that exists somewhere.
-        #expect(reasoned.store.labelReasons(accountID: "a1", threadID: "t1")
-            .map(\.reason) == [sentinel])
+        #expect(
+            reasoned.store.labelReasons(accountID: "a1", threadID: "t1")
+                .map(\.reason) == [sentinel])
 
         await reasoned.outbox.drain()
         await plain.outbox.drain()

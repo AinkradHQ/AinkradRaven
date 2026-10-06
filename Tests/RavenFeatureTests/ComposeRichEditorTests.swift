@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The editor's two rules, both assertable without presenting anything:
@@ -22,15 +23,17 @@ import AppKit
         layout.addTextContainer(container)
         let storage = NSTextStorage()
         storage.addLayoutManager(layout)
-        let view = RichComposeTextView(frame: CGRect(x: 0, y: 0, width: 400, height: 200),
-                                       textContainer: container)
+        let view = RichComposeTextView(
+            frame: CGRect(x: 0, y: 0, width: 400, height: 200),
+            textContainer: container)
         view.isRichText = true
         view.allowsUndo = true
         view.baseFont = base
         view.baseColor = baseColor
         view.textStorage?.setAttributedString(
-            RichTextBridge.attributedString(RichBody(plainText: text),
-                                            font: base, color: baseColor))
+            RichTextBridge.attributedString(
+                RichBody(plainText: text),
+                font: base, color: baseColor))
         return view
     }
 
@@ -42,13 +45,16 @@ import AppKit
 
     @Test("every supported kind survives the trip through the text view and back")
     func bridgeRoundTripsEveryKind() {
-        let kinds: [RichBody.Kind] = [.bold, .italic, .underline, .code,
-                                      .link(URL(string: "https://example.test/x")!),
-                                      .bulletItem, .numberItem, .blockquote]
-        let body = RichBody(text: "0123456789abcdefghij",
-                            spans: kinds.enumerated().map {
-                                RichBody.Span(start: $0.offset * 2, length: 2, kind: $0.element)
-                            })
+        let kinds: [RichBody.Kind] = [
+            .bold, .italic, .underline, .code,
+            .link(URL(string: "https://example.test/x")!),
+            .bulletItem, .numberItem, .blockquote,
+        ]
+        let body = RichBody(
+            text: "0123456789abcdefghij",
+            spans: kinds.enumerated().map {
+                RichBody.Span(start: $0.offset * 2, length: 2, kind: $0.element)
+            })
 
         let attributed = RichTextBridge.attributedString(body, font: base, color: baseColor)
         let back = RichTextBridge.richBody(from: attributed)
@@ -64,8 +70,9 @@ import AppKit
         let text = "**stars** and _underscores_\n- dash\n> quote\n-- \nSig"
 
         let back = RichTextBridge.richBody(
-            from: RichTextBridge.attributedString(RichBody(plainText: text),
-                                                  font: base, color: baseColor))
+            from: RichTextBridge.attributedString(
+                RichBody(plainText: text),
+                font: base, color: baseColor))
 
         #expect(back.text == text)
         #expect(back.spans.isEmpty)
@@ -73,8 +80,9 @@ import AppKit
 
     @Test("bold is a font trait, never a colour, so the theme still owns every pixel of text")
     func boldCarriesNoColour() {
-        let body = RichBody(text: "bold plain",
-                            spans: [RichBody.Span(start: 0, length: 4, kind: .bold)])
+        let body = RichBody(
+            text: "bold plain",
+            spans: [RichBody.Span(start: 0, length: 4, kind: .bold)])
 
         let attributed = RichTextBridge.attributedString(body, font: base, color: baseColor)
 
@@ -85,7 +93,8 @@ import AppKit
         ) { attrs, range, _ in
             colours.append((attrs[.foregroundColor] as? NSColor) ?? .black)
             if let font = attrs[.font] as? NSFont,
-               NSFontManager.shared.traits(of: font).contains(.boldFontMask) {
+                NSFontManager.shared.traits(of: font).contains(.boldFontMask)
+            {
                 boldRanges.append(range)
             }
         }
@@ -102,19 +111,22 @@ import AppKit
     private func pastedFragment() -> NSAttributedString {
         let out = NSMutableAttributedString(string: "site text here")
         let whole = NSRange(location: 0, length: out.length)
-        out.addAttributes([
-            .font: NSFont(name: "Times New Roman", size: 24) ?? NSFont.systemFont(ofSize: 24),
-            .foregroundColor: NSColor.systemPink,
-            .backgroundColor: NSColor.systemYellow,
-            .kern: 3.0
-        ], range: whole)
-        out.addAttribute(.font,
-                         value: NSFontManager.shared.convert(
-                            NSFont(name: "Times New Roman", size: 24)
-                                ?? NSFont.systemFont(ofSize: 24), toHaveTrait: .boldFontMask),
-                         range: NSRange(location: 0, length: 4))
-        out.addAttribute(.link, value: URL(string: "https://example.test/from-the-page")!,
-                         range: NSRange(location: 5, length: 4))
+        out.addAttributes(
+            [
+                .font: NSFont(name: "Times New Roman", size: 24) ?? NSFont.systemFont(ofSize: 24),
+                .foregroundColor: NSColor.systemPink,
+                .backgroundColor: NSColor.systemYellow,
+                .kern: 3.0,
+            ], range: whole)
+        out.addAttribute(
+            .font,
+            value: NSFontManager.shared.convert(
+                NSFont(name: "Times New Roman", size: 24)
+                    ?? NSFont.systemFont(ofSize: 24), toHaveTrait: .boldFontMask),
+            range: NSRange(location: 0, length: 4))
+        out.addAttribute(
+            .link, value: URL(string: "https://example.test/from-the-page")!,
+            range: NSRange(location: 5, length: 4))
         return out
     }
 
@@ -124,15 +136,17 @@ import AppKit
         let storage = try #require(view.textStorage)
         storage.setAttributedString(pastedFragment())
 
-        RichTextBridge.normalize(storage, in: NSRange(location: 0, length: storage.length),
-                                 font: base, color: baseColor)
+        RichTextBridge.normalize(
+            storage, in: NSRange(location: 0, length: storage.length),
+            font: base, color: baseColor)
 
         // Kept: the formatting the allowlist can express.
         let found = spans(view)
         #expect(found.contains { $0.kind == .bold && $0.start == 0 && $0.length == 4 })
-        #expect(found.contains {
-            $0.kind == .link(URL(string: "https://example.test/from-the-page")!)
-        })
+        #expect(
+            found.contains {
+                $0.kind == .link(URL(string: "https://example.test/from-the-page")!)
+            })
         // Gone: everything else. A recipient's dark mode and text-size
         // preference survive because none of this reaches the wire.
         storage.enumerateAttributes(
@@ -151,8 +165,10 @@ import AppKit
     /// the selection with what AppKit's reader produced, leave the caret where
     /// the paste left it, then normalise. `paste(_:)` itself needs a real
     /// pasteboard; everything after the read is exercised here.
-    private func simulatePaste(_ fragment: NSAttributedString, over selection: NSRange,
-                               in view: RichComposeTextView) {
+    private func simulatePaste(
+        _ fragment: NSAttributedString, over selection: NSRange,
+        in view: RichComposeTextView
+    ) {
         view.setSelectedRange(selection)
         let start = selection.location
         // The insertion goes through the change cycle because `super.paste`
@@ -171,7 +187,8 @@ import AppKit
     private func foreignAttributes(_ storage: NSTextStorage, in range: NSRange) -> Int {
         var offenders = 0
         storage.enumerateAttributes(in: range) { attrs, subrange, _ in
-            let bad = attrs[.backgroundColor] != nil || attrs[.kern] != nil
+            let bad =
+                attrs[.backgroundColor] != nil || attrs[.kern] != nil
                 || (attrs[.foregroundColor] as? NSColor) != baseColor
                 || (attrs[.font] as? NSFont)?.pointSize != base.pointSize
             if bad { offenders += subrange.length }
@@ -240,10 +257,16 @@ import AppKit
     @Test("a bullet, a numbered item and a quote are visually distinguishable")
     func blockKindsLookDifferent() {
         func style(_ kind: RichBody.Kind) -> NSParagraphStyle {
-            let body = RichBody(text: "a line", spans: [RichBody.Span(start: 0, length: 6,
-                                                                      kind: kind)])
+            let body = RichBody(
+                text: "a line",
+                spans: [
+                    RichBody.Span(
+                        start: 0, length: 6,
+                        kind: kind)
+                ])
             let attributed = RichTextBridge.attributedString(body, font: base, color: baseColor)
-            return (attributed.attribute(.paragraphStyle, at: 0, effectiveRange: nil)
+            return
+                (attributed.attribute(.paragraphStyle, at: 0, effectiveRange: nil)
                 as? NSParagraphStyle) ?? NSParagraphStyle.default
         }
 
@@ -259,11 +282,14 @@ import AppKit
         #expect(quote.paragraphSpacingBefore > 0)
         #expect(bullet.paragraphSpacingBefore == 0)
         // And none of them touches a character.
-        #expect(RichTextBridge.richBody(
-            from: RichTextBridge.attributedString(
-                RichBody(text: "a line",
-                         spans: [RichBody.Span(start: 0, length: 6, kind: .bulletItem)]),
-                font: base, color: baseColor)).text == "a line")
+        #expect(
+            RichTextBridge.richBody(
+                from: RichTextBridge.attributedString(
+                    RichBody(
+                        text: "a line",
+                        spans: [RichBody.Span(start: 0, length: 6, kind: .bulletItem)]),
+                    font: base, color: baseColor)
+            ).text == "a line")
     }
 
     // MARK: Format commands
@@ -305,8 +331,11 @@ import AppKit
         RichTextCommand.toggle(.bold).apply(to: view)
         RichTextCommand.toggle(.italic).apply(to: view)
 
-        #expect(spans(view) == [RichBody.Span(start: 0, length: 5, kind: .bold),
-                                RichBody.Span(start: 0, length: 5, kind: .italic)])
+        #expect(
+            spans(view) == [
+                RichBody.Span(start: 0, length: 5, kind: .bold),
+                RichBody.Span(start: 0, length: 5, kind: .italic),
+            ])
     }
 
     @Test("a kind split into two storage runs by a second kind reads back as one span")
@@ -321,8 +350,11 @@ import AppKit
         view.setSelectedRange(NSRange(location: 0, length: 2))
         RichTextCommand.toggle(.italic).apply(to: view)
 
-        #expect(spans(view) == [RichBody.Span(start: 0, length: 5, kind: .bold),
-                                RichBody.Span(start: 0, length: 2, kind: .italic)])
+        #expect(
+            spans(view) == [
+                RichBody.Span(start: 0, length: 5, kind: .bold),
+                RichBody.Span(start: 0, length: 2, kind: .italic),
+            ])
     }
 
     @Test("the same command twice turns the formatting off")

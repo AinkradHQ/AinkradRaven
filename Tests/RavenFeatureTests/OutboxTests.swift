@@ -1,15 +1,22 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Outbox")
 @MainActor struct OutboxTests {
-    private func makeOutbox(_ provider: FakeMailProvider, maxAttempts: Int = 3,
-                            accountID: String? = nil)
-        -> (Outbox, InMemoryDocumentStore) {
+    private func makeOutbox(
+        _ provider: FakeMailProvider, maxAttempts: Int = 3,
+        accountID: String? = nil
+    )
+        -> (Outbox, InMemoryDocumentStore)
+    {
         let documents = InMemoryDocumentStore()
-        return (Outbox(documents: documents, provider: provider, maxAttempts: maxAttempts,
-                       accountID: accountID), documents)
+        return (
+            Outbox(
+                documents: documents, provider: provider, maxAttempts: maxAttempts,
+                accountID: accountID), documents
+        )
     }
 
     private func aMessage() -> OutgoingMessage {
@@ -37,7 +44,7 @@ import Foundation
         await outbox.drain()
         #expect(outbox.pending().first?.attempts == 1)
 
-        await outbox.drain()   // second attempt succeeds
+        await outbox.drain()  // second attempt succeeds
         #expect(outbox.pending().isEmpty)
     }
 
@@ -60,8 +67,10 @@ import Foundation
     func sendsDraft() async throws {
         let provider = FakeMailProvider()
         let (outbox, _) = makeOutbox(provider)
-        try outbox.enqueue(.send(OutgoingMessage(
-            to: [MailAddress(email: "b@x.com")], subject: "Hi", bodyText: "There")))
+        try outbox.enqueue(
+            .send(
+                OutgoingMessage(
+                    to: [MailAddress(email: "b@x.com")], subject: "Hi", bodyText: "There")))
 
         await outbox.drain()
         #expect(provider.sentMessages.count == 1)
@@ -84,8 +93,10 @@ import Foundation
     func persistenceFailureAfterSendDoesNotResend() async throws {
         let provider = FakeMailProvider()
         let (outbox, documents) = makeOutbox(provider)
-        try outbox.enqueue(.send(OutgoingMessage(
-            to: [MailAddress(email: "b@x.com")], subject: "Hi", bodyText: "There")))
+        try outbox.enqueue(
+            .send(
+                OutgoingMessage(
+                    to: [MailAddress(email: "b@x.com")], subject: "Hi", bodyText: "There")))
 
         // Allow the enqueue write and the in-flight-marking write to land, but
         // drop the write that would record the post-send removal — simulating
@@ -105,8 +116,10 @@ import Foundation
     func inFlightEntrySurfacedNotResent() async throws {
         let provider = FakeMailProvider()
         let (outbox, documents) = makeOutbox(provider)
-        try outbox.enqueue(.send(OutgoingMessage(
-            to: [MailAddress(email: "b@x.com")], subject: "Hi", bodyText: "There")))
+        try outbox.enqueue(
+            .send(
+                OutgoingMessage(
+                    to: [MailAddress(email: "b@x.com")], subject: "Hi", bodyText: "There")))
 
         // Drop every write from here on, so drain()'s in-flight marker
         // persists but nothing past it does — as if the process died right
@@ -150,8 +163,9 @@ import Foundation
         // the fix it saw the same entry as pending, re-marked it in-flight and
         // sent the email a second time.
         await outbox.drain()
-        #expect(provider.sentMessages.isEmpty,
-                "the overlapping drain must not transmit the entry A already has in flight")
+        #expect(
+            provider.sentMessages.isEmpty,
+            "the overlapping drain must not transmit the entry A already has in flight")
 
         provider.releaseSend()
         await drainA.value
@@ -195,8 +209,9 @@ import Foundation
         outbox.accountID = "a2"
         await outbox.drain()
 
-        #expect(provider.sentMessages.isEmpty,
-                "a1's queued mail must not go out from a2's mailbox")
+        #expect(
+            provider.sentMessages.isEmpty,
+            "a1's queued mail must not go out from a2's mailbox")
         #expect(outbox.pending().isEmpty)
     }
 
@@ -215,7 +230,9 @@ import Foundation
 
     // MARK: Legacy entries with no accountID
 
-    @Test("a legacy entry with no accountID is surfaced for review, not stranded, once it has no default account to fall back to")
+    @Test(
+        "a legacy entry with no accountID is surfaced for review, not stranded, once it has no default account to fall back to"
+    )
     func legacyEntryWithNoAccountIDNeedsReview() async throws {
         let documents = InMemoryDocumentStore()
         // Simulate a pre-M1 queue: encoded directly, with no `accountID`
@@ -273,9 +290,10 @@ import Foundation
     func heldEntryWaitsForItsWindow() async throws {
         let provider = FakeMailProvider()
         let (outbox, _) = makeOutbox(provider)
-        let entryID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                         holdUntil: Date().addingTimeInterval(60),
-                                         sendAt: nil, draftID: nil)
+        let entryID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(60),
+            sendAt: nil, draftID: nil)
 
         await outbox.drain()
         #expect(provider.sentMessages.isEmpty, "a held entry must not transmit before its window elapses")
@@ -286,9 +304,10 @@ import Foundation
         // message with an already-past `holdUntil` — the exact state
         // `pending()` sees once real wall-clock time passes the deadline —
         // draining transmits it via the normal path, no special-casing.
-        let laterID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                         holdUntil: Date().addingTimeInterval(-1),
-                                         sendAt: nil, draftID: nil)
+        let laterID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(-1),
+            sendAt: nil, draftID: nil)
         await outbox.drain()
         #expect(provider.sentMessages.count == 1)
         #expect(outbox.outcome(for: laterID) == .sent)
@@ -299,9 +318,10 @@ import Foundation
         let provider = FakeMailProvider()
         let (outbox, _) = makeOutbox(provider)
         let message = aMessage()
-        let entryID = try outbox.enqueue(.send(message), accountID: nil,
-                                         holdUntil: Date().addingTimeInterval(60),
-                                         sendAt: nil, draftID: "draft-1")
+        let entryID = try outbox.enqueue(
+            .send(message), accountID: nil,
+            holdUntil: Date().addingTimeInterval(60),
+            sendAt: nil, draftID: "draft-1")
 
         let cancelled = outbox.cancelHeld(entryID)
         #expect(cancelled == message)
@@ -316,12 +336,14 @@ import Foundation
     func cancelHeldRefusesElapsedHold() async throws {
         let provider = FakeMailProvider()
         let (outbox, _) = makeOutbox(provider)
-        let entryID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                         holdUntil: Date().addingTimeInterval(-1),
-                                         sendAt: nil, draftID: nil)
+        let entryID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(-1),
+            sendAt: nil, draftID: nil)
 
-        #expect(outbox.cancelHeld(entryID) == nil,
-                "an elapsed hold is about to become eligible; cancelling it must be refused")
+        #expect(
+            outbox.cancelHeld(entryID) == nil,
+            "an elapsed hold is about to become eligible; cancelling it must be refused")
     }
 
     @Test("cancelHeld refuses an entry already in flight")
@@ -329,9 +351,10 @@ import Foundation
         let provider = FakeMailProvider()
         provider.holdsSend = true
         let (outbox, _) = makeOutbox(provider)
-        let entryID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                         holdUntil: Date().addingTimeInterval(-1),
-                                         sendAt: nil, draftID: nil)
+        let entryID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(-1),
+            sendAt: nil, draftID: nil)
 
         let drainTask = Task { await outbox.drain() }
         await provider.waitUntilSendEntered()
@@ -349,24 +372,27 @@ import Foundation
     func scheduledEntryWaitsThenTransmits() async throws {
         let provider = FakeMailProvider()
         let (outbox, _) = makeOutbox(provider)
-        let futureID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                          holdUntil: nil,
-                                          sendAt: Date().addingTimeInterval(3600),
-                                          draftID: nil)
+        let futureID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: nil,
+            sendAt: Date().addingTimeInterval(3600),
+            draftID: nil)
 
         await outbox.drain()
         #expect(provider.sentMessages.isEmpty, "a message scheduled for the future must not transmit yet")
         #expect(outbox.outcome(for: futureID) == .queued(inFlight: false))
 
-        let dueID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                       holdUntil: nil,
-                                       sendAt: Date().addingTimeInterval(-1),
-                                       draftID: nil)
+        let dueID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: nil,
+            sendAt: Date().addingTimeInterval(-1),
+            draftID: nil)
         await outbox.drain()
         #expect(provider.sentMessages.count == 1)
         #expect(outbox.outcome(for: dueID) == .sent)
-        #expect(outbox.outcome(for: futureID) == .queued(inFlight: false),
-                "the still-future entry must remain untouched by a drain that only frees the due one")
+        #expect(
+            outbox.outcome(for: futureID) == .queued(inFlight: false),
+            "the still-future entry must remain untouched by a drain that only frees the due one")
     }
 
     // MARK: Crash-and-restart preserves hold/schedule timing (M3)
@@ -375,13 +401,15 @@ import Foundation
     func restartPreservesHoldAndScheduleTiming() async throws {
         let provider = FakeMailProvider()
         let (outbox, documents) = makeOutbox(provider)
-        let heldID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                        holdUntil: Date().addingTimeInterval(3600),
-                                        sendAt: nil, draftID: nil)
-        let scheduledID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                             holdUntil: nil,
-                                             sendAt: Date().addingTimeInterval(7200),
-                                             draftID: nil)
+        let heldID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(3600),
+            sendAt: nil, draftID: nil)
+        let scheduledID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: nil,
+            sendAt: Date().addingTimeInterval(7200),
+            draftID: nil)
 
         // Simulate the crash: a brand new `Outbox` loading the SAME
         // persisted documents, rather than a `Task.sleep` that would not
@@ -389,8 +417,9 @@ import Foundation
         let revived = Outbox(documents: documents, provider: provider, maxAttempts: 3)
 
         await revived.drain()
-        #expect(provider.sentMessages.isEmpty,
-                "both the held and scheduled entries must still be in the future after reload")
+        #expect(
+            provider.sentMessages.isEmpty,
+            "both the held and scheduled entries must still be in the future after reload")
         #expect(revived.outcome(for: heldID) == .queued(inFlight: false))
         #expect(revived.outcome(for: scheduledID) == .queued(inFlight: false))
         #expect(revived.pending().isEmpty)
@@ -407,9 +436,10 @@ import Foundation
     func wakeDrainsWhenHoldElapses() async throws {
         let provider = FakeMailProvider()
         let (outbox, _) = makeOutbox(provider)
-        try outbox.enqueue(.send(aMessage()), accountID: nil,
-                           holdUntil: Date().addingTimeInterval(0.15),
-                           sendAt: nil, draftID: nil)
+        try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(0.15),
+            sendAt: nil, draftID: nil)
 
         // Nothing has transmitted yet — the hold has not elapsed.
         #expect(provider.sentMessages.isEmpty)
@@ -417,8 +447,9 @@ import Foundation
         // Wait past the hold WITHOUT calling drain() ourselves — only the
         // scheduled wake may cause this to transmit.
         try await Task.sleep(for: .seconds(1))
-        #expect(provider.sentMessages.count == 1,
-                "the one-shot wake must have drained this on its own")
+        #expect(
+            provider.sentMessages.count == 1,
+            "the one-shot wake must have drained this on its own")
         #expect(outbox.pending().isEmpty)
     }
 
@@ -430,12 +461,14 @@ import Foundation
         let provider = FakeMailProvider()
         let (outbox, _) = makeOutbox(provider)
         // B is soonest, A is second-soonest.
-        let laterID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                         holdUntil: Date().addingTimeInterval(0.5),
-                                         sendAt: nil, draftID: nil)
-        let soonerID = try outbox.enqueue(.send(aMessage()), accountID: nil,
-                                          holdUntil: Date().addingTimeInterval(0.15),
-                                          sendAt: nil, draftID: nil)
+        let laterID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(0.5),
+            sendAt: nil, draftID: nil)
+        let soonerID = try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(0.15),
+            sendAt: nil, draftID: nil)
 
         // Cancel the soonest one before it fires — the wake must now be
         // retargeted at the later entry instead of firing (for nothing) at
@@ -447,14 +480,16 @@ import Foundation
         // (the cancelled entry is gone) — the real assertion is below, once
         // we also pass the later entry's due time.
         try await Task.sleep(for: .seconds(0.3))
-        #expect(provider.sentMessages.isEmpty,
-                "the cancelled entry must not have transmitted, and the later one is not due yet")
+        #expect(
+            provider.sentMessages.isEmpty,
+            "the cancelled entry must not have transmitted, and the later one is not due yet")
 
         // Now pass the later (originally second-soonest, now the ONLY, and
         // therefore the retargeted wake's) entry's due time.
         try await Task.sleep(for: .seconds(0.5))
-        #expect(provider.sentMessages.count == 1,
-                "the retargeted wake must still fire for the remaining entry")
+        #expect(
+            provider.sentMessages.count == 1,
+            "the retargeted wake must still fire for the remaining entry")
         #expect(outbox.outcome(for: laterID) == .sent)
     }
 
@@ -467,8 +502,9 @@ import Foundation
     func wakeDrainsPastDueEntryOnLaunch() async throws {
         let provider = FakeMailProvider()
         let documents = InMemoryDocumentStore()
-        let pastDue = OutboxEntry(operation: .send(aMessage()),
-                                  holdUntil: Date().addingTimeInterval(-30))
+        let pastDue = OutboxEntry(
+            operation: .send(aMessage()),
+            holdUntil: Date().addingTimeInterval(-30))
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         documents.setData(try encoder.encode([pastDue]), forKey: DocumentKeys.outbox)
@@ -479,8 +515,9 @@ import Foundation
         #expect(provider.sentMessages.isEmpty, "not yet — only the wake, not the constructor itself, may drain")
 
         try await Task.sleep(for: .seconds(0.3))
-        #expect(provider.sentMessages.count == 1,
-                "the wake re-derived on launch must have drained the already-past-due entry")
+        #expect(
+            provider.sentMessages.count == 1,
+            "the wake re-derived on launch must have drained the already-past-due entry")
         #expect(revived.pending().isEmpty)
     }
 
@@ -492,9 +529,10 @@ import Foundation
     func teardownCancelsPendingWake() async throws {
         let provider = FakeMailProvider()
         let (outbox, _) = makeOutbox(provider)
-        try outbox.enqueue(.send(aMessage()), accountID: nil,
-                           holdUntil: Date().addingTimeInterval(0.15),
-                           sendAt: nil, draftID: nil)
+        try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(0.15),
+            sendAt: nil, draftID: nil)
 
         outbox.teardownWake()
 
@@ -502,8 +540,9 @@ import Foundation
         // nothing may transmit — only the (absent, in this test) 120s tick
         // or an explicit drain() could, and neither happens here.
         try await Task.sleep(for: .seconds(1))
-        #expect(provider.sentMessages.isEmpty,
-                "a torn-down instance's cancelled wake must never fire")
+        #expect(
+            provider.sentMessages.isEmpty,
+            "a torn-down instance's cancelled wake must never fire")
         #expect(outbox.pending().count == 1, "the entry is eligible now, but nothing drained it")
     }
 
@@ -517,17 +556,19 @@ import Foundation
     func drainBackstopsAMissedWake() async throws {
         let provider = FakeMailProvider()
         let (outbox, _) = makeOutbox(provider)
-        try outbox.enqueue(.send(aMessage()), accountID: nil,
-                           holdUntil: Date().addingTimeInterval(0.05),
-                           sendAt: nil, draftID: nil)
-        outbox.teardownWake()   // the wake will never fire
+        try outbox.enqueue(
+            .send(aMessage()), accountID: nil,
+            holdUntil: Date().addingTimeInterval(0.05),
+            sendAt: nil, draftID: nil)
+        outbox.teardownWake()  // the wake will never fire
 
         try await Task.sleep(for: .seconds(0.2))
         #expect(provider.sentMessages.isEmpty, "confirms the wake really did not fire")
 
         // Stand-in for the sync timer's next tick.
         await outbox.drain()
-        #expect(provider.sentMessages.count == 1,
-                "the backstop drain must still transmit the now-due entry")
+        #expect(
+            provider.sentMessages.count == 1,
+            "the backstop drain must still transmit the now-due entry")
     }
 }

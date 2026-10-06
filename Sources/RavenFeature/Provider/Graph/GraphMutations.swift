@@ -21,8 +21,10 @@ extension GraphProvider {
     /// `SyncEngine` persists `String(describing:)` of an error into
     /// `MailAccount.lastError`, and a Graph error body echoes the request — which
     /// on this path contains the message the user just typed.
-    func write<T: Decodable>(_ type: T.Type, method: String, path: String,
-                             json: [String: Any]?) async throws -> T {
+    func write<T: Decodable>(
+        _ type: T.Type, method: String, path: String,
+        json: [String: Any]?
+    ) async throws -> T {
         try await perform(type, request: try await request(method, path: path, json: json))
     }
 
@@ -32,21 +34,26 @@ extension GraphProvider {
     /// It cannot go through `perform`, which decodes unconditionally and would turn
     /// every successful send into `decodingFailed`. Status is still checked, so a
     /// refusal is still a throw.
-    func writeExpectingNoContent(method: String, path: String,
-                                 json: [String: Any]?) async throws {
+    func writeExpectingNoContent(
+        method: String, path: String,
+        json: [String: Any]?
+    ) async throws {
         let (_, response) = try await session.data(
             for: try await request(method, path: path, json: json))
         guard let http = response as? HTTPURLResponse else {
             throw MailError.providerFailed(status: -1, message: "no response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw MailError.providerFailed(status: http.statusCode,
-                                           message: "Graph API request failed")
+            throw MailError.providerFailed(
+                status: http.statusCode,
+                message: "Graph API request failed")
         }
     }
 
-    private func request(_ method: String, path: String,
-                         json: [String: Any]?) async throws -> URLRequest {
+    private func request(
+        _ method: String, path: String,
+        json: [String: Any]?
+    ) async throws -> URLRequest {
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = method
         let token = try await auth.accessToken(accountID: accountID)
@@ -56,8 +63,9 @@ extension GraphProvider {
             // `.sortedKeys` so the bytes on the wire are deterministic: a test can
             // then assert the whole body, and a diff between two runs means the
             // payload really changed rather than a dictionary re-ordering.
-            request.httpBody = try JSONSerialization.data(withJSONObject: json,
-                                                          options: [.sortedKeys])
+            request.httpBody = try JSONSerialization.data(
+                withJSONObject: json,
+                options: [.sortedKeys])
         }
         return request
     }
@@ -132,18 +140,21 @@ extension GraphProvider {
             for message in try await conversationMessages(threadID) {
                 var body = properties
                 if touchesCategories {
-                    body["categories"] = Self.categories(message.categories ?? [],
-                                                         adding: addedCategories,
-                                                         removing: removedCategories)
+                    body["categories"] = Self.categories(
+                        message.categories ?? [],
+                        adding: addedCategories,
+                        removing: removedCategories)
                 }
                 if !body.isEmpty {
-                    _ = try await write(GraphEmptyDTO.self, method: "PATCH",
-                                        path: "messages/\(message.id)", json: body)
+                    _ = try await write(
+                        GraphEmptyDTO.self, method: "PATCH",
+                        path: "messages/\(message.id)", json: body)
                 }
                 if let destination {
-                    _ = try await write(GraphEmptyDTO.self, method: "POST",
-                                        path: "messages/\(message.id)/move",
-                                        json: ["destinationId": destination])
+                    _ = try await write(
+                        GraphEmptyDTO.self, method: "POST",
+                        path: "messages/\(message.id)/move",
+                        json: ["destinationId": destination])
                 }
             }
         }
@@ -169,8 +180,10 @@ extension GraphProvider {
     /// The new `categories` array: removals first, then additions, and no
     /// duplicates. Order of the surviving entries is preserved, so a `PATCH` that
     /// changes nothing sends back exactly what Graph had.
-    static func categories(_ current: [String], adding: [String],
-                           removing: [String]) -> [String] {
+    static func categories(
+        _ current: [String], adding: [String],
+        removing: [String]
+    ) -> [String] {
         var result = current.filter { !removing.contains($0) }
         for category in adding where !result.contains(category) { result.append(category) }
         return result
@@ -192,10 +205,12 @@ extension GraphProvider {
         // `GraphProvider.fetchThread` doubles it: this is a value from the store
         // reaching a query language.
         let escaped = threadID.replacingOccurrences(of: "'", with: "''")
-        let list = try await get(GraphMessageListDTO.self, path: "messages", query: [
-            .init(name: "$filter", value: "conversationId eq '\(escaped)'"),
-            .init(name: "$select", value: "id,categories"),
-        ], notFoundID: threadID)
+        let list = try await get(
+            GraphMessageListDTO.self, path: "messages",
+            query: [
+                .init(name: "$filter", value: "conversationId eq '\(escaped)'"),
+                .init(name: "$select", value: "id,categories"),
+            ], notFoundID: threadID)
         let messages = list.value ?? []
         guard !messages.isEmpty else { throw MailError.unknownThread(threadID) }
         return messages
@@ -238,15 +253,17 @@ extension GraphProvider {
     /// send path is built never to risk. Nothing here catches step 2's error and
     /// continues, and nothing infers success from the absence of an error.
     public func send(_ message: OutgoingMessage) async throws -> String {
-        let draft = try await write(GraphCreatedMessageDTO.self, method: "POST",
-                                    path: "messages",
-                                    json: GraphSendPayload.draft(for: message))
+        let draft = try await write(
+            GraphCreatedMessageDTO.self, method: "POST",
+            path: "messages",
+            json: GraphSendPayload.draft(for: message))
         guard let id = draft.id, !id.isEmpty else {
             throw MailError.decodingFailed("graph draft id")
         }
         do {
-            try await writeExpectingNoContent(method: "POST", path: "messages/\(id)/send",
-                                              json: nil)
+            try await writeExpectingNoContent(
+                method: "POST", path: "messages/\(id)/send",
+                json: nil)
         } catch {
             // Fixed phrasing, and no server text: this string reaches
             // `OutboxEntry.lastError` and the composer banner. `\(id)` is a Graph

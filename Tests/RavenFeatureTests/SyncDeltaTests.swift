@@ -1,22 +1,29 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Sync delta")
 @MainActor struct SyncDeltaTests {
     private func setUp(_ provider: FakeMailProvider, cursor: String?)
-        throws -> (SyncEngine, DocumentMailStore) {
+        throws -> (SyncEngine, DocumentMailStore)
+    {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "me@x.com",
-                                          displayName: "Me", syncCursor: cursor, state: .ready))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "me@x.com",
+                displayName: "Me", syncCursor: cursor, state: .ready))
         return (SyncEngine(store: store, provider: provider, accountID: "a1"), store)
     }
 
     private func thread(_ id: String, date: Date) -> MailThread {
-        MailThread(id: id, accountID: "a1", messages: [
-            MailMessage(id: "m-\(id)", threadID: id, from: MailAddress(email: "b@x.com"),
-                        subject: "S", date: date, labelIDs: ["INBOX"], snippet: "s")
-        ])
+        MailThread(
+            id: id, accountID: "a1",
+            messages: [
+                MailMessage(
+                    id: "m-\(id)", threadID: id, from: MailAddress(email: "b@x.com"),
+                    subject: "S", date: date, labelIDs: ["INBOX"], snippet: "s")
+            ])
     }
 
     @Test("changed threads are refetched and stored")
@@ -117,7 +124,7 @@ import Foundation
         provider.threadsByID = ["t1": thread("t1", date: now)]
         provider.deltas = [
             MailDelta(changedThreadIDs: ["t1"], removedThreadIDs: [], newCursor: "c2"),
-            MailDelta(changedThreadIDs: ["t1"], removedThreadIDs: [], newCursor: "c3")
+            MailDelta(changedThreadIDs: ["t1"], removedThreadIDs: [], newCursor: "c3"),
         ]
         provider.failures["fetchThread"] = [MailError.providerFailed(status: 500, message: "boom")]
         let (engine, store) = try setUp(provider, cursor: "c1")
@@ -141,15 +148,19 @@ import Foundation
         provider.failures["fetchDelta"] = [MailError.providerFailed(status: 500, message: "boom")]
         // If a backfill wrongly ran, this page would land and the cursor would
         // be replaced — both are asserted against below.
-        provider.pages = [ThreadPage(threads: [thread("t-backfilled", date: now)],
-                                     nextPageToken: nil)]
+        provider.pages = [
+            ThreadPage(
+                threads: [thread("t-backfilled", date: now)],
+                nextPageToken: nil)
+        ]
         provider.cursor = "c-backfill"
         let (engine, store) = try setUp(provider, cursor: "c1")
 
         try await engine.syncDelta()
 
-        #expect(store.accounts().first?.syncCursor == "c1",
-                "a 500 is transient; the cursor must be held, not replaced by a backfill cursor")
+        #expect(
+            store.accounts().first?.syncCursor == "c1",
+            "a 500 is transient; the cursor must be held, not replaced by a backfill cursor")
         #expect(store.thread("t-backfilled") == nil, "no full re-walk may have happened")
         #expect(store.accounts().first?.lastError != nil)
     }
@@ -177,7 +188,8 @@ import Foundation
         let (engine, store) = try setUp(provider, cursor: "c1")
 
         try await engine.syncDelta()
-        #expect(store.accounts().first?.syncCursor == "c1", "cursor should be untouched, not replaced by a backfill cursor")
+        #expect(
+            store.accounts().first?.syncCursor == "c1", "cursor should be untouched, not replaced by a backfill cursor")
         #expect(store.accounts().first?.lastError != nil)
     }
 }

@@ -44,7 +44,8 @@ enum MarkdownToHTML {
     static func render(_ markdown: String) -> String {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)
         guard !markdown.isEmpty,
-              let attributed = try? AttributedString(markdown: markdown, options: options) else {
+            let attributed = try? AttributedString(markdown: markdown, options: options)
+        else {
             // Parsing failure (or empty input) still must not lose or corrupt
             // the text — fall back to a single escaped paragraph.
             return markdown.isEmpty ? "" : "<p>\(escape(markdown))</p>"
@@ -149,7 +150,8 @@ enum MarkdownToHTML {
             // this run's path, innermost (end of stack) first.
             var commonPrefix = 0
             while commonPrefix < stack.count && commonPrefix < identities.count
-                    && stack[commonPrefix].identity == identities[commonPrefix] {
+                && stack[commonPrefix].identity == identities[commonPrefix]
+            {
                 commonPrefix += 1
             }
             while stack.count > commonPrefix {
@@ -169,8 +171,9 @@ enum MarkdownToHTML {
                 }
             }
 
-            html += renderInline(attributed[run.range], inline: run.inlinePresentationIntent,
-                                 link: run.link)
+            html += renderInline(
+                attributed[run.range], inline: run.inlinePresentationIntent,
+                link: run.link)
         }
         while !stack.isEmpty { html += stack.removeLast().closingTag }
         return html
@@ -190,8 +193,10 @@ enum MarkdownToHTML {
     /// `renderBlocks` opens each component of the intent path in order, so a
     /// quote inside a quote yields nested `<blockquote>` elements and a
     /// paragraph inside a quote keeps its own `<p>`.
-    private static func tags(for kind: PresentationIntent.Kind,
-                             isInsideListItem: Bool) -> (String?, String?) {
+    private static func tags(
+        for kind: PresentationIntent.Kind,
+        isInsideListItem: Bool
+    ) -> (String?, String?) {
         switch kind {
         case .paragraph:
             return isInsideListItem ? (nil, nil) : ("<p>", "</p>")
@@ -236,9 +241,11 @@ enum MarkdownToHTML {
 
     // MARK: Inline formatting
 
-    private static func renderInline(_ substring: AttributedSubstring,
-                                     inline: InlinePresentationIntent?,
-                                     link: URL?) -> String {
+    private static func renderInline(
+        _ substring: AttributedSubstring,
+        inline: InlinePresentationIntent?,
+        link: URL?
+    ) -> String {
         let text = escape(String(substring.characters))
         guard !text.isEmpty else { return "" }
         var rendered = text

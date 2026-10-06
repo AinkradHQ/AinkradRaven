@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The HTML part of every outgoing message. This suite exists because its
@@ -55,10 +56,14 @@ struct MarkdownToHTMLTests {
     /// Quoted text is a verbatim record of what somebody else wrote. Anything
     /// in it that merely LOOKS like Markdown must not be reinterpreted as
     /// structure in the sender's reply.
-    private static func replyHTML(quoting original: String,
-                                  typed: String = "My reply.") -> String {
-        MarkdownToHTML.renderComposed(typed + ReplyComposer.quoteBody(
-            mode: .reply, message: quotedMessage, bodyText: original))
+    private static func replyHTML(
+        quoting original: String,
+        typed: String = "My reply."
+    ) -> String {
+        MarkdownToHTML.renderComposed(
+            typed
+                + ReplyComposer.quoteBody(
+                    mode: .reply, message: quotedMessage, bodyText: original))
     }
 
     @Test("a quoted sigdash no longer turns the quoted line above it into a heading")
@@ -110,8 +115,10 @@ struct MarkdownToHTMLTests {
             id: "m1", threadID: "t1", rfc822MessageID: "<a@b>",
             from: MailAddress(email: "bea@example.com", name: "<b>Bea</b> *x*"),
             subject: "hello", date: Date(timeIntervalSince1970: 1_700_000_000))
-        let html = MarkdownToHTML.renderComposed("Reply." + ReplyComposer.quoteBody(
-            mode: .reply, message: hostile, bodyText: "original"))
+        let html = MarkdownToHTML.renderComposed(
+            "Reply."
+                + ReplyComposer.quoteBody(
+                    mode: .reply, message: hostile, bodyText: "original"))
         #expect(html.contains("&lt;b&gt;Bea&lt;/b&gt;"))
         #expect(html.contains("<b>Bea</b>") == false)
         #expect(html.contains("<em>x</em>") == false)
@@ -127,9 +134,11 @@ struct MarkdownToHTMLTests {
 
     @Test("a reply with typed markdown, a signature, and a quote emits exactly one of each, in order")
     func allThreeRegionsInOrder() {
-        let composed = "Hello **bold** reply."
-            + ReplyComposer.quoteBody(mode: .reply, message: Self.quotedMessage,
-                                      bodyText: "original text")
+        let composed =
+            "Hello **bold** reply."
+            + ReplyComposer.quoteBody(
+                mode: .reply, message: Self.quotedMessage,
+                bodyText: "original text")
             + Signature.sigdash + "Ahmed\nAinkrad"
         let html = MarkdownToHTML.renderComposed(composed)
 
@@ -155,8 +164,9 @@ struct MarkdownToHTMLTests {
 
     @Test("a forward — a quote with no typed reply body — still renders the quote")
     func forwardWithNoBodyStillQuotes() {
-        let composed = ReplyComposer.quoteBody(mode: .forward, message: Self.quotedMessage,
-                                               bodyText: "forwarded content")
+        let composed = ReplyComposer.quoteBody(
+            mode: .forward, message: Self.quotedMessage,
+            bodyText: "forwarded content")
         let html = MarkdownToHTML.renderComposed(composed)
         #expect(html.contains("<blockquote>"))
         #expect(html.contains("forwarded content"))
@@ -165,8 +175,10 @@ struct MarkdownToHTMLTests {
 
     @Test("a forward with a signature but no typed body emits the signature above the quote")
     func forwardWithSignature() {
-        let composed = ReplyComposer.quoteBody(mode: .forward, message: Self.quotedMessage,
-                                               bodyText: "forwarded content")
+        let composed =
+            ReplyComposer.quoteBody(
+                mode: .forward, message: Self.quotedMessage,
+                bodyText: "forwarded content")
             + Signature.sigdash + "Ahmed"
         let html = MarkdownToHTML.renderComposed(composed)
         let sig = try! #require(html.range(of: "<div class=\"sig\">"))
@@ -242,8 +254,10 @@ struct MarkdownToHTMLTests {
 
     @Test("no block kind loses its text")
     func noKindDropsText() {
-        let sources = ["> quoted", "# heading", "```\ncode\n```", "- bullet",
-                       "1. numbered", "|a|b|\n|-|-|\n|c|d|", "plain paragraph"]
+        let sources = [
+            "> quoted", "# heading", "```\ncode\n```", "- bullet",
+            "1. numbered", "|a|b|\n|-|-|\n|c|d|", "plain paragraph",
+        ]
         for source in sources {
             let html = MarkdownToHTML.render(source)
             #expect(!html.isEmpty, "\(source) rendered nothing")
@@ -257,8 +271,9 @@ struct MarkdownToHTMLTests {
 
     @Test("literal HTML in the source and in a signature is escaped, never live markup")
     func htmlIsEscaped() {
-        #expect(MarkdownToHTML.render("<script>alert(1)</script>")
-            .contains("&lt;script&gt;"))
+        #expect(
+            MarkdownToHTML.render("<script>alert(1)</script>")
+                .contains("&lt;script&gt;"))
         let signed = MarkdownToHTML.renderComposed(
             "Body." + Signature.sigdash + "<img src=x onerror=1>")
         #expect(signed.contains("&lt;img"))
@@ -295,7 +310,8 @@ struct SignatureTests {
 
     @Test("splits at the LAST sigdash, so a sigdash the user typed stays in the body")
     func splitsAtLastSigdash() {
-        let composed = "Quoting someone" + Signature.sigdash + "their sig"
+        let composed =
+            "Quoting someone" + Signature.sigdash + "their sig"
             + Signature.sigdash + "Ahmed"
         let (body, signature) = Signature.split(composed)
         #expect(body == "Quoting someone" + Signature.sigdash + "their sig")
@@ -315,8 +331,10 @@ struct QuotedRegionTests {
 
     @Test("a ReplyComposer body splits into typed text, attribution, and quoted lines")
     func splitsAReplyComposerBody() {
-        let composed = "My reply." + ReplyComposer.quoteBody(
-            mode: .reply, message: Self.message, bodyText: "line one\nline two")
+        let composed =
+            "My reply."
+            + ReplyComposer.quoteBody(
+                mode: .reply, message: Self.message, bodyText: "line one\nline two")
         let split = QuotedRegion.split(composed)
         #expect(split.body == "My reply.")
         #expect(split.attribution?.hasPrefix("On ") == true)
@@ -340,8 +358,9 @@ struct QuotedRegionTests {
 
     @Test("a forward with no typed body yields an empty body and the quote intact")
     func forwardHasEmptyBody() {
-        let composed = ReplyComposer.quoteBody(mode: .forward, message: Self.message,
-                                               bodyText: "forwarded")
+        let composed = ReplyComposer.quoteBody(
+            mode: .forward, message: Self.message,
+            bodyText: "forwarded")
         let split = QuotedRegion.split(composed)
         #expect(split.body.isEmpty)
         #expect(split.quotedLines == ["forwarded"])

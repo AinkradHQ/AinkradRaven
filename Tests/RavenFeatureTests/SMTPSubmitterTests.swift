@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("SMTP submission — envelope, Bcc and dot-stuffing", .timeLimit(.minutes(1)))
@@ -31,10 +32,13 @@ struct SMTPSubmitterAssemblyTests {
         let envelopeCommands = sent.filter {
             $0.hasPrefix("MAIL FROM") || $0.hasPrefix("RCPT TO")
         }
-        #expect(envelopeCommands == ["MAIL FROM:<a@example.test>\r\n",
-                                     "RCPT TO:<to@example.test>\r\n",
-                                     "RCPT TO:<cc@example.test>\r\n",
-                                     "RCPT TO:<blind@example.test>\r\n"])
+        #expect(
+            envelopeCommands == [
+                "MAIL FROM:<a@example.test>\r\n",
+                "RCPT TO:<to@example.test>\r\n",
+                "RCPT TO:<cc@example.test>\r\n",
+                "RCPT TO:<blind@example.test>\r\n",
+            ])
 
         // The other half: the transmitted message itself.
         let data = try #require(await SMTPHarness.transmittedData(transport))
@@ -57,10 +61,14 @@ struct SMTPSubmitterAssemblyTests {
             cc: [MailAddress(email: "cc@example.test"), MailAddress(email: "TO@example.test")],
             bcc: [MailAddress(email: "blind@example.test"), MailAddress(email: "cc@example.test")],
             subject: "Subject 1", bodyText: "Body 1")
-        #expect(SMTPSubmitter.envelope(for: message, sender: "a@example.test")
-                == SMTPEnvelope(sender: "a@example.test",
-                                recipients: ["to@example.test", "cc@example.test",
-                                             "blind@example.test"]))
+        #expect(
+            SMTPSubmitter.envelope(for: message, sender: "a@example.test")
+                == SMTPEnvelope(
+                    sender: "a@example.test",
+                    recipients: [
+                        "to@example.test", "cc@example.test",
+                        "blind@example.test",
+                    ]))
     }
 
     /// RFC 5321 §4.5.2 transparency. The undotted body line is the trap: without
@@ -78,7 +86,8 @@ struct SMTPSubmitterAssemblyTests {
     func dotStuffing() {
         let stuffed = SMTPSubmitter.dotStuffed(
             "Header: v\r\n\r\n.\r\n.hidden\r\n..already\r\nnot. a dot\r\n")
-        #expect(String(decoding: stuffed, as: UTF8.self)
+        #expect(
+            String(decoding: stuffed, as: UTF8.self)
                 == "Header: v\r\n\r\n..\r\n..hidden\r\n...already\r\nnot. a dot\r\n")
     }
 
@@ -184,8 +193,10 @@ struct SMTPAtMostOnceTests {
         let submitter = SMTPHarness.submitter(transport, endpoint: SMTPHarness.implicitEndpoint)
 
         let error = await SMTPHarness.failure { try await submitter.submit(SMTPHarness.message()) }
-        #expect(error as? MailError == .sendOutcomeUnknown(
-            message: "the message data was fully written but the server never answered"))
+        #expect(
+            error as? MailError
+                == .sendOutcomeUnknown(
+                    message: "the message data was fully written but the server never answered"))
         // The data really was transmitted — that is what makes this "possibly
         // sent" rather than "failed".
         let text = try #require(await SMTPHarness.transmittedData(transport))
@@ -212,8 +223,10 @@ struct SMTPAtMostOnceTests {
         let submitter = SMTPHarness.submitter(transport, endpoint: SMTPHarness.implicitEndpoint)
 
         let error = await SMTPHarness.failure { try await submitter.submit(SMTPHarness.message()) }
-        #expect(error as? MailError == .sendOutcomeUnknown(
-            message: "the connection failed while the message data was being written"))
+        #expect(
+            error as? MailError
+                == .sendOutcomeUnknown(
+                    message: "the connection failed while the message data was being written"))
         // Nothing of the message reached the wire — the distinct half of this case.
         #expect(await SMTPHarness.transmittedData(transport) == nil)
         #expect(await transport.sentText.contains("MIME-Version") == false)
@@ -249,13 +262,15 @@ struct SMTPAtMostOnceTests {
         let second = await SMTPHarness.transport()
         try await SMTPHarness.scriptImplicitTLSLogin(second)
         await SMTPHarness.scriptTransaction(second)
-        let (submitter, queue) = SMTPHarness.submitter([transport, second],
-                                                       endpoint: SMTPHarness.implicitEndpoint)
+        let (submitter, queue) = SMTPHarness.submitter(
+            [transport, second],
+            endpoint: SMTPHarness.implicitEndpoint)
 
         let provider = FakeMailProvider(accountID: "a1")
         provider.sendVia = { message in try await submitter.submit(message) }
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            accountID: "a1")
         let id = try outbox.enqueue(.send(SMTPHarness.message()), accountID: "a1")
 
         await SMTPHarness.drain(outbox)
@@ -272,8 +287,9 @@ struct SMTPAtMostOnceTests {
         // equality on `sent` pins that not one byte — no `MAIL FROM`, no `DATA`,
         // nothing at all — was written to it.
         await SMTPHarness.drain(outbox)
-        #expect(await second.sent.map { String(decoding: $0, as: UTF8.self) } == [],
-                "a second drain retransmitted a possibly-sent message")
+        #expect(
+            await second.sent.map { String(decoding: $0, as: UTF8.self) } == [],
+            "a second drain retransmitted a possibly-sent message")
         // And the retry never even got as far as opening that connection.
         #expect(queue.handedOut == 1)
         #expect(outbox.outcome(for: id) == .needsReview)
@@ -287,8 +303,9 @@ struct SMTPAtMostOnceTests {
     func retryContrast() async throws {
         let retryable = FakeMailProvider(accountID: "a1")
         retryable.failures["send"] = [MailError.providerFailed(status: 451, message: "try later")]
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: retryable,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: retryable,
+            accountID: "a1")
         let id = try outbox.enqueue(.send(SMTPHarness.message()), accountID: "a1")
         await SMTPHarness.drain(outbox)
         #expect(outbox.outcome(for: id) == .queued(inFlight: false))

@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// How translucent Raven's own surfaces are. One number, user-controlled from
 /// Settings (the Transparency group).
@@ -88,8 +88,9 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     /// a decode failure there would silently reset the user's setting.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.rawSurfaceOpacity = try container.decodeIfPresent(
-            Double.self, forKey: .rawSurfaceOpacity) ?? Self.defaultSurfaceOpacity
+        self.rawSurfaceOpacity =
+            try container.decodeIfPresent(
+                Double.self, forKey: .rawSurfaceOpacity) ?? Self.defaultSurfaceOpacity
     }
 
     /// The clamped opacity every surface actually uses.
@@ -141,7 +142,8 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     /// Returns 0 when `base` already reaches `target` (a layer cannot subtract
     /// opacity) and when `base` is already 1 (nothing can be added).
     public static func layer(over base: Double, toReach target: Double) -> Double {
-        let base = clampUnit(base), target = clampUnit(target)
+        let base = clampUnit(base)
+        let target = clampUnit(target)
         guard base < 1, target > base else { return 0 }
         return clampUnit((target - base) / (1 - base))
     }
@@ -259,7 +261,8 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
     public init(documents: PluginDocumentStore) {
         self.documents = documents
         if let data = documents.data(forKey: Self.key),
-           let stored = try? JSONDecoder().decode(RavenAppearance.self, from: data) {
+            let stored = try? JSONDecoder().decode(RavenAppearance.self, from: data)
+        {
             self.appearance = stored
         } else {
             // No stored value — the out-of-the-box look, not the extreme of
@@ -313,16 +316,17 @@ private struct RavenLegibleText: ViewModifier {
         // holds for any host theme without this code knowing which one is
         // active, which is the whole reason to ask the kit rather than
         // hardcode black.
-        content.shadow(color: theme.foreground.contrastingText
-            .opacity(appearance.textHaloOpacity), radius: 1.5)
+        content.shadow(
+            color: theme.foreground.contrastingText
+                .opacity(appearance.textHaloOpacity), radius: 1.5)
     }
 }
 
-public extension View {
+extension View {
     /// The Raven pane finish: a flat translucent theme fill at the user's
     /// chosen opacity, with the kit's chamfer, accent edge and glow. No blur —
     /// see `RavenSurface`.
-    func ravenSurface(_ appearance: RavenAppearance) -> some View {
+    public func ravenSurface(_ appearance: RavenAppearance) -> some View {
         modifier(RavenSurface(appearance: appearance))
     }
 
@@ -330,7 +334,7 @@ public extension View {
     /// no-op at full opacity, and it matters MORE now than it did: a flat 0.42
     /// fill over an arbitrary host backdrop is precisely the case it exists
     /// for.
-    func ravenLegibleText(_ appearance: RavenAppearance) -> some View {
+    public func ravenLegibleText(_ appearance: RavenAppearance) -> some View {
         modifier(RavenLegibleText(appearance: appearance))
     }
 }
@@ -346,8 +350,8 @@ private struct RavenModalPresentedKey: EnvironmentKey {
     static let defaultValue = false
 }
 
-public extension EnvironmentValues {
-    var ravenModalPresented: Bool {
+extension EnvironmentValues {
+    public var ravenModalPresented: Bool {
         get { self[RavenModalPresentedKey.self] }
         set { self[RavenModalPresentedKey.self] = newValue }
     }
@@ -381,18 +385,20 @@ private struct RavenFocusRing: ViewModifier {
             .focusEffectDisabled()
             .overlay {
                 ChamferShape(cut: AinkradRadius.panel)
-                    .strokeBorder(theme.accentSecondary.opacity(showsRing ? 0.55 : 0),
-                                  lineWidth: 1)
+                    .strokeBorder(
+                        theme.accentSecondary.opacity(showsRing ? 0.55 : 0),
+                        lineWidth: 1
+                    )
                     .allowsHitTesting(false)
             }
             .animation(reduceMotion ? nil : AinkradMotion.hover, value: showsRing)
     }
 }
 
-public extension View {
+extension View {
     /// Subtle, theme-coloured focus indication for a pane, in place of the
     /// system focus ring. Draws nothing while a Raven modal is presented.
-    func ravenFocusRing(isFocused: Bool) -> some View {
+    public func ravenFocusRing(isFocused: Bool) -> some View {
         modifier(RavenFocusRing(isFocused: isFocused))
     }
 }

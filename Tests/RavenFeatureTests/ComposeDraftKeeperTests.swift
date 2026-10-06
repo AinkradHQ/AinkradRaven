@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The autosave contract. These cover the case a view-lifecycle callback
@@ -9,8 +10,9 @@ import Foundation
 @Suite("Compose draft autosave")
 struct ComposeDraftKeeperTests {
     private func message(_ subject: String, body: String = "") -> OutgoingMessage {
-        OutgoingMessage(to: [MailAddress(email: "bea@example.com")], subject: subject,
-                        bodyText: body)
+        OutgoingMessage(
+            to: [MailAddress(email: "bea@example.com")], subject: subject,
+            bodyText: body)
     }
 
     @Test("an edit with no dismissal at all leaves a recoverable draft")
@@ -76,8 +78,9 @@ struct ComposeDraftKeeperTests {
     func replyThreadingSurvivesTheRoundTrip() {
         let box = DraftBox()
         let keeper = ComposeDraftKeeper(box: box)
-        let reference = ComposeThreadReference(threadID: "t-7", accountID: "acct-b",
-                                              lastMessageRFC822ID: "<m-3@example.com>")
+        let reference = ComposeThreadReference(
+            threadID: "t-7", accountID: "acct-b",
+            lastMessageRFC822ID: "<m-3@example.com>")
 
         // Exactly what the composer autosaves: the typed message with its
         // context's stamps already applied.

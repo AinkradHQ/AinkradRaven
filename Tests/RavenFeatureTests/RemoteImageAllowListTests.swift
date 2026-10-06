@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Remote image allow-list")
@@ -31,8 +32,9 @@ struct RemoteImageAllowListTests {
         RemoteImageAllowList.allow("amir@example.com", documents: documents)
         // Normalized on the way in, and stably ordered on the way out — the
         // list must not reshuffle itself between renders.
-        #expect(RemoteImageAllowList.allowedSenders(documents: documents)
-            == ["amir@example.com", "zoe@example.com"])
+        #expect(
+            RemoteImageAllowList.allowedSenders(documents: documents)
+                == ["amir@example.com", "zoe@example.com"])
     }
 
     @Test("revoking returns exactly that sender to the blocked default")

@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("AppleMailProvider")
@@ -11,8 +12,9 @@ import Foundation
         let messageBytes = Data(rfc822.utf8)
         var data = Data("\(messageBytes.count)\n".utf8)
         data.append(messageBytes)
-        data.append(try PropertyListSerialization.data(
-            fromPropertyList: ["flags": ["read": isRead]], format: .xml, options: 0))
+        data.append(
+            try PropertyListSerialization.data(
+                fromPropertyList: ["flags": ["read": isRead]], format: .xml, options: 0))
         try data.write(to: path)
     }
 
@@ -33,8 +35,10 @@ import Foundation
     func sendRefusesDirectly() async throws {
         let provider = AppleMailProvider(accountID: "am1", directory: URL(fileURLWithPath: "/dev/null"))
         await #expect(throws: MailError.readOnlyAccount("am1")) {
-            _ = try await provider.send(OutgoingMessage(to: [MailAddress(email: "a@b.com")],
-                                                        subject: "s", bodyText: "b"))
+            _ = try await provider.send(
+                OutgoingMessage(
+                    to: [MailAddress(email: "a@b.com")],
+                    subject: "s", bodyText: "b"))
         }
     }
 
@@ -51,25 +55,27 @@ import Foundation
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        try writeEmlx(rfc822: """
-        Subject: Original\r
-        From: alice@example.com\r
-        Message-ID: <a1@example.com>\r
-        Date: Mon, 1 Jan 2024 10:00:00 +0000\r
-        \r
-        First message.\r
-        """, isRead: true, to: dir.appendingPathComponent("1.emlx"))
+        try writeEmlx(
+            rfc822: """
+                Subject: Original\r
+                From: alice@example.com\r
+                Message-ID: <a1@example.com>\r
+                Date: Mon, 1 Jan 2024 10:00:00 +0000\r
+                \r
+                First message.\r
+                """, isRead: true, to: dir.appendingPathComponent("1.emlx"))
 
-        try writeEmlx(rfc822: """
-        Subject: Re: Original\r
-        From: bob@example.com\r
-        Message-ID: <a2@example.com>\r
-        In-Reply-To: <a1@example.com>\r
-        References: <a1@example.com>\r
-        Date: Mon, 1 Jan 2024 11:00:00 +0000\r
-        \r
-        Reply message.\r
-        """, isRead: false, to: dir.appendingPathComponent("2.emlx"))
+        try writeEmlx(
+            rfc822: """
+                Subject: Re: Original\r
+                From: bob@example.com\r
+                Message-ID: <a2@example.com>\r
+                In-Reply-To: <a1@example.com>\r
+                References: <a1@example.com>\r
+                Date: Mon, 1 Jan 2024 11:00:00 +0000\r
+                \r
+                Reply message.\r
+                """, isRead: false, to: dir.appendingPathComponent("2.emlx"))
 
         let provider = AppleMailProvider(accountID: "am1", directory: dir)
         let page = try await provider.fetchThreads(since: .distantPast, pageToken: nil)
@@ -94,25 +100,27 @@ import Foundation
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        try writeEmlx(rfc822: """
-        Subject: Original\r
-        From: alice@example.com\r
-        Message-ID: <a1@example.com>\r
-        Date: Mon, 1 Jan 2024 10:00:00 +0000\r
-        \r
-        First message.\r
-        """, isRead: true, to: dir.appendingPathComponent("1.emlx"))
+        try writeEmlx(
+            rfc822: """
+                Subject: Original\r
+                From: alice@example.com\r
+                Message-ID: <a1@example.com>\r
+                Date: Mon, 1 Jan 2024 10:00:00 +0000\r
+                \r
+                First message.\r
+                """, isRead: true, to: dir.appendingPathComponent("1.emlx"))
 
-        try writeEmlx(rfc822: """
-        Subject: Re: Original\r
-        From: bob@example.com\r
-        Message-ID: <a2@example.com>\r
-        In-Reply-To: <a1@example.com>\r
-        References: <a1@example.com>\r
-        Date: Mon, 1 Jan 2024 11:00:00 +0000\r
-        \r
-        Reply message.\r
-        """, isRead: false, to: dir.appendingPathComponent("2.emlx"))
+        try writeEmlx(
+            rfc822: """
+                Subject: Re: Original\r
+                From: bob@example.com\r
+                Message-ID: <a2@example.com>\r
+                In-Reply-To: <a1@example.com>\r
+                References: <a1@example.com>\r
+                Date: Mon, 1 Jan 2024 11:00:00 +0000\r
+                \r
+                Reply message.\r
+                """, isRead: false, to: dir.appendingPathComponent("2.emlx"))
 
         let provider = AppleMailProvider(accountID: "am1", directory: dir)
         try await withThrowingTaskGroup(of: (Int, Int).self) { group in

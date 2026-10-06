@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Applies the saved `RuleSet` to threads a delta sync just discovered — NOT
 /// retroactively to the whole store. `RavenRuntime.syncAccount` calls this
@@ -18,8 +18,10 @@ import AinkradAppKit
     /// `RavenMCPOperations.mutate` already use, never a provider call of its
     /// own. Threads unknown to the store (a delta id that failed to fetch) are
     /// skipped, not treated as a mismatch worth recording.
-    public static func apply(ruleSet: RuleSet, threadIDs: [String],
-                             store: MailStore, outbox: Outbox) {
+    public static func apply(
+        ruleSet: RuleSet, threadIDs: [String],
+        store: MailStore, outbox: Outbox
+    ) {
         guard !ruleSet.rules.isEmpty, !threadIDs.isEmpty else { return }
         for threadID in threadIDs {
             guard let thread = store.thread(threadID) else { continue }
@@ -32,8 +34,11 @@ import AinkradAppKit
                 // silently, because rules run on the delta-sync path where
                 // there is no surface to report to (same reason the enqueue
                 // failure below is swallowed).
-                guard let vocabulary = LabelVocabularyResolver.vocabulary(forAccountID: thread.accountID,
-                                                                        store: store) else { continue }
+                guard
+                    let vocabulary = LabelVocabularyResolver.vocabulary(
+                        forAccountID: thread.accountID,
+                        store: store)
+                else { continue }
                 let mutation = rule.action.labelMutation(threadIDs: [threadID], vocabulary: vocabulary)
                 ThreadMutationApplier.applyLocally(mutation, store: store, vocabulary: vocabulary)
                 do {

@@ -220,9 +220,11 @@ struct IMAPBodyPart: Equatable, Sendable {
     var attachments: [MailAttachment] {
         preOrder.compactMap { part in
             guard !part.isMultipart, let number = part.partNumber,
-                  let filename = part.filename, !filename.isEmpty else { return nil }
-            return MailAttachment(attachmentID: number, filename: filename,
-                                  mimeType: part.mimeType, size: part.size ?? 0)
+                let filename = part.filename, !filename.isEmpty
+            else { return nil }
+            return MailAttachment(
+                attachmentID: number, filename: filename,
+                mimeType: part.mimeType, size: part.size ?? 0)
         }
     }
 }
@@ -241,7 +243,8 @@ extension IMAPBodyPart {
     /// garbage `mimeType` is never manufactured out of a misread list.
     static func parse(_ value: IMAPValue) throws -> IMAPBodyPart? {
         guard let items = value.listValue, !items.isEmpty else { return nil }
-        let part = items[0].listValue == nil
+        let part =
+            items[0].listValue == nil
             ? try parseSinglePart(items) : try parseMultipart(items)
         return part.numbered(prefix: nil)
     }
@@ -288,7 +291,8 @@ extension IMAPBodyPart {
         case ("message", "rfc822"): dispositionIndex = 11
         default: dispositionIndex = 8
         }
-        let disposition = items.count > dispositionIndex
+        let disposition =
+            items.count > dispositionIndex
             ? parseDisposition(items[dispositionIndex]) : (nil, nil)
         let mimeType = "\(type.lowercased())/\(subtype.lowercased())"
         return IMAPBodyPart(
@@ -313,14 +317,16 @@ extension IMAPBodyPart {
             guard nested.first != nil else {
                 throw IMAPFetchParseError.malformedBodyStructure("empty nested part list")
             }
-            let child = nested.first?.listValue == nil
+            let child =
+                nested.first?.listValue == nil
                 ? try parseSinglePart(nested) : try parseMultipart(nested)
             children.append(child)
             index += 1
         }
         let subtype = index < items.count ? (items[index].stringValue ?? "") : ""
         let parameters = index + 1 < items.count ? parseParameters(items[index + 1]) : [:]
-        let disposition = index + 2 < items.count
+        let disposition =
+            index + 2 < items.count
             ? parseDisposition(items[index + 2]) : (nil, nil)
         guard !children.isEmpty else {
             throw IMAPFetchParseError.malformedBodyStructure("multipart with no parts")
@@ -372,8 +378,9 @@ extension IMAPBodyPart {
         }
         let childPrefix = number
         let renumbered = children.enumerated().map { index, child in
-            child.numbered(prefix: childPrefix.map { "\($0).\(index + 1)" }
-                ?? String(index + 1))
+            child.numbered(
+                prefix: childPrefix.map { "\($0).\(index + 1)" }
+                    ?? String(index + 1))
         }
         return IMAPBodyPart(
             partNumber: number, mimeType: mimeType, parameters: parameters,

@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// Renders `model.selectedThread`: a header naming the conversation and who is
 /// in it, one toolbar of actions beneath it, then the messages.
@@ -34,8 +34,10 @@ public struct ThreadSurface: View {
     @State private var showingOriginal = false
     @State private var showingOverflow = false
 
-    public init(model: RavenViewModel, runtime: RavenRuntime,
-                onCompose: @escaping (ComposeContext) -> Void) {
+    public init(
+        model: RavenViewModel, runtime: RavenRuntime,
+        onCompose: @escaping (ComposeContext) -> Void
+    ) {
         self.model = model
         self.runtime = runtime
         self.onCompose = onCompose
@@ -55,9 +57,10 @@ public struct ThreadSurface: View {
                     .padding(AinkradSpacing.md)
                 }
             } else {
-                AinkradEmptyState(icon: "envelope.open",
-                                  title: "No thread selected",
-                                  message: "Pick a conversation from the inbox to read it.")
+                AinkradEmptyState(
+                    icon: "envelope.open",
+                    title: "No thread selected",
+                    message: "Pick a conversation from the inbox to read it.")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -69,8 +72,9 @@ public struct ThreadSurface: View {
         // Raven's own chrome and can be glass; a foreign document cannot.
         .ainkradModal(isPresented: $showingOriginal, contentWidth: 640) {
             if let message = originalMessage {
-                ThreadOriginalLoader(message: message, runtime: runtime,
-                                    onClose: { showingOriginal = false })
+                ThreadOriginalLoader(
+                    message: message, runtime: runtime,
+                    onClose: { showingOriginal = false })
             }
         }
     }
@@ -116,14 +120,16 @@ public struct ThreadSurface: View {
                     .foregroundStyle(theme.foreground.opacity(0.6))
                     .lineLimit(2)
                 Spacer(minLength: AinkradSpacing.sm)
-                AinkradBadge(text: "\(thread.messages.count) message"
-                             + (thread.messages.count == 1 ? "" : "s"), status: .neutral)
+                AinkradBadge(
+                    text: "\(thread.messages.count) message"
+                        + (thread.messages.count == 1 ? "" : "s"), status: .neutral)
                 if runtime.isReadOnly(accountID: thread.accountID) {
                     // Says why the mutating half of the toolbar is missing,
                     // rather than leaving its absence to be guessed at.
                     AinkradBadge(text: "Read-only", status: .warning)
-                        .ainkradTooltip("This account was imported from Apple Mail. It has no "
-                                        + "transport, so it cannot send or change labels.")
+                        .ainkradTooltip(
+                            "This account was imported from Apple Mail. It has no "
+                                + "transport, so it cannot send or change labels.")
                 }
             }
         }
@@ -161,20 +167,28 @@ public struct ThreadSurface: View {
         let canMutate = !runtime.isReadOnly(accountID: thread.accountID)
         return HStack(spacing: AinkradSpacing.xs) {
             if canMutate {
-                AinkradButton(title: "Reply", style: .primary,
-                              icon: "arrowshape.turn.up.left") { compose(.reply, thread) }
-                AinkradButton(title: "Reply All", style: .secondary,
-                              icon: "arrowshape.turn.up.left.2") { compose(.replyAll, thread) }
-                AinkradButton(title: "Forward", style: .secondary,
-                              icon: "arrowshape.turn.up.right") { compose(.forward, thread) }
+                AinkradButton(
+                    title: "Reply", style: .primary,
+                    icon: "arrowshape.turn.up.left"
+                ) { compose(.reply, thread) }
+                AinkradButton(
+                    title: "Reply All", style: .secondary,
+                    icon: "arrowshape.turn.up.left.2"
+                ) { compose(.replyAll, thread) }
+                AinkradButton(
+                    title: "Forward", style: .secondary,
+                    icon: "arrowshape.turn.up.right"
+                ) { compose(.forward, thread) }
 
                 Divider().frame(height: 18).padding(.horizontal, AinkradSpacing.xs)
 
                 AinkradIconButton(systemName: "archivebox", size: 26, tooltip: "Archive (e)") {
                     model.archive([thread.id])
                 }
-                AinkradIconButton(systemName: isStarred(thread) ? "star.fill" : "star", size: 26,
-                                  tooltip: isStarred(thread) ? "Unstar" : "Star") {
+                AinkradIconButton(
+                    systemName: isStarred(thread) ? "star.fill" : "star", size: 26,
+                    tooltip: isStarred(thread) ? "Unstar" : "Star"
+                ) {
                     model.star([thread.id], starred: !isStarred(thread))
                 }
                 AinkradIconButton(systemName: "trash", size: 26, tooltip: "Trash") {
@@ -197,8 +211,9 @@ public struct ThreadSurface: View {
             // SAME `[AinkradMenuItem]` array, so there is one declaration of
             // what "more actions" means rather than two that can drift.
             .ainkradFloatingPanel(isPresented: $showingOverflow, maxHeight: 260) {
-                OverflowMenu(items: overflowItems(thread),
-                            onSelect: { showingOverflow = false })
+                OverflowMenu(
+                    items: overflowItems(thread),
+                    onSelect: { showingOverflow = false })
             }
         }
         .padding(.horizontal, AinkradSpacing.md)
@@ -230,17 +245,22 @@ public struct ThreadSurface: View {
     private func overflowItems(_ thread: MailThread) -> [AinkradMenuItem] {
         var items: [AinkradMenuItem] = []
         if !runtime.isReadOnly(accountID: thread.accountID) {
-            items.append(AinkradMenuItem(title: "Mark unread", systemName: "envelope.badge",
-                                         shortcut: "U") {
-                model.setRead([thread.id], read: false)
-            })
-            items.append(AinkradMenuItem(title: "Mark read", systemName: "envelope.open") {
-                model.setRead([thread.id], read: true)
-            })
+            items.append(
+                AinkradMenuItem(
+                    title: "Mark unread", systemName: "envelope.badge",
+                    shortcut: "U"
+                ) {
+                    model.setRead([thread.id], read: false)
+                })
+            items.append(
+                AinkradMenuItem(title: "Mark read", systemName: "envelope.open") {
+                    model.setRead([thread.id], read: true)
+                })
         }
-        items.append(AinkradMenuItem(title: "Close thread", systemName: "xmark") {
-            model.clearSelection()
-        })
+        items.append(
+            AinkradMenuItem(title: "Close thread", systemName: "xmark") {
+                model.clearSelection()
+            })
         return items
     }
 
@@ -249,10 +269,13 @@ public struct ThreadSurface: View {
     /// HERE, from the thread actually on screen, and travel with the context —
     /// the composer never re-guesses them. See `ComposeContext.stamp`.
     private func compose(_ mode: ReplyComposer.Mode, _ thread: MailThread) {
-        onCompose(.reply(mode: mode, thread: ComposeThreadReference(
-            threadID: thread.id,
-            accountID: thread.accountID,
-            lastMessageRFC822ID: thread.messages.last?.rfc822MessageID)))
+        onCompose(
+            .reply(
+                mode: mode,
+                thread: ComposeThreadReference(
+                    threadID: thread.id,
+                    accountID: thread.accountID,
+                    lastMessageRFC822ID: thread.messages.last?.rfc822MessageID)))
     }
 }
 
@@ -271,7 +294,10 @@ private struct OverflowMenu: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(items) { item in
                 AinkradListRow(
-                    onTap: { item.action(); onSelect() },
+                    onTap: {
+                        item.action()
+                        onSelect()
+                    },
                     leading: {
                         if let systemName = item.systemName {
                             AinkradIconGlyph(systemName: systemName)
@@ -280,8 +306,9 @@ private struct OverflowMenu: View {
                     title: item.title,
                     trailing: {
                         if let shortcut = item.shortcut { AinkradKbd(shortcut) }
-                    })
-                    .foregroundStyle(item.isDestructive ? statusColors.danger : theme.foreground)
+                    }
+                )
+                .foregroundStyle(item.isDestructive ? statusColors.danger : theme.foreground)
             }
         }
         .padding(AinkradSpacing.xs)
@@ -303,15 +330,18 @@ private struct ThreadOriginalLoader: View {
     var body: some View {
         Group {
             if let html = body_?.html {
-                RawHTMLSheet(html: html, sender: message.from?.email, runtime: runtime,
-                            onClose: onClose)
+                RawHTMLSheet(
+                    html: html, sender: message.from?.email, runtime: runtime,
+                    onClose: onClose)
             } else if isLoading {
                 AinkradLoadingState(label: "Loading original…")
                     .frame(height: 200)
             } else {
-                AinkradEmptyState(icon: "safari", title: "No original to show",
-                                  message: "This message was sent as plain text only.")
-                    .frame(height: 200)
+                AinkradEmptyState(
+                    icon: "safari", title: "No original to show",
+                    message: "This message was sent as plain text only."
+                )
+                .frame(height: 200)
             }
         }
         .task(id: message.id) {

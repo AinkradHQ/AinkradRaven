@@ -49,8 +49,9 @@ enum ThreadFolding {
         // Whatever this page did not mention is still real: the page covered one
         // mailbox, not the account. Dropping it would delete mail on every sync.
         merged.append(contentsOf: storedByKey.values)
-        return MailThread(id: fresh.id, accountID: fresh.accountID,
-                          messages: merged.sorted { ($0.date, $0.id) < ($1.date, $1.id) })
+        return MailThread(
+            id: fresh.id, accountID: fresh.accountID,
+            messages: merged.sorted { ($0.date, $0.id) < ($1.date, $1.id) })
     }
 
     /// Messages are matched on the RFC 822 `Message-ID`, not on `MailMessage.id`,

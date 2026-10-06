@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Bcc, end to end: the model, the RFC822 builder, the compose stamp, the
@@ -13,8 +14,9 @@ struct BccTests {
     func modelDefault() {
         let message = OutgoingMessage(to: [bea], subject: "S", bodyText: "B")
         #expect(message.bcc.isEmpty)
-        #expect(OutgoingMessage(to: [bea], bcc: [blind], subject: "S", bodyText: "B").bcc
-            == [blind])
+        #expect(
+            OutgoingMessage(to: [bea], bcc: [blind], subject: "S", bodyText: "B").bcc
+                == [blind])
     }
 
     @Test("a Bcc header IS emitted into the raw message uploaded to Gmail")
@@ -32,8 +34,9 @@ struct BccTests {
     @Test("no Bcc header appears when there are no blind recipients")
     func noHeaderWhenEmpty() {
         // Byte-for-byte unchanged for every message that predates this.
-        let message = OutgoingMessage(to: [bea], cc: [MailAddress(email: "cal@x.com")],
-                                      subject: "S", bodyText: "B")
+        let message = OutgoingMessage(
+            to: [bea], cc: [MailAddress(email: "cal@x.com")],
+            subject: "S", bodyText: "B")
         let raw = decoded(GmailProvider.rfc822(message, identityLookup: { _ in nil }))
         #expect(!raw.lowercased().contains("bcc:"))
         #expect(raw.contains("\r\nCc: cal@x.com\r\n"))
@@ -45,9 +48,10 @@ struct BccTests {
         // header value that smuggles in a Bcc:". The Bcc line itself must not be
         // the one line that formats its own string.
         let hostile = MailAddress(email: "boss@y.com", name: "Boss\r\nBcc: evil@z.com")
-        let raw = decoded(GmailProvider.rfc822(
-            OutgoingMessage(to: [bea], bcc: [hostile], subject: "S", bodyText: "B"),
-            identityLookup: { _ in nil }))
+        let raw = decoded(
+            GmailProvider.rfc822(
+                OutgoingMessage(to: [bea], bcc: [hostile], subject: "S", bodyText: "B"),
+                identityLookup: { _ in nil }))
         #expect(!raw.contains("evil@z.com\r\n"))
         // Exactly one Bcc header line, not two.
         #expect(raw.components(separatedBy: "\r\nBcc: ").count == 2)
@@ -55,8 +59,10 @@ struct BccTests {
 
     @Test("the compose stamp preserves bcc for a reply")
     func stampPreservesBcc() {
-        let context = ComposeContext.reply(mode: .reply, thread: ComposeThreadReference(
-            threadID: "t1", accountID: "acct", lastMessageRFC822ID: "<m1@x>"))
+        let context = ComposeContext.reply(
+            mode: .reply,
+            thread: ComposeThreadReference(
+                threadID: "t1", accountID: "acct", lastMessageRFC822ID: "<m1@x>"))
         let stamped = context.stamp(
             OutgoingMessage(to: [bea], bcc: [blind], subject: "S", bodyText: "B"),
             fallbackAccountID: nil)
@@ -72,8 +78,9 @@ struct BccTests {
 
     @Test("bcc survives the draft/outbox persistence round trip")
     func codingRoundTrip() throws {
-        let message = OutgoingMessage(to: [bea], cc: [], bcc: [blind], subject: "S",
-                                      bodyText: "B", accountID: "acct")
+        let message = OutgoingMessage(
+            to: [bea], cc: [], bcc: [blind], subject: "S",
+            bodyText: "B", accountID: "acct")
         let data = try JSONEncoder().encode(message)
         #expect(try JSONDecoder().decode(OutgoingMessage.self, from: data) == message)
     }
@@ -82,10 +89,11 @@ struct BccTests {
     func legacyDecode() throws {
         // An outbox entry queued by an earlier build must not fail to load.
         let json = """
-        {"to":[{"email":"bea@x.com"}],"subject":"S","bodyText":"B"}
-        """
-        let message = try JSONDecoder().decode(OutgoingMessage.self,
-                                               from: Data(json.utf8))
+            {"to":[{"email":"bea@x.com"}],"subject":"S","bodyText":"B"}
+            """
+        let message = try JSONDecoder().decode(
+            OutgoingMessage.self,
+            from: Data(json.utf8))
         #expect(message.bcc.isEmpty)
         #expect(message.to.first?.email == "bea@x.com")
     }
@@ -117,21 +125,28 @@ struct BccTests {
         // is private, so the behaviour is pinned through the real send path and
         // asserted on what the provider actually received.
         let provider = FakeMailProvider()
-        let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider,
-                            accountID: "a1")
+        let outbox = Outbox(
+            documents: InMemoryDocumentStore(), provider: provider,
+            accountID: "a1")
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail, address: "a@x.com",
-                                          displayName: "A", signature: "Best,\nA"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "a@x.com",
+                displayName: "A", signature: "Best,\nA"))
         let message = OutgoingMessage(
             to: [MailAddress(email: "bea@x.com")],
             bcc: [MailAddress(email: "boss@y.com")],
             subject: "S", bodyText: "Body", accountID: "a1",
-            attachments: [OutgoingAttachment(filename: "a.txt", mimeType: "text/plain",
-                                             data: Data("hi".utf8))],
+            attachments: [
+                OutgoingAttachment(
+                    filename: "a.txt", mimeType: "text/plain",
+                    data: Data("hi".utf8))
+            ],
             icsReply: ICSReply(icsText: "BEGIN:VCALENDAR\nEND:VCALENDAR"))
 
-        _ = try await SendAttempt.send(message, draftID: nil, outbox: outbox,
-                                       store: store, drain: outbox.drain)
+        _ = try await SendAttempt.send(
+            message, draftID: nil, outbox: outbox,
+            store: store, drain: outbox.drain)
 
         let sent = provider.sentMessages.first
         #expect(sent?.bodyText == "Body\n-- \nBest,\nA")

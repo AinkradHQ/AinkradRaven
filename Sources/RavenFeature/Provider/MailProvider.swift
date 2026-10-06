@@ -5,7 +5,8 @@ public struct ThreadPage: Equatable, Sendable {
     public let threads: [MailThread]
     public let nextPageToken: String?
     public init(threads: [MailThread], nextPageToken: String?) {
-        self.threads = threads; self.nextPageToken = nextPageToken
+        self.threads = threads
+        self.nextPageToken = nextPageToken
     }
 }
 
@@ -32,7 +33,10 @@ public struct OutgoingAttachment: Codable, Equatable, Sendable, Identifiable {
     public let data: Data
 
     public init(id: UUID = UUID(), filename: String, mimeType: String, data: Data) {
-        self.id = id; self.filename = filename; self.mimeType = mimeType; self.data = data
+        self.id = id
+        self.filename = filename
+        self.mimeType = mimeType
+        self.data = data
     }
 }
 
@@ -123,16 +127,24 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     /// exactly one candidate.
     public let accountID: String?
 
-    public init(to: [MailAddress], cc: [MailAddress] = [], bcc: [MailAddress] = [],
-                subject: String,
-                bodyText: String, inReplyToMessageID: String? = nil,
-                threadID: String? = nil, accountID: String? = nil,
-                attachments: [OutgoingAttachment] = [], icsReply: ICSReply? = nil,
-                richBody: RichBody? = nil) {
-        self.to = to; self.cc = cc; self.bcc = bcc; self.subject = subject
-        self.bodyText = bodyText; self.inReplyToMessageID = inReplyToMessageID
-        self.threadID = threadID; self.accountID = accountID
-        self.attachments = attachments; self.icsReply = icsReply
+    public init(
+        to: [MailAddress], cc: [MailAddress] = [], bcc: [MailAddress] = [],
+        subject: String,
+        bodyText: String, inReplyToMessageID: String? = nil,
+        threadID: String? = nil, accountID: String? = nil,
+        attachments: [OutgoingAttachment] = [], icsReply: ICSReply? = nil,
+        richBody: RichBody? = nil
+    ) {
+        self.to = to
+        self.cc = cc
+        self.bcc = bcc
+        self.subject = subject
+        self.bodyText = bodyText
+        self.inReplyToMessageID = inReplyToMessageID
+        self.threadID = threadID
+        self.accountID = accountID
+        self.attachments = attachments
+        self.icsReply = icsReply
         self.richBody = Self.anchored(richBody, to: bodyText)
     }
 
@@ -178,8 +190,9 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
         // entry, and one failed entry used to take the entire send queue with
         // it. The worst case is a message that goes out unformatted; it is
         // never a message that quietly ceases to exist.
-        richBody = Self.anchored(try? c.decodeIfPresent(RichBody.self, forKey: .richBody),
-                                 to: bodyText)
+        richBody = Self.anchored(
+            try? c.decodeIfPresent(RichBody.self, forKey: .richBody),
+            to: bodyText)
     }
 
     /// The same message attributed to `accountID`. Used where the account is
@@ -187,10 +200,11 @@ public struct OutgoingMessage: Codable, Equatable, Sendable {
     /// from-picker, `create_draft`'s explicit `account_id`, a reply resolving
     /// the account from its thread).
     public func attributed(to accountID: String?) -> OutgoingMessage {
-        OutgoingMessage(to: to, cc: cc, bcc: bcc, subject: subject, bodyText: bodyText,
-                        inReplyToMessageID: inReplyToMessageID, threadID: threadID,
-                        accountID: accountID, attachments: attachments, icsReply: icsReply,
-                        richBody: richBody)
+        OutgoingMessage(
+            to: to, cc: cc, bcc: bcc, subject: subject, bodyText: bodyText,
+            inReplyToMessageID: inReplyToMessageID, threadID: threadID,
+            accountID: accountID, attachments: attachments, icsReply: icsReply,
+            richBody: richBody)
     }
 }
 
@@ -199,7 +213,9 @@ public struct LabelMutation: Codable, Equatable, Sendable {
     public let add: [String]
     public let remove: [String]
     public init(threadIDs: [String], add: [String] = [], remove: [String] = []) {
-        self.threadIDs = threadIDs; self.add = add; self.remove = remove
+        self.threadIDs = threadIDs
+        self.add = add
+        self.remove = remove
     }
 }
 

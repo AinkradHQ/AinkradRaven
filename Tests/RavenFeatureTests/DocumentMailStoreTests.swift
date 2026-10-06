@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("DocumentMailStore")
@@ -11,33 +12,41 @@ import Foundation
 
     /// The store's own date strategy, so a hand-planted document decodes.
     private var coder: (JSONEncoder, JSONDecoder) {
-        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
         return (encoder, decoder)
     }
 
     /// Every month shard the account has ever written, read straight out of the
     /// month registry — the only enumeration a key→Data store allows.
-    private func registeredMonths(_ documents: InMemoryDocumentStore,
-                                  accountID: String) throws -> [String] {
+    private func registeredMonths(
+        _ documents: InMemoryDocumentStore,
+        accountID: String
+    ) throws -> [String] {
         guard let data = documents.storage[DocumentKeys.indexMonths(accountID: accountID)]
         else { return [] }
         return try coder.1.decode([String].self, from: data)
     }
 
-    private func message(_ id: String, thread: String, date: Date,
-                         read: Bool = false) -> MailMessage {
-        MailMessage(id: id, threadID: thread, from: MailAddress(email: "b@x.com"),
-                    subject: "Subject", date: date, isRead: read,
-                    labelIDs: ["INBOX"], snippet: "snip")
+    private func message(
+        _ id: String, thread: String, date: Date,
+        read: Bool = false
+    ) -> MailMessage {
+        MailMessage(
+            id: id, threadID: thread, from: MailAddress(email: "b@x.com"),
+            subject: "Subject", date: date, isRead: read,
+            labelIDs: ["INBOX"], snippet: "snip")
     }
 
     @Test("a thread writes its own document plus the month index, not one blob")
     func shardsOnWrite() throws {
         let (store, documents) = makeStore()
-        let when = Date(timeIntervalSince1970: 1_772_000_000) // 2026-02
-        let thread = MailThread(id: "t1", accountID: "a1",
-                                messages: [message("m1", thread: "t1", date: when)])
+        let when = Date(timeIntervalSince1970: 1_772_000_000)  // 2026-02
+        let thread = MailThread(
+            id: "t1", accountID: "a1",
+            messages: [message("m1", thread: "t1", date: when)])
         try store.upsertThread(thread)
 
         #expect(documents.storage["thread-t1"] != nil)
@@ -49,11 +58,15 @@ import Foundation
     func summariesByMonth() throws {
         let (store, _) = makeStore()
         let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01
-        let march = Date(timeIntervalSince1970: 1_772_323_200)    // 2026-03-01
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                          messages: [message("m1", thread: "t1", date: january)]))
-        try store.upsertThread(MailThread(id: "t2", accountID: "a1",
-                                          messages: [message("m2", thread: "t2", date: march)]))
+        let march = Date(timeIntervalSince1970: 1_772_323_200)  // 2026-03-01
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [message("m1", thread: "t1", date: january)]))
+        try store.upsertThread(
+            MailThread(
+                id: "t2", accountID: "a1",
+                messages: [message("m2", thread: "t2", date: march)]))
 
         let januaryOnly = store.summaries(accountID: "a1", months: [MonthShard.key(for: january)])
         #expect(januaryOnly.map(\.id) == ["t1"])
@@ -63,8 +76,9 @@ import Foundation
     func upsertDedupes() throws {
         let (store, _) = makeStore()
         let when = Date(timeIntervalSince1970: 1_772_000_000)
-        let first = MailThread(id: "t1", accountID: "a1",
-                               messages: [message("m1", thread: "t1", date: when)])
+        let first = MailThread(
+            id: "t1", accountID: "a1",
+            messages: [message("m1", thread: "t1", date: when)])
         try store.upsertThread(first)
         var second = first
         second.messages.append(message("m2", thread: "t1", date: when.addingTimeInterval(60)))
@@ -78,8 +92,9 @@ import Foundation
     @Test("bodies live in their own documents")
     func bodiesSeparate() throws {
         let (store, documents) = makeStore()
-        try store.saveBody(MessageBody(messageID: "m1", plainText: "hello", html: nil),
-                           accountID: "a1")
+        try store.saveBody(
+            MessageBody(messageID: "m1", plainText: "hello", html: nil),
+            accountID: "a1")
         #expect(documents.storage["body-m1"] != nil)
         #expect(store.body(messageID: "m1")?.plainText == "hello")
     }
@@ -88,8 +103,10 @@ import Foundation
     func removeThread() throws {
         let (store, documents) = makeStore()
         let when = Date(timeIntervalSince1970: 1_772_000_000)
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                          messages: [message("m1", thread: "t1", date: when)]))
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [message("m1", thread: "t1", date: when)]))
         try store.removeThread("t1", accountID: "a1", date: when)
 
         #expect(documents.storage["thread-t1"] == nil)
@@ -100,9 +117,11 @@ import Foundation
     func removeThreadUsesStoredMonth() throws {
         let (store, _) = makeStore()
         let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01
-        let march = Date(timeIntervalSince1970: 1_772_323_200)    // 2026-03-01
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                          messages: [message("m1", thread: "t1", date: january)]))
+        let march = Date(timeIntervalSince1970: 1_772_323_200)  // 2026-03-01
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [message("m1", thread: "t1", date: january)]))
         // Caller passes a date in a different month than where the thread's summary
         // row actually lives (stale caller state, or the thread moved since it was read).
         try store.removeThread("t1", accountID: "a1", date: march)
@@ -115,9 +134,10 @@ import Foundation
     func threadMovesMonth() throws {
         let (store, _) = makeStore()
         let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01
-        let february = Date(timeIntervalSince1970: 1_770_000_000) // 2026-02
-        var thread = MailThread(id: "t1", accountID: "a1",
-                                messages: [message("m1", thread: "t1", date: january)])
+        let february = Date(timeIntervalSince1970: 1_770_000_000)  // 2026-02
+        var thread = MailThread(
+            id: "t1", accountID: "a1",
+            messages: [message("m1", thread: "t1", date: january)])
         try store.upsertThread(thread)
         thread.messages.append(message("m2", thread: "t1", date: february))
         try store.upsertThread(thread)
@@ -134,11 +154,15 @@ import Foundation
     func mergeRemovesLosingThread() throws {
         let (store, documents) = makeStore()
         let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01
-        let march = Date(timeIntervalSince1970: 1_772_323_200)    // 2026-03
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                          messages: [message("m1", thread: "t1", date: january)]))
-        try store.upsertThread(MailThread(id: "t2", accountID: "a1",
-                                          messages: [message("m2", thread: "t2", date: march)]))
+        let march = Date(timeIntervalSince1970: 1_772_323_200)  // 2026-03
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [message("m1", thread: "t1", date: january)]))
+        try store.upsertThread(
+            MailThread(
+                id: "t2", accountID: "a1",
+                messages: [message("m2", thread: "t2", date: march)]))
 
         let winner = try #require(store.thread("t1"))
         try store.mergeThreads(losingIDs: ["t2"], into: winner)
@@ -149,8 +173,9 @@ import Foundation
         #expect(months.count == 2)
         for month in months {
             let rows = store.summaries(accountID: "a1", months: [month])
-            #expect(rows.contains { $0.id == "t2" } == false,
-                    "t2 must not survive in the \(month) shard")
+            #expect(
+                rows.contains { $0.id == "t2" } == false,
+                "t2 must not survive in the \(month) shard")
         }
         #expect(store.summaries(accountID: "a1", months: months).map(\.id) == ["t1"])
     }
@@ -163,29 +188,33 @@ import Foundation
     func mergeCleansEveryMonthEverOccupied() throws {
         let (store, documents) = makeStore()
         let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01
-        let february = Date(timeIntervalSince1970: 1_770_000_000) // 2026-02
-        let march = Date(timeIntervalSince1970: 1_772_323_200)    // 2026-03
+        let february = Date(timeIntervalSince1970: 1_770_000_000)  // 2026-02
+        let march = Date(timeIntervalSince1970: 1_772_323_200)  // 2026-03
 
         // t2 starts in January, then gains a February message: upsertThread's
         // drift repair moves the row. Plant a stale January row by hand so the
         // merge is proven to sweep a month it no longer claims to live in.
-        var losing = MailThread(id: "t2", accountID: "a1",
-                                messages: [message("m2", thread: "t2", date: january)])
+        var losing = MailThread(
+            id: "t2", accountID: "a1",
+            messages: [message("m2", thread: "t2", date: january)])
         try store.upsertThread(losing)
         losing.messages.append(message("m3", thread: "t2", date: february))
         try store.upsertThread(losing)
         let januaryKey = DocumentKeys.index(accountID: "a1", month: MonthShard.key(for: january))
         documents.setData(try coder.0.encode([losing.summary()]), forKey: januaryKey)
 
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                          messages: [message("m1", thread: "t1", date: march)]))
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [message("m1", thread: "t1", date: march)]))
         let winner = try #require(store.thread("t1"))
         try store.mergeThreads(losingIDs: ["t2"], into: winner)
 
         for month in [january, february, march].map(MonthShard.key(for:)) {
             let rows = store.summaries(accountID: "a1", months: [month])
-            #expect(rows.contains { $0.id == "t2" } == false,
-                    "t2 must be gone from the \(month) shard")
+            #expect(
+                rows.contains { $0.id == "t2" } == false,
+                "t2 must be gone from the \(month) shard")
         }
     }
 
@@ -195,14 +224,20 @@ import Foundation
         let january = Date(timeIntervalSince1970: 1_767_225_600)
         let february = Date(timeIntervalSince1970: 1_770_000_000)
         let march = Date(timeIntervalSince1970: 1_772_323_200)
-        try store.upsertThread(MailThread(id: "t2", accountID: "a1", messages: [
-            message("m2", thread: "t2", date: february),
-            message("shared", thread: "t2", date: january, read: true),
-        ]))
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1", messages: [
-            message("shared", thread: "t1", date: january, read: true),
-            message("m1", thread: "t1", date: march),
-        ]))
+        try store.upsertThread(
+            MailThread(
+                id: "t2", accountID: "a1",
+                messages: [
+                    message("m2", thread: "t2", date: february),
+                    message("shared", thread: "t2", date: january, read: true),
+                ]))
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [
+                    message("shared", thread: "t1", date: january, read: true),
+                    message("m1", thread: "t1", date: march),
+                ]))
 
         let winner = try #require(store.thread("t1"))
         try store.mergeThreads(losingIDs: ["t2"], into: winner)
@@ -225,14 +260,20 @@ import Foundation
         let (store, documents) = makeStore()
         let january = Date(timeIntervalSince1970: 1_767_225_600)
         let march = Date(timeIntervalSince1970: 1_772_323_200)
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                          messages: [message("m1", thread: "t1", date: january)]))
-        try store.upsertThread(MailThread(id: "t2", accountID: "a1",
-                                          messages: [message("m2", thread: "t2", date: march)]))
-        try store.saveBody(MessageBody(messageID: "m1", plainText: "one", html: nil),
-                           accountID: "a1")
-        try store.saveBody(MessageBody(messageID: "m2", plainText: "two", html: nil),
-                           accountID: "a1")
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [message("m1", thread: "t1", date: january)]))
+        try store.upsertThread(
+            MailThread(
+                id: "t2", accountID: "a1",
+                messages: [message("m2", thread: "t2", date: march)]))
+        try store.saveBody(
+            MessageBody(messageID: "m1", plainText: "one", html: nil),
+            accountID: "a1")
+        try store.saveBody(
+            MessageBody(messageID: "m2", plainText: "two", html: nil),
+            accountID: "a1")
         let before = documents.storage["body-m2"]
 
         let winner = try #require(store.thread("t1"))
@@ -248,10 +289,14 @@ import Foundation
         let (store, _) = makeStore()
         let january = Date(timeIntervalSince1970: 1_767_225_600)
         let march = Date(timeIntervalSince1970: 1_772_323_200)
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                          messages: [message("m1", thread: "t1", date: january)]))
-        try store.upsertThread(MailThread(id: "t2", accountID: "a1",
-                                          messages: [message("m2", thread: "t2", date: march)]))
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [message("m1", thread: "t1", date: january)]))
+        try store.upsertThread(
+            MailThread(
+                id: "t2", accountID: "a1",
+                messages: [message("m2", thread: "t2", date: march)]))
 
         let winner = try #require(store.thread("t1"))
         // Partial knowledge must not fail the whole merge: t2 still merges.
@@ -270,8 +315,10 @@ import Foundation
         // must not write the winner either.
         do {
             let (store, documents) = makeStore()
-            try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                              messages: [message("m1", thread: "t1", date: january)]))
+            try store.upsertThread(
+                MailThread(
+                    id: "t1", accountID: "a1",
+                    messages: [message("m1", thread: "t1", date: january)]))
             let winner = try #require(store.thread("t1"))
             let garbage = Data("not JSON".utf8)
             documents.setData(garbage, forKey: DocumentKeys.thread("t2"))
@@ -279,18 +326,23 @@ import Foundation
             #expect(throws: MailError.documentCorrupt(key: DocumentKeys.thread("t2"))) {
                 try store.mergeThreads(losingIDs: ["t2"], into: winner)
             }
-            #expect(documents.storage[DocumentKeys.thread("t2")] == garbage,
-                    "the damaged document must stay recoverable")
+            #expect(
+                documents.storage[DocumentKeys.thread("t2")] == garbage,
+                "the damaged document must stay recoverable")
             #expect(store.lastCorruptDocumentKey == DocumentKeys.thread("t2"))
         }
 
         // A corrupt month INDEX shard: the read-modify-write must refuse too.
         do {
             let (store, documents) = makeStore()
-            try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                              messages: [message("m1", thread: "t1", date: march)]))
-            try store.upsertThread(MailThread(id: "t2", accountID: "a1",
-                                              messages: [message("m2", thread: "t2", date: january)]))
+            try store.upsertThread(
+                MailThread(
+                    id: "t1", accountID: "a1",
+                    messages: [message("m1", thread: "t1", date: march)]))
+            try store.upsertThread(
+                MailThread(
+                    id: "t2", accountID: "a1",
+                    messages: [message("m2", thread: "t2", date: january)]))
             let winner = try #require(store.thread("t1"))
             let key = DocumentKeys.index(accountID: "a1", month: MonthShard.key(for: january))
             let garbage = Data("{{{".utf8)
@@ -300,16 +352,19 @@ import Foundation
                 try store.mergeThreads(losingIDs: ["t2"], into: winner)
             }
             #expect(documents.storage[key] == garbage)
-            #expect(documents.storage[DocumentKeys.thread("t2")] != nil,
-                    "no write may land when any read-modify-write path had to refuse")
+            #expect(
+                documents.storage[DocumentKeys.thread("t2")] != nil,
+                "no write may land when any read-modify-write path had to refuse")
         }
     }
 
     @Test("accounts round-trip and never carry a token field")
     func accountsRoundTrip() throws {
         let (store, documents) = makeStore()
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "me@x.com", displayName: "Me"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "me@x.com", displayName: "Me"))
         #expect(store.accounts().map(\.id) == ["a1"])
         let raw = try #require(documents.storage["accounts"])
         let text = String(decoding: raw, as: UTF8.self).lowercased()
@@ -329,11 +384,14 @@ import Foundation
         // saved a one-element array over it, destroying the real accounts
         // permanently on the very next save.
         #expect(throws: MailError.documentCorrupt(key: DocumentKeys.accounts)) {
-            try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                              address: "me@x.com", displayName: "Me"))
+            try store.saveAccount(
+                MailAccount(
+                    id: "a1", provider: .gmail,
+                    address: "me@x.com", displayName: "Me"))
         }
-        #expect(documents.storage[DocumentKeys.accounts] == garbage,
-                "the original bytes must survive so the document can be recovered")
+        #expect(
+            documents.storage[DocumentKeys.accounts] == garbage,
+            "the original bytes must survive so the document can be recovered")
 
         // removeAccount is the same read-modify-write shape and must refuse too.
         #expect(throws: MailError.documentCorrupt(key: DocumentKeys.accounts)) {
@@ -348,8 +406,9 @@ import Foundation
         documents.setData(Data("not JSON".utf8), forKey: DocumentKeys.accounts)
 
         #expect(store.accounts().isEmpty)
-        #expect(store.lastCorruptDocumentKey == DocumentKeys.accounts,
-                "an unreadable document must not read as simply missing")
+        #expect(
+            store.lastCorruptDocumentKey == DocumentKeys.accounts,
+            "an unreadable document must not read as simply missing")
     }
 
     @Test("a corrupt month index is not overwritten by a thread upsert")
@@ -361,8 +420,10 @@ import Foundation
         documents.setData(garbage, forKey: key)
 
         #expect(throws: MailError.documentCorrupt(key: key)) {
-            try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                              messages: [message("m1", thread: "t1", date: when)]))
+            try store.upsertThread(
+                MailThread(
+                    id: "t1", accountID: "a1",
+                    messages: [message("m1", thread: "t1", date: when)]))
         }
         #expect(documents.storage[key] == garbage)
     }
@@ -373,19 +434,28 @@ import Foundation
     func purgeRemovesEverything() throws {
         let (store, documents) = makeStore()
         let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01
-        let march = Date(timeIntervalSince1970: 1_772_323_200)    // 2026-03
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "me@x.com", displayName: "Me"))
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                          messages: [message("m1", thread: "t1", date: january)]))
-        try store.upsertThread(MailThread(id: "t2", accountID: "a1",
-                                          messages: [message("m2", thread: "t2", date: march)]))
-        try store.saveBody(MessageBody(messageID: "m1", plainText: "secret", html: nil),
-                           accountID: "a1")
-        try store.saveBody(MessageBody(messageID: "m2", plainText: "secret", html: nil),
-                           accountID: "a1")
-        try store.saveLabels([MailLabel(id: "INBOX", name: "Inbox", kind: .system)],
-                             accountID: "a1")
+        let march = Date(timeIntervalSince1970: 1_772_323_200)  // 2026-03
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "me@x.com", displayName: "Me"))
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [message("m1", thread: "t1", date: january)]))
+        try store.upsertThread(
+            MailThread(
+                id: "t2", accountID: "a1",
+                messages: [message("m2", thread: "t2", date: march)]))
+        try store.saveBody(
+            MessageBody(messageID: "m1", plainText: "secret", html: nil),
+            accountID: "a1")
+        try store.saveBody(
+            MessageBody(messageID: "m2", plainText: "secret", html: nil),
+            accountID: "a1")
+        try store.saveLabels(
+            [MailLabel(id: "INBOX", name: "Inbox", kind: .system)],
+            accountID: "a1")
 
         try store.purge(accountID: "a1")
 
@@ -394,10 +464,16 @@ import Foundation
         #expect(documents.storage["thread-t2"] == nil)
         #expect(documents.storage["body-m1"] == nil, "mail bodies must not survive a sign-out")
         #expect(documents.storage["body-m2"] == nil)
-        #expect(documents.storage[DocumentKeys.index(accountID: "a1",
-                                                     month: MonthShard.key(for: january))] == nil)
-        #expect(documents.storage[DocumentKeys.index(accountID: "a1",
-                                                     month: MonthShard.key(for: march))] == nil)
+        #expect(
+            documents.storage[
+                DocumentKeys.index(
+                    accountID: "a1",
+                    month: MonthShard.key(for: january))] == nil)
+        #expect(
+            documents.storage[
+                DocumentKeys.index(
+                    accountID: "a1",
+                    month: MonthShard.key(for: march))] == nil)
         #expect(documents.storage[DocumentKeys.labels(accountID: "a1")] == nil)
         #expect(documents.storage[DocumentKeys.indexMonths(accountID: "a1")] == nil)
     }
@@ -408,18 +484,22 @@ import Foundation
     @Test("purge removes a body whose thread document does not exist")
     func purgeRemovesOrphanedBody() throws {
         let (store, documents) = makeStore()
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "me@x.com", displayName: "Me"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "me@x.com", displayName: "Me"))
         // A body landed, but the thread write failed — no index row, no thread
         // document, nothing pointing at this body.
-        try store.saveBody(MessageBody(messageID: "orphan", plainText: "private", html: nil),
-                           accountID: "a1")
+        try store.saveBody(
+            MessageBody(messageID: "orphan", plainText: "private", html: nil),
+            accountID: "a1")
         #expect(documents.storage["body-orphan"] != nil)
 
         try store.purge(accountID: "a1")
 
-        #expect(documents.storage["body-orphan"] == nil,
-                "an unreachable body must not survive sign-out")
+        #expect(
+            documents.storage["body-orphan"] == nil,
+            "an unreachable body must not survive sign-out")
         #expect(documents.storage[DocumentKeys.bodyIndex(accountID: "a1")] == nil)
     }
 
@@ -427,14 +507,22 @@ import Foundation
     func purgeIsScopedToOneAccount() throws {
         let (store, documents) = makeStore()
         let when = Date(timeIntervalSince1970: 1_772_000_000)
-        try store.saveAccount(MailAccount(id: "a1", provider: .gmail,
-                                          address: "one@x.com", displayName: "One"))
-        try store.saveAccount(MailAccount(id: "a2", provider: .gmail,
-                                          address: "two@x.com", displayName: "Two"))
-        try store.upsertThread(MailThread(id: "t1", accountID: "a1",
-                                          messages: [message("m1", thread: "t1", date: when)]))
-        try store.upsertThread(MailThread(id: "t2", accountID: "a2",
-                                          messages: [message("m2", thread: "t2", date: when)]))
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail,
+                address: "one@x.com", displayName: "One"))
+        try store.saveAccount(
+            MailAccount(
+                id: "a2", provider: .gmail,
+                address: "two@x.com", displayName: "Two"))
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "a1",
+                messages: [message("m1", thread: "t1", date: when)]))
+        try store.upsertThread(
+            MailThread(
+                id: "t2", accountID: "a2",
+                messages: [message("m2", thread: "t2", date: when)]))
 
         try store.purge(accountID: "a1")
 

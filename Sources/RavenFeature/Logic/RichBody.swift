@@ -34,7 +34,9 @@ public struct RichBody: Equatable, Sendable {
         public let kind: Kind
 
         public init(start: Int, length: Int, kind: Kind) {
-            self.start = start; self.length = length; self.kind = kind
+            self.start = start
+            self.length = length
+            self.kind = kind
         }
 
         /// Whether this run addresses real characters of a `text` whose length
@@ -131,15 +133,18 @@ public enum ComposeMessage {
     }
 
     /// The typed content as an `OutgoingMessage`, before routing.
-    public static func outgoing(to: [MailAddress], cc: [MailAddress], bcc: [MailAddress],
-                                subject: String, body: RichBody,
-                                attachments: [OutgoingAttachment]) -> OutgoingMessage {
-        OutgoingMessage(to: to, cc: cc, bcc: bcc, subject: subject,
-                        // The plain text, verbatim — `bodyText` never stops
-                        // being the truth about the `text/plain` part.
-                        bodyText: body.text,
-                        attachments: attachments,
-                        richBody: attachment(for: body))
+    public static func outgoing(
+        to: [MailAddress], cc: [MailAddress], bcc: [MailAddress],
+        subject: String, body: RichBody,
+        attachments: [OutgoingAttachment]
+    ) -> OutgoingMessage {
+        OutgoingMessage(
+            to: to, cc: cc, bcc: bcc, subject: subject,
+            // The plain text, verbatim — `bodyText` never stops
+            // being the truth about the `text/plain` part.
+            bodyText: body.text,
+            attachments: attachments,
+            richBody: attachment(for: body))
     }
 }
 
@@ -211,10 +216,10 @@ extension RichBody.Span: Codable {
     }
 }
 
-private extension RichBody.Kind {
+extension RichBody.Kind {
     /// Throws for a tag this build does not know, which `LenientSpan` turns
     /// into "this one run is plain text" — never into a refused message.
-    init(tag: String, container: KeyedDecodingContainer<RichBody.Span.CodingKeys>) throws {
+    fileprivate init(tag: String, container: KeyedDecodingContainer<RichBody.Span.CodingKeys>) throws {
         switch tag {
         case "bold": self = .bold
         case "italic": self = .italic

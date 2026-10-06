@@ -1,8 +1,8 @@
-import SwiftUI
-import AppKit
-import Quartz
 import AinkradAppKit
 import AinkradAppKitUI
+import AppKit
+import Quartz
+import SwiftUI
 
 /// One message: sender line, the visible (non-quoted) body, a disclosure for
 /// the quoted trailer `QuoteTrimmer` split off, attachment chips, and "Show
@@ -27,8 +27,9 @@ struct MessageRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
             HStack(spacing: AinkradSpacing.sm) {
-                AinkradIconGlyph(systemName: message.isRead ? "envelope.open" : "envelope.badge",
-                                 filled: !message.isRead)
+                AinkradIconGlyph(
+                    systemName: message.isRead ? "envelope.open" : "envelope.badge",
+                    filled: !message.isRead)
                 Text(message.from?.displayLabel ?? "Unknown sender")
                     .font(AinkradFontResolver.font(.body, weight: .medium, typography: typo))
                     .foregroundStyle(theme.foreground)
@@ -53,8 +54,9 @@ struct MessageRow: View {
             }
 
             if !message.attachments.isEmpty {
-                AttachmentChipRow(attachments: message.attachments, messageID: message.id,
-                                  threadID: message.threadID, runtime: runtime)
+                AttachmentChipRow(
+                    attachments: message.attachments, messageID: message.id,
+                    threadID: message.threadID, runtime: runtime)
             }
         }
         .padding(AinkradSpacing.md)
@@ -67,15 +69,20 @@ struct MessageRow: View {
         // `RavenAppearance.cardFillOpacity`. Two independently-picked
         // translucent fills is what made this card an opaque slab over an
         // already-glass pane (0.72 pane + 0.45·0.72 card ≈ 0.85 effective).
-        .background(ChamferShape(cut: AinkradRadius.sm)
-            .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: message.isRead))))
+        .background(
+            ChamferShape(cut: AinkradRadius.sm)
+                .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: message.isRead)))
+        )
         // What actually separates the card from its pane now that its fill is
         // a few percent: the chamfer plus a theme accent border, the same
         // language `AinkradCard` uses. Elevation without a second dark layer.
-        .overlay(ChamferShape(cut: AinkradRadius.sm)
-            .strokeBorder(theme.accentSecondary
-                .opacity(appearance.cardBorderOpacity(isRead: message.isRead)),
-                          lineWidth: message.isRead ? 1 : 1.5))
+        .overlay(
+            ChamferShape(cut: AinkradRadius.sm)
+                .strokeBorder(
+                    theme.accentSecondary
+                        .opacity(appearance.cardBorderOpacity(isRead: message.isRead)),
+                    lineWidth: message.isRead ? 1 : 1.5)
+        )
         .overlay(alignment: .leading) {
             // Unread messages carry an accent edge rather than a colour swap,
             // matching `AinkradListRow`'s own selected treatment.
@@ -95,8 +102,9 @@ struct MessageRow: View {
         // exactly the inconsistency this overhaul is about.
         .ainkradModal(isPresented: $showingOriginal, contentWidth: 640) {
             if let html = loadedBody?.html {
-                RawHTMLSheet(html: html, sender: message.from?.email, runtime: runtime,
-                            onClose: { showingOriginal = false })
+                RawHTMLSheet(
+                    html: html, sender: message.from?.email, runtime: runtime,
+                    onClose: { showingOriginal = false })
             }
         }
     }
@@ -127,8 +135,10 @@ struct MessageRow: View {
                     AinkradDisclosureGroup(title: "Show quoted text", isExpanded: $quotedExpanded) {
                         Text(quoted)
                             .font(AinkradFontResolver.font(.body, typography: typo))
-                            .foregroundStyle(theme.foreground
-                                .opacity(appearance.secondaryTextOpacity))
+                            .foregroundStyle(
+                                theme.foreground
+                                    .opacity(appearance.secondaryTextOpacity)
+                            )
                             .textSelection(.enabled)
                             .ravenLegibleText(appearance)
                     }
@@ -202,8 +212,8 @@ struct LabelReasonNote: View {
     }
 }
 
-private extension String {
-    var capitalizedFirst: String {
+extension String {
+    fileprivate var capitalizedFirst: String {
         guard let first else { return self }
         return first.uppercased() + dropFirst()
     }
@@ -246,8 +256,9 @@ struct AttachmentChipRow: View {
                 // A themed danger banner, not `.red`: the danger hue is the
                 // host theme's to choose, and a literal red fails contrast on
                 // some of them.
-                AinkradBanner(message: errorMessage, status: .danger,
-                              onDismiss: { self.errorMessage = nil })
+                AinkradBanner(
+                    message: errorMessage, status: .danger,
+                    onDismiss: { self.errorMessage = nil })
             }
         }
     }
@@ -266,8 +277,9 @@ struct AttachmentChipRow: View {
         downloadingID = attachment.attachmentID
         errorMessage = nil
         Task {
-            let data = await runtime.fetchAttachment(attachment, messageID: messageID,
-                                                     threadID: threadID)
+            let data = await runtime.fetchAttachment(
+                attachment, messageID: messageID,
+                threadID: threadID)
             downloadingID = nil
             guard let data else {
                 errorMessage = "Could not download \(attachment.filename)."
@@ -289,8 +301,9 @@ struct AttachmentChipRow: View {
         downloadingID = attachment.attachmentID
         errorMessage = nil
         Task {
-            let data = await runtime.fetchAttachment(attachment, messageID: messageID,
-                                                     threadID: threadID)
+            let data = await runtime.fetchAttachment(
+                attachment, messageID: messageID,
+                threadID: threadID)
             downloadingID = nil
             guard let data else {
                 errorMessage = "Could not download \(attachment.filename)."
@@ -311,7 +324,9 @@ struct AttachmentChipRow: View {
             do {
                 try data.write(to: url)
             } catch {
-                Log.mime.error("Failed to write attachment (\(data.count, privacy: .public) bytes) to \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                Log.mime.error(
+                    "Failed to write attachment (\(data.count, privacy: .public) bytes) to \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
             }
         }
     }
@@ -363,12 +378,14 @@ struct CalendarInviteCard: View {
                     caption("Organizer: \(organizer.displayLabel)")
                 }
                 if !invite.attendees.isEmpty {
-                    caption("Attendees: "
+                    caption(
+                        "Attendees: "
                             + invite.attendees.map(\.displayLabel).joined(separator: ", "))
                 }
 
                 if invite.method == .request {
-                    caption("Responding replies to the organizer by email. It does not add "
+                    caption(
+                        "Responding replies to the organizer by email. It does not add "
                             + "this event to any Calendar on this device.")
                     HStack(spacing: AinkradSpacing.sm) {
                         rsvpButton("Accept", .accepted)
@@ -401,8 +418,10 @@ struct CalendarInviteCard: View {
     }
 
     private func rsvpButton(_ title: String, _ partstat: CalendarRSVP.PartStat) -> some View {
-        AinkradButton(title: title, style: respondedWith == partstat ? .primary : .secondary,
-                     isLoading: isSending && respondedWith == partstat) {
+        AinkradButton(
+            title: title, style: respondedWith == partstat ? .primary : .secondary,
+            isLoading: isSending && respondedWith == partstat
+        ) {
             respond(partstat)
         }
         .disabled(isSending)
@@ -410,13 +429,18 @@ struct CalendarInviteCard: View {
 
     private func respond(_ partstat: CalendarRSVP.PartStat) {
         guard let thread = runtime.store.thread(threadID),
-              let ownAddress = runtime.ownAddress(for: thread.accountID) else {
+            let ownAddress = runtime.ownAddress(for: thread.accountID)
+        else {
             statusMessage = "Could not determine which account to reply from."
             return
         }
-        guard let reply = CalendarRSVP.makeReply(to: invite, partstat: partstat,
-                                                 attendeeEmail: ownAddress, attendeeName: nil)
-                .map({ $0.attributed(to: thread.accountID) }) else {
+        guard
+            let reply = CalendarRSVP.makeReply(
+                to: invite, partstat: partstat,
+                attendeeEmail: ownAddress, attendeeName: nil
+            )
+            .map({ $0.attributed(to: thread.accountID) })
+        else {
             statusMessage = "This invite has no organizer to reply to."
             return
         }
@@ -426,7 +450,8 @@ struct CalendarInviteCard: View {
         Task {
             do {
                 let result = try await runtime.sendThreadReply(reply)
-                statusMessage = result.isSent
+                statusMessage =
+                    result.isSent
                     ? "Reply sent to the organizer."
                     : result.message
             } catch {

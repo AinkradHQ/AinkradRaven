@@ -1,6 +1,6 @@
-import Foundation
-import AppKit
 import AinkradAppKit
+import AppKit
+import Foundation
 
 /// Microsoft Graph's OAuth configuration, on top of the provider-neutral
 /// `Auth/` layer.
@@ -76,10 +76,12 @@ import AinkradAppKit
     ///   argument the caller already holds: this type knows no key name for
     ///   it, never reads or writes it through `secrets`, and never logs,
     ///   prints, or interpolates it into a `MailError`.
-    public init(secrets: PluginSecretStore, clientID: String, clientSecret: String? = nil,
-                tenantID: String = GraphAuth.commonTenant,
-                session: URLSession = .shared,
-                refreshExchange: (@MainActor (String) async throws -> (String, TimeInterval))? = nil) {
+    public init(
+        secrets: PluginSecretStore, clientID: String, clientSecret: String? = nil,
+        tenantID: String = GraphAuth.commonTenant,
+        session: URLSession = .shared,
+        refreshExchange: (@MainActor (String) async throws -> (String, TimeInterval))? = nil
+    ) {
         self.secrets = secrets
         self.session = session
         self.tenantID = tenantID
@@ -97,17 +99,20 @@ import AinkradAppKit
     /// Graph's authorization URL: the shared builder against the tenant-scoped
     /// endpoint. Kept `static` so it can be built (and asserted on) without a
     /// `GraphAuth` instance.
-    public nonisolated static func authorizationURL(clientID: String, redirectURI: String,
-                                                    verifier: String, state: String,
-                                                    tenantID: String = GraphAuth.commonTenant) -> URL {
-        let client = OAuthTokenClient(configuration: OAuthConfiguration(
-            authorizationEndpoint: authorizationEndpoint(tenantID: tenantID),
-            tokenEndpoint: tokenEndpoint(tenantID: tenantID),
-            clientID: clientID,
-            // Not needed to build an authorization URL, and deliberately not
-            // accepted here: the secret is never a query parameter.
-            clientSecret: nil,
-            scopes: scopes))
+    public nonisolated static func authorizationURL(
+        clientID: String, redirectURI: String,
+        verifier: String, state: String,
+        tenantID: String = GraphAuth.commonTenant
+    ) -> URL {
+        let client = OAuthTokenClient(
+            configuration: OAuthConfiguration(
+                authorizationEndpoint: authorizationEndpoint(tenantID: tenantID),
+                tokenEndpoint: tokenEndpoint(tenantID: tenantID),
+                clientID: clientID,
+                // Not needed to build an authorization URL, and deliberately not
+                // accepted here: the secret is never a query parameter.
+                clientSecret: nil,
+                scopes: scopes))
         return client.authorizationURL(redirectURI: redirectURI, verifier: verifier, state: state)
     }
 
@@ -158,9 +163,12 @@ import AinkradAppKit
     /// Runs the loopback browser flow and stores the refresh token. Returns the
     /// address. The listener, the state check and the PKCE pair are all the
     /// shared `Auth/` implementations.
-    public func authorize(timeout: Duration? = nil,
-                          onAuthorizationURL: (@Sendable (URL) -> Void)? = nil) async throws
-        -> (accountID: String, address: String) {
+    public func authorize(
+        timeout: Duration? = nil,
+        onAuthorizationURL: (@Sendable (URL) -> Void)? = nil
+    ) async throws
+        -> (accountID: String, address: String)
+    {
         let verifier = PKCE.codeVerifier()
         let state = PKCE.randomState()
         let clientID = tokens.configuration.clientID
@@ -173,17 +181,19 @@ import AinkradAppKit
                 // `http://localhost` — the same rule Google's Desktop client
                 // type uses, so the same "localhost", not "127.0.0.1".
                 let redirectURI = "http://localhost:\(port)"
-                let url = Self.authorizationURL(clientID: clientID, redirectURI: redirectURI,
-                                                verifier: verifier, state: state,
-                                                tenantID: tenantID)
+                let url = Self.authorizationURL(
+                    clientID: clientID, redirectURI: redirectURI,
+                    verifier: verifier, state: state,
+                    tenantID: tenantID)
                 onAuthorizationURL?(url)
                 NSWorkspace.shared.open(url)
                 return redirectURI
             },
             expectedState: state)
 
-        return try await completeAuthorization(code: code, verifier: verifier,
-                                               redirectURI: redirectURI)
+        return try await completeAuthorization(
+            code: code, verifier: verifier,
+            redirectURI: redirectURI)
     }
 
     /// The half of `authorize` that runs after the browser callback. Split out
@@ -191,11 +201,15 @@ import AinkradAppKit
     /// test drive the exact production path over a stubbed `URLSession`, since
     /// the browser and the socket are the only untestable parts and neither is
     /// in here.
-    func completeAuthorization(code: String, verifier: String,
-                               redirectURI: String) async throws
-        -> (accountID: String, address: String) {
-        let payload = try await tokens.authorizationCode(code, verifier: verifier,
-                                                         redirectURI: redirectURI)
+    func completeAuthorization(
+        code: String, verifier: String,
+        redirectURI: String
+    ) async throws
+        -> (accountID: String, address: String)
+    {
+        let payload = try await tokens.authorizationCode(
+            code, verifier: verifier,
+            redirectURI: redirectURI)
         let address = try await fetchAddress(accessToken: payload.accessToken)
         let accountID = address
         // The refresh token's ONLY destination: the host's Keychain-backed
@@ -204,8 +218,10 @@ import AinkradAppKit
             secrets.setSecret(refresh, forKey: Self.refreshKey(accountID: accountID))
         }
         // The access token's ONLY destination: memory, for this process.
-        accessTokens[accountID] = (payload.accessToken,
-                                   Date().addingTimeInterval(payload.expiresIn))
+        accessTokens[accountID] = (
+            payload.accessToken,
+            Date().addingTimeInterval(payload.expiresIn)
+        )
         return (accountID, address)
     }
 
@@ -226,8 +242,9 @@ import AinkradAppKit
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (data, _) = try await session.data(for: request)
         guard let profile = try? JSONDecoder().decode(GraphProfileDTO.self, from: data),
-              let address = profile.mail ?? profile.userPrincipalName,
-              !address.isEmpty else {
+            let address = profile.mail ?? profile.userPrincipalName,
+            !address.isEmpty
+        else {
             throw MailError.decodingFailed("graph profile")
         }
         return address

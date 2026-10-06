@@ -1,21 +1,27 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Thread search")
 struct ThreadSearchTests {
-    private func summary(_ id: String, subject: String, from: String,
-                         labels: [String] = ["INBOX"], unread: Int = 0) -> ThreadSummary {
-        ThreadSummary(id: id, accountID: "a1", subject: subject,
-                      participants: [MailAddress(email: from)],
-                      lastMessageDate: Date(), messageCount: 1, unreadCount: unread,
-                      isStarred: false, labelIDs: labels, snippet: "")
+    private func summary(
+        _ id: String, subject: String, from: String,
+        labels: [String] = ["INBOX"], unread: Int = 0
+    ) -> ThreadSummary {
+        ThreadSummary(
+            id: id, accountID: "a1", subject: subject,
+            participants: [MailAddress(email: from)],
+            lastMessageDate: Date(), messageCount: 1, unreadCount: unread,
+            isStarred: false, labelIDs: labels, snippet: "")
     }
 
     private var corpus: [ThreadSummary] {
-        [summary("t1", subject: "Invoice March", from: "billing@acme.com"),
-         summary("t2", subject: "Lunch?", from: "bea@x.com", unread: 1),
-         summary("t3", subject: "Invoice April", from: "billing@acme.com", labels: ["ARCHIVE"])]
+        [
+            summary("t1", subject: "Invoice March", from: "billing@acme.com"),
+            summary("t2", subject: "Lunch?", from: "bea@x.com", unread: 1),
+            summary("t3", subject: "Invoice April", from: "billing@acme.com", labels: ["ARCHIVE"]),
+        ]
     }
 
     @Test("a bare term matches the subject, case-insensitively")

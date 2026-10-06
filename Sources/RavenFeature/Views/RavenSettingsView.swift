@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The `makeSettingsView` fallback — what a host that does not consume
 /// `AinkradApp.settingsCatalog` gets.
@@ -36,9 +36,11 @@ public struct RavenSettingsView: View {
     @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradTypography) private var typo
 
-    public init(runtime: RavenRuntime,
-                presentation: any PluginPresentationControl,
-                modeControl: any PluginModeControl) {
+    public init(
+        runtime: RavenRuntime,
+        presentation: any PluginPresentationControl,
+        modeControl: any PluginModeControl
+    ) {
         self.runtime = runtime
         self.presentation = presentation
         self.modeControl = modeControl
@@ -58,9 +60,10 @@ public struct RavenSettingsView: View {
                     title: "Surface",
                     hint: "How the host opens Raven, and how much of it you get."
                 ) {
-                    AinkradSurfaceSettings(appName: "Raven",
-                                           presentation: presentation,
-                                           mode: modeControl)
+                    AinkradSurfaceSettings(
+                        appName: "Raven",
+                        presentation: presentation,
+                        mode: modeControl)
                 }
                 AinkradSettingsPanel(
                     title: "Accounts",
@@ -92,12 +95,14 @@ public struct RavenSettingsView: View {
             hint: runtime.isCredentialsBaked
                 ? "OAuth credentials are built into this app — nothing to configure."
                 : "The Desktop OAuth client id and secret from Google Cloud Console. "
-                  + "The secret is stored in the system Keychain, never as a plain document."
+                    + "The secret is stored in the system Keychain, never as a plain document."
         ) {
-            AinkradDisclosureGroup(title: runtime.isCredentialsBaked
-                                   ? "Built into this app"
-                                   : "Client id and secret",
-                                   isExpanded: $credentialsExpanded) {
+            AinkradDisclosureGroup(
+                title: runtime.isCredentialsBaked
+                    ? "Built into this app"
+                    : "Client id and secret",
+                isExpanded: $credentialsExpanded
+            ) {
                 VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
                     // With baked credentials there is nothing for the user to
                     // type — showing the fields anyway would invite them to
@@ -106,12 +111,14 @@ public struct RavenSettingsView: View {
                     // a developer build with no `Config/oauth-client.json`,
                     // shown ONLY when nothing was baked in.
                     if runtime.isCredentialsBaked {
-                        caption("This build ships with its own Google OAuth client, so there is "
+                        caption(
+                            "This build ships with its own Google OAuth client, so there is "
                                 + "nothing to enter here.")
                     } else {
                         AinkradFormRow(title: "Client ID", controlWidth: 340) {
-                            AinkradTextField(text: $clientID,
-                                            placeholder: "xxxx.apps.googleusercontent.com")
+                            AinkradTextField(
+                                text: $clientID,
+                                placeholder: "xxxx.apps.googleusercontent.com")
                         }
                         AinkradFormRow(title: "Client secret", controlWidth: 340) {
                             AinkradSecureField(text: $clientSecret, placeholder: "Client secret")
@@ -124,8 +131,9 @@ public struct RavenSettingsView: View {
                             save()
                         }
                         if let saveError {
-                            AinkradBanner(message: saveError, status: .warning,
-                                          onDismiss: { self.saveError = nil })
+                            AinkradBanner(
+                                message: saveError, status: .warning,
+                                onDismiss: { self.saveError = nil })
                         }
                     }
                 }
@@ -168,11 +176,14 @@ struct TransparencySettingsGroup: View {
                 + "readable."
         ) {
             VStack(alignment: .leading, spacing: AinkradSpacing.md) {
-                AinkradFormRow(title: "Surface opacity",
-                              help: "Lower is more see-through.", controlWidth: 260) {
+                AinkradFormRow(
+                    title: "Surface opacity",
+                    help: "Lower is more see-through.", controlWidth: 260
+                ) {
                     AinkradSlider(
-                        value: Binding(get: { store.appearance.surfaceOpacity },
-                                       set: { store.appearance.rawSurfaceOpacity = $0 }),
+                        value: Binding(
+                            get: { store.appearance.surfaceOpacity },
+                            set: { store.appearance.rawSurfaceOpacity = $0 }),
                         in: RavenAppearance.legibleRange)
                 }
             }

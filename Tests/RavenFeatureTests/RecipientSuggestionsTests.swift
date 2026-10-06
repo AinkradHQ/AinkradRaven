@@ -1,13 +1,15 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("RecipientSuggestions")
 struct RecipientSuggestionsTests {
     private func summary(id: String, participants: [MailAddress], date: Date) -> ThreadSummary {
-        ThreadSummary(id: id, accountID: "a1", subject: "s", participants: participants,
-                     lastMessageDate: date, messageCount: 1, unreadCount: 0, isStarred: false,
-                     labelIDs: [], snippet: "")
+        ThreadSummary(
+            id: id, accountID: "a1", subject: "s", participants: participants,
+            lastMessageDate: date, messageCount: 1, unreadCount: 0, isStarred: false,
+            labelIDs: [], snippet: "")
     }
 
     @Test("ranks by frequency first, not alphabetically")

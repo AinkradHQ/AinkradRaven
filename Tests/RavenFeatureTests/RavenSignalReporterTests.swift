@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @MainActor
@@ -16,15 +17,21 @@ struct RavenSignalReporterTests {
             let dedupeKey: String?
         }
         private(set) var calls: [Call] = []
-        func emit(kind: String, severity: SignalSeverity, title: String, body: String?,
-                  importance: SignalImportance, deepLink: SignalDeepLink?,
-                  actions: [SignalAction], dedupeKey: String?) {
-            calls.append(Call(kind: kind, severity: severity, title: title, body: body,
-                              importance: importance, dedupeKey: dedupeKey))
+        func emit(
+            kind: String, severity: SignalSeverity, title: String, body: String?,
+            importance: SignalImportance, deepLink: SignalDeepLink?,
+            actions: [SignalAction], dedupeKey: String?
+        ) {
+            calls.append(
+                Call(
+                    kind: kind, severity: severity, title: title, body: body,
+                    importance: importance, dedupeKey: dedupeKey))
         }
         func own(limit: Int) -> [SignalEvent] { [] }
-        func handleAction(_ actionID: String,
-                          _ handler: @escaping @MainActor () async -> Void) -> AgentActionToken {
+        func handleAction(
+            _ actionID: String,
+            _ handler: @escaping @MainActor () async -> Void
+        ) -> AgentActionToken {
             AgentActionToken()
         }
         func removeActionHandler(_ token: AgentActionToken) {}
@@ -65,8 +72,9 @@ struct RavenSignalReporterTests {
         reporter.authenticationFailed(accountLabel: "work@example.com")
         #expect(emitter.calls[0].kind == "account.auth-failed")
         #expect(emitter.calls[0].severity == .failure)
-        #expect(emitter.calls[0].importance == .urgent,
-                "mail silently stops until this is dealt with")
+        #expect(
+            emitter.calls[0].importance == .urgent,
+            "mail silently stops until this is dealt with")
     }
 
     @Test("a transient sync failure is a warning, not a failure")
@@ -74,8 +82,9 @@ struct RavenSignalReporterTests {
         let (reporter, emitter) = self.reporter()
         reporter.syncFailed(accountLabel: "work@example.com", reason: "rate limited")
         #expect(emitter.calls[0].kind == "sync.failed")
-        #expect(emitter.calls[0].severity == .warning,
-                "these retry on the next pass; crying failure trains the user to ignore them")
+        #expect(
+            emitter.calls[0].severity == .warning,
+            "these retry on the next pass; crying failure trains the user to ignore them")
         #expect(emitter.calls[0].importance == .normal)
         #expect(emitter.calls[0].body == "rate limited")
     }
@@ -129,9 +138,11 @@ struct RavenSyncFailureClassificationTests {
     @Test("a transient provider failure does NOT look like an auth failure")
     func transientErrorIsNotAuth() {
         let described = String(describing: MailError.providerFailed(status: 503, message: "busy"))
-        #expect(!described.contains("notAuthenticated"),
-                "or every rate limit would tell the user to sign in again")
-        #expect(!String(describing: MailError.rateLimited(retryAfter: 30))
-            .contains("notAuthenticated"))
+        #expect(
+            !described.contains("notAuthenticated"),
+            "or every rate limit would tell the user to sign in again")
+        #expect(
+            !String(describing: MailError.rateLimited(retryAfter: 30))
+                .contains("notAuthenticated"))
     }
 }

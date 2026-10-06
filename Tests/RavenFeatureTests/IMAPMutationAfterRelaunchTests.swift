@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Archiving a real thread updated Raven and left the mail sitting in Gmail's
@@ -26,8 +27,9 @@ struct IMAPMutationAfterRelaunchTests {
     /// UID 10 in INBOX at the fixtures' `UIDVALIDITY`, spelled the way a stored
     /// `MailMessage.id` spells it — which is exactly what the production fallback
     /// decodes.
-    private static let storedLocator = IMAPMessageLocator(mailbox: "INBOX",
-                                                          uidValidity: 7, uid: 10)
+    private static let storedLocator = IMAPMessageLocator(
+        mailbox: "INBOX",
+        uidValidity: 7, uid: 10)
 
     // MARK: - The defect
 

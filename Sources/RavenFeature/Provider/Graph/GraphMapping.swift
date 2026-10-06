@@ -27,8 +27,10 @@ public enum GraphMapping {
     /// A message with no `conversationId` at all (never seen from Graph, but
     /// the field is optional on the wire) falls back to being its own thread
     /// keyed by its message id — a thread of one, never merged with anything.
-    public static func threads(_ messages: [GraphMessageDTO],
-                               accountID: String) -> [MailThread] {
+    public static func threads(
+        _ messages: [GraphMessageDTO],
+        accountID: String
+    ) -> [MailThread] {
         var order: [String] = []
         var grouped: [String: [MailMessage]] = [:]
         for dto in messages {
@@ -37,8 +39,9 @@ public enum GraphMapping {
             grouped[conversationID, default: []].append(message(dto))
         }
         return order.map { id in
-            MailThread(id: id, accountID: accountID,
-                       messages: (grouped[id] ?? []).sorted { $0.date < $1.date })
+            MailThread(
+                id: id, accountID: accountID,
+                messages: (grouped[id] ?? []).sorted { $0.date < $1.date })
         }
     }
 
@@ -113,7 +116,10 @@ public enum GraphMapping {
         // concurrency-safe under Swift 6 and a per-call one is wasteful. The
         // format style is a value type.
         if let parsed = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true)
-            .parse(raw) { return parsed }
+            .parse(raw)
+        {
+            return parsed
+        }
         if let parsed = try? Date.ISO8601FormatStyle().parse(raw) { return parsed }
         return Date(timeIntervalSince1970: 0)
     }
@@ -152,9 +158,10 @@ public enum GraphMapping {
         let html = isHTML ? full?.content : nil
 
         let preferred = nonEmpty(unique?.content) ?? nonEmpty(full?.content) ?? ""
-        let uniqueIsHTML = unique.map {
-            ($0.contentType ?? "").caseInsensitiveCompare("html") == .orderedSame
-        } ?? false
+        let uniqueIsHTML =
+            unique.map {
+                ($0.contentType ?? "").caseInsensitiveCompare("html") == .orderedSame
+            } ?? false
         let sourceIsHTML = nonEmpty(unique?.content) != nil ? uniqueIsHTML : isHTML
         let plainText = sourceIsHTML ? BodySanitizer.plainText(fromHTML: preferred) : preferred
 
@@ -174,9 +181,10 @@ public enum GraphMapping {
     /// mailbox.
     public static func labels(_ dto: GraphFolderListDTO) -> [MailLabel] {
         (dto.value ?? []).map { folder in
-            MailLabel(id: folder.id,
-                      name: folder.displayName ?? folder.id,
-                      kind: (folder.wellKnownName?.isEmpty == false) ? .system : .user)
+            MailLabel(
+                id: folder.id,
+                name: folder.displayName ?? folder.id,
+                kind: (folder.wellKnownName?.isEmpty == false) ? .system : .user)
         }
     }
 
@@ -213,9 +221,10 @@ public enum GraphMapping {
                 if seenChanged.insert(id).inserted { changed.append(id) }
             }
         }
-        return MailDelta(changedThreadIDs: changed,
-                         removedThreadIDs: removed.filter { !seenChanged.contains($0) },
-                         newCursor: newCursor)
+        return MailDelta(
+            changedThreadIDs: changed,
+            removedThreadIDs: removed.filter { !seenChanged.contains($0) },
+            newCursor: newCursor)
     }
 
     /// The `$deltatoken` value out of a `@odata.deltaLink`.
@@ -228,9 +237,10 @@ public enum GraphMapping {
     /// token, so the round trip is: link → token → `syncCursor` → request.
     public static func deltaToken(inLink link: String?) -> String? {
         guard let link,
-              let components = URLComponents(string: link),
-              let token = components.queryItems?.first(where: { $0.name == "$deltatoken" })?.value,
-              !token.isEmpty else { return nil }
+            let components = URLComponents(string: link),
+            let token = components.queryItems?.first(where: { $0.name == "$deltatoken" })?.value,
+            !token.isEmpty
+        else { return nil }
         return token
     }
 }

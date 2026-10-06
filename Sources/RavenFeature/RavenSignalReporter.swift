@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Raven's notification vocabulary, in one place so the kinds stay consistent
 /// and every emission decision is visible together.

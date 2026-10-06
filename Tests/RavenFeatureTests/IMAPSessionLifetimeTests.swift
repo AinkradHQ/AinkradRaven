@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 13: every provider operation gives back the session it borrowed.
@@ -31,22 +32,35 @@ struct IMAPSessionLifetimeTests {
 
     @Test("each read operation releases the session it borrowed")
     func readOperationsBalanceTheirLeases() async throws {
-        let (provider, _, session, leases) = try await IMAPProviderHarness.provider(steps:
-            Self.backfillSteps + [
-                .init("SELECT \"INBOX\"", "imap-provider-select"),
-                .init("UID FETCH 10 (BODYSTRUCTURE)", "imap-provider-body-structure"),
-                .init("UID FETCH 10 (BODYSTRUCTURE BODY.PEEK[TEXT])", "imap-provider-body-text"),
-            ])
-        guard await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) != nil else { return }
-        guard await IMAPProviderHarness.expect("fetchLabels", {
-            try await provider.fetchLabels()
-        }) != nil else { return }
+        let (provider, _, session, leases) = try await IMAPProviderHarness.provider(
+            steps:
+                Self.backfillSteps + [
+                    .init("SELECT \"INBOX\"", "imap-provider-select"),
+                    .init("UID FETCH 10 (BODYSTRUCTURE)", "imap-provider-body-structure"),
+                    .init("UID FETCH 10 (BODYSTRUCTURE BODY.PEEK[TEXT])", "imap-provider-body-text"),
+                ])
+        guard
+            await IMAPProviderHarness.expect(
+                "fetchThreads",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                }) != nil
+        else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "fetchLabels",
+                {
+                    try await provider.fetchLabels()
+                }) != nil
+        else { return }
         let locator = IMAPMessageLocator(mailbox: "INBOX", uidValidity: 7, uid: 10)
-        guard await IMAPProviderHarness.expect("fetchBody", {
-            try await provider.fetchBody(messageID: locator.encoded)
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "fetchBody",
+                {
+                    try await provider.fetchBody(messageID: locator.encoded)
+                }) != nil
+        else { return }
 
         // Three operations, three acquires, three releases. The count — not merely
         // the balance — matters: a provider that acquired once and cached would show
@@ -68,13 +82,21 @@ struct IMAPSessionLifetimeTests {
             .init("UID SEARCH SINCE", "imap-provider-search-folder-b"),
             .init("UID FETCH 31,30", "imap-provider-fetch-folder-b"),
         ])
-        guard let first = await IMAPProviderHarness.expect("page 1", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) else { return }
+        guard
+            let first = await IMAPProviderHarness.expect(
+                "page 1",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                })
+        else { return }
         #expect(await leases.released == 1)
-        guard await IMAPProviderHarness.expect("page 2", {
-            try await provider.fetchThreads(since: Self.since, pageToken: first.nextPageToken)
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "page 2",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: first.nextPageToken)
+                }) != nil
+        else { return }
         #expect(await leases.acquired == 2)
         #expect(await leases.released == 2)
         await session.close()
@@ -88,14 +110,22 @@ struct IMAPSessionLifetimeTests {
                 .init("SELECT \"INBOX\"", "imap-provider-select"),
                 .init("UID MOVE"),
             ])
-        guard await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "fetchThreads",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                }) != nil
+        else { return }
         let mutation = IMAPVocabulary(directory: try IMAPProviderHarness.directory())
             .render(ThreadAction.archive.mutation(threadIDs: [Self.m1Thread]))
-        guard await IMAPProviderHarness.expect("applyLabels", {
-            try await provider.applyLabels(mutation)
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "applyLabels",
+                {
+                    try await provider.applyLabels(mutation)
+                }) != nil
+        else { return }
         #expect(await leases.acquired == 2)
         #expect(await leases.released == 2)
         await session.close()
@@ -110,7 +140,7 @@ struct IMAPSessionLifetimeTests {
         // already at its connection limit, so the leak compounds the very condition
         // that caused it.
         let (provider, _, session, leases) = try await IMAPProviderHarness.provider(steps: [
-            .init("SELECT \"INBOX\"", status: "NO"),
+            .init("SELECT \"INBOX\"", status: "NO")
         ])
         let error = await IMAPProviderHarness.expectFailure("fetchThreads") {
             try await provider.fetchThreads(since: Self.since, pageToken: nil)
@@ -130,9 +160,13 @@ struct IMAPSessionLifetimeTests {
         // own, leaving `LOGOUT` as the only traffic.
         let (provider, transport, session, leases) = try await IMAPProviderHarness.provider(
             steps: [.init("LOGOUT")], closesOnRelease: true)
-        guard let labels = await IMAPProviderHarness.expect("fetchLabels", {
-            try await provider.fetchLabels()
-        }) else { return }
+        guard
+            let labels = await IMAPProviderHarness.expect(
+                "fetchLabels",
+                {
+                    try await provider.fetchLabels()
+                })
+        else { return }
         #expect(!labels.isEmpty)
         #expect(await leases.released == 1)
 
@@ -152,11 +186,16 @@ struct IMAPSessionLifetimeTests {
         // the close is the part that returns the connection slot.
         let (session, transport) = try await IMAPDeltaHarness.session(
             capabilities: "IMAP4rev1", steps: [.init("LOGOUT", status: "BAD")])
-        let working = IMAPWorkingSession(session: session,
-                                        directory: try IMAPProviderHarness.directory())
-        guard await IMAPProviderHarness.expect("closeSession", {
-            await IMAPProvider.closeSession(working)
-        }) != nil else { return }
+        let working = IMAPWorkingSession(
+            session: session,
+            directory: try IMAPProviderHarness.directory())
+        guard
+            await IMAPProviderHarness.expect(
+                "closeSession",
+                {
+                    await IMAPProvider.closeSession(working)
+                }) != nil
+        else { return }
         #expect(await transport.isClosed)
         #expect(await session.isRunning == false)
     }

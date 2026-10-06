@@ -52,16 +52,25 @@ public struct OutboxEntry: Codable, Equatable, Sendable, Identifiable {
     /// (un-held) send's draft was ever cleaned up.
     public var draftID: String?
 
-    public init(id: UUID = UUID(), operation: Operation, attempts: Int = 0,
-                lastError: String? = nil, isDeadLettered: Bool = false,
-                queuedAt: Date = Date(), inFlightAt: Date? = nil,
-                needsReview: Bool = false, accountID: String? = nil,
-                holdUntil: Date? = nil, sendAt: Date? = nil, draftID: String? = nil) {
-        self.id = id; self.operation = operation; self.attempts = attempts
-        self.lastError = lastError; self.isDeadLettered = isDeadLettered
-        self.queuedAt = queuedAt; self.inFlightAt = inFlightAt
-        self.needsReview = needsReview; self.accountID = accountID
-        self.holdUntil = holdUntil; self.sendAt = sendAt; self.draftID = draftID
+    public init(
+        id: UUID = UUID(), operation: Operation, attempts: Int = 0,
+        lastError: String? = nil, isDeadLettered: Bool = false,
+        queuedAt: Date = Date(), inFlightAt: Date? = nil,
+        needsReview: Bool = false, accountID: String? = nil,
+        holdUntil: Date? = nil, sendAt: Date? = nil, draftID: String? = nil
+    ) {
+        self.id = id
+        self.operation = operation
+        self.attempts = attempts
+        self.lastError = lastError
+        self.isDeadLettered = isDeadLettered
+        self.queuedAt = queuedAt
+        self.inFlightAt = inFlightAt
+        self.needsReview = needsReview
+        self.accountID = accountID
+        self.holdUntil = holdUntil
+        self.sendAt = sendAt
+        self.draftID = draftID
     }
 
     /// Whether this entry may transmit yet, as of `now`. Both `holdUntil`

@@ -62,8 +62,10 @@ actor IMAPMessageIndex {
     /// fetches. That is what stops the UID table and the thread table disagreeing
     /// about which thread a UID is in, which would make a removal retire the wrong
     /// thread.
-    func record(_ assembled: [IMAPThreadAssembler.Assembled],
-                inputs: [IMAPThreadAssembler.Input]) {
+    func record(
+        _ assembled: [IMAPThreadAssembler.Assembled],
+        inputs: [IMAPThreadAssembler.Input]
+    ) {
         var fetchedByLocator: [String: IMAPFetchResponse] = [:]
         for input in inputs { fetchedByLocator[input.locator.encoded] = input.fetched }
 
@@ -76,9 +78,10 @@ actor IMAPMessageIndex {
                     locatorsByThread[entry.thread.id, default: []].formUnion(moved)
                     for locator in moved {
                         if var table = byMailbox[locator.mailbox], let held = table[locator.uid] {
-                            table[locator.uid] = Entry(threadID: entry.thread.id,
-                                                       messageKey: held.messageKey,
-                                                       flags: held.flags)
+                            table[locator.uid] = Entry(
+                                threadID: entry.thread.id,
+                                messageKey: held.messageKey,
+                                flags: held.flags)
                             byMailbox[locator.mailbox] = table
                             threadsByMessageKey[held.messageKey] = entry.thread.id
                         }
@@ -88,7 +91,8 @@ actor IMAPMessageIndex {
             for message in entry.thread.messages {
                 guard let locator = IMAPMessageLocator(encoded: message.id) else { continue }
                 let fetched = fetchedByLocator[message.id]
-                let key = fetched.map(IMAPThreadAssembler.messageKey)
+                let key =
+                    fetched.map(IMAPThreadAssembler.messageKey)
                     ?? message.rfc822MessageID ?? message.id
                 byMailbox[locator.mailbox, default: [:]][locator.uid] = Entry(
                     threadID: entry.thread.id, messageKey: key,
@@ -110,8 +114,10 @@ actor IMAPMessageIndex {
     /// reported as belonging to the existing thread. Two records of one message
     /// under two ids is how `fetchThread` starts returning a thread that is missing
     /// its newest message.
-    func attach(_ locator: IMAPMessageLocator, fetched: IMAPFetchResponse,
-                to threadID: String) {
+    func attach(
+        _ locator: IMAPMessageLocator, fetched: IMAPFetchResponse,
+        to threadID: String
+    ) {
         let key = IMAPThreadAssembler.messageKey(fetched)
         byMailbox[locator.mailbox, default: [:]][locator.uid] = Entry(
             threadID: threadID, messageKey: key, flags: fetched.flags)
@@ -151,8 +157,7 @@ actor IMAPMessageIndex {
         for entry in table.values { threadsByMessageKey.removeValue(forKey: entry.messageKey) }
         for (thread, locators) in locatorsByThread {
             let kept = locators.filter { $0.mailbox != mailbox }
-            if kept.isEmpty { locatorsByThread.removeValue(forKey: thread) }
-            else { locatorsByThread[thread] = kept }
+            if kept.isEmpty { locatorsByThread.removeValue(forKey: thread) } else { locatorsByThread[thread] = kept }
         }
     }
 
@@ -247,9 +252,11 @@ final class IMAPArrivalCollector: @unchecked Sendable {
             // resolve. Found by `IMAPProviderTests.removalWinsAcrossMailboxes`, which
             // is the first fixture whose re-scan reports a genuinely changed flag.
             guard let uid = fetched.uid.flatMap({ UInt32(exactly: $0) }),
-                  fetched.envelope != nil else { return known }
-            record(Arrival(uid: uid, fetched: fetched, knownThreadID: known),
-                   mailbox: mailbox)
+                fetched.envelope != nil
+            else { return known }
+            record(
+                Arrival(uid: uid, fetched: fetched, knownThreadID: known),
+                mailbox: mailbox)
             if let known { return known }
             // An ARRIVAL, which by definition has no stored UID to fall back to, so a
             // provisional id is the only non-empty answer available. `fetchDelta` remaps
@@ -268,7 +275,10 @@ final class IMAPArrivalCollector: @unchecked Sendable {
     /// Everything collected, in a deterministic mailbox order, emptying the buffer.
     func drain() -> [(mailbox: String, arrivals: [Arrival])] {
         lock.lock()
-        defer { arrivals.removeAll(); lock.unlock() }
+        defer {
+            arrivals.removeAll()
+            lock.unlock()
+        }
         return arrivals.sorted { $0.key < $1.key }.map { (mailbox: $0.key, arrivals: $0.value) }
     }
 }

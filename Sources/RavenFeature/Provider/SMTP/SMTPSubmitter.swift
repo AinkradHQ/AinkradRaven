@@ -43,13 +43,16 @@ struct SMTPSubmitter: Sendable {
     /// default finds nothing, which is the ordinary unsigned case.
     let identityLookup: @Sendable (String) -> SecIdentity?
 
-    init(endpoint: MailTransportEndpoint,
-         sender: String,
-         credential: IMAPCredential,
-         clientDomain: String = "[127.0.0.1]",
-         makeTransport: @escaping @Sendable (MailTransportEndpoint) -> any MailTransport
-            = { NetworkTransport(endpoint: $0) },
-         identityLookup: @escaping @Sendable (String) -> SecIdentity? = { _ in nil }) {
+    init(
+        endpoint: MailTransportEndpoint,
+        sender: String,
+        credential: IMAPCredential,
+        clientDomain: String = "[127.0.0.1]",
+        makeTransport: @escaping @Sendable (MailTransportEndpoint) -> any MailTransport = {
+            NetworkTransport(endpoint: $0)
+        },
+        identityLookup: @escaping @Sendable (String) -> SecIdentity? = { _ in nil }
+    ) {
         self.endpoint = endpoint
         self.sender = sender
         self.credential = credential
@@ -79,8 +82,9 @@ struct SMTPSubmitter: Sendable {
     /// documentation for why that is the opposite of Gmail's requirement.
     func messageData(for message: OutgoingMessage) -> String {
         let lookup = identityLookup
-        return RFC822Builder.message(message, includeBccHeader: false,
-                                     identityLookup: { lookup($0) })
+        return RFC822Builder.message(
+            message, includeBccHeader: false,
+            identityLookup: { lookup($0) })
     }
 
     /// Transparency, RFC 5321 §4.5.2: a line whose first character is `.` gets a
@@ -144,9 +148,10 @@ struct SMTPSubmitter: Sendable {
     ///   identifier the wire offers, and `"accepted"` stands in when the server
     ///   sends a bare `250`.
     func submit(_ message: OutgoingMessage) async throws -> String {
-        let session = SMTPSession(transport: makeTransport(endpoint),
-                                  security: endpoint.tls,
-                                  clientDomain: clientDomain)
+        let session = SMTPSession(
+            transport: makeTransport(endpoint),
+            security: endpoint.tls,
+            clientDomain: clientDomain)
         do {
             try await session.connect()
             if endpoint.tls == .explicit { try await session.upgradeToTLS() }

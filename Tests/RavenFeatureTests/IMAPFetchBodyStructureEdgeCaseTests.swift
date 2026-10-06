@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The three `BODYSTRUCTURE` behaviours that are easy to get wrong *silently* —
@@ -46,10 +47,12 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
         #expect(structure.plainTextPart?.partNumber == "1")
 
         // Compared as a whole collection, so a wrong count cannot be masked.
-        #expect(structure.attachments == [
-            MailAttachment(attachmentID: "2", filename: "forwarded-a.eml",
-                           mimeType: "message/rfc822", size: 420),
-        ])
+        #expect(
+            structure.attachments == [
+                MailAttachment(
+                    attachmentID: "2", filename: "forwarded-a.eml",
+                    mimeType: "message/rfc822", size: 420)
+            ])
         let message = IMAPFetchParser.message(response, id: "u205", threadID: "t205", labelIDs: ["INBOX"])
         #expect(message.hasAttachments)
         #expect(message.attachments == structure.attachments)
@@ -70,7 +73,8 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
     /// a `name` that differs from the disposition `filename`.
     @Test("a message/delivery-status part reads its disposition from index 8, not 11")
     func nonRFC822MessageSubtypeUsesBasicOffset() throws {
-        let wire = "* 1 FETCH (UID 213 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
+        let wire =
+            "* 1 FETCH (UID 213 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
             + "(\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" 8 1)"
             + "(\"MESSAGE\" \"DELIVERY-STATUS\" (\"NAME\" \"report-a.txt\") NIL NIL "
             + "\"7BIT\" 300 NIL "
@@ -79,8 +83,9 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
         let response = try IMAPFetchWire.parsedLine(wire)
         let structure = try #require(response.bodyStructure)
         #expect(structure.mimeType == "multipart/report")
-        #expect(structure.children.map(\.mimeType)
-            == ["text/plain", "message/delivery-status"])
+        #expect(
+            structure.children.map(\.mimeType)
+                == ["text/plain", "message/delivery-status"])
 
         let report = try #require(structure.children.last)
         #expect(report.dispositionType == "attachment")
@@ -88,10 +93,12 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
         // Not "report-a.txt": the disposition at index 8 was found, so the
         // Content-Type `name` fallback was never reached.
         #expect(report.parameters["name"] == "report-a.txt")
-        #expect(structure.attachments == [
-            MailAttachment(attachmentID: "2", filename: "delivery-status-a.txt",
-                           mimeType: "message/delivery-status", size: 300),
-        ])
+        #expect(
+            structure.attachments == [
+                MailAttachment(
+                    attachmentID: "2", filename: "delivery-status-a.txt",
+                    mimeType: "message/delivery-status", size: 300)
+            ])
     }
 
     // MARK: - Refusing a malformed child
@@ -112,7 +119,8 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
     /// "multipart with no parts" guard.
     @Test("a multipart whose child will not parse throws instead of truncating siblings")
     func malformedChildThrows() throws {
-        let wire = "* 1 FETCH (UID 208 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
+        let wire =
+            "* 1 FETCH (UID 208 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
             + "(\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" 8 1)"
             + "(NIL \"PDF\") \"MIXED\" (\"BOUNDARY\" \"b9\")))\r\n"
         let response = try IMAPFetchWire.line(wire)
@@ -131,7 +139,8 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
     /// is malformed for the same reason and by the same guard.
     @Test("an empty nested part list is malformed, not an empty child")
     func emptyNestedPartListThrows() throws {
-        let wire = "* 1 FETCH (UID 209 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
+        let wire =
+            "* 1 FETCH (UID 209 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
             + "(\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" 8 1)"
             + "() \"MIXED\" (\"BOUNDARY\" \"b9\")))\r\n"
         let response = try IMAPFetchWire.line(wire)
@@ -158,9 +167,11 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
     /// text — an empty `plainText` the caller can then fill by fetching `BODY[1]`.
     @Test("a multipart does not fall back to BODY[TEXT] for part 1")
     func multipartDoesNotUseWholeBodyFallback() throws {
-        let raw = "--b10\r\nContent-Type: text/plain\r\n\r\nBody one\r\n"
+        let raw =
+            "--b10\r\nContent-Type: text/plain\r\n\r\nBody one\r\n"
             + "--b10\r\nContent-Type: text/html\r\n\r\n<p>Body one</p>\r\n--b10--\r\n"
-        let wire = "* 1 FETCH (UID 210 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
+        let wire =
+            "* 1 FETCH (UID 210 BODYSTRUCTURE ((\"TEXT\" \"PLAIN\" "
             + "(\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" 8 1)"
             + "(\"TEXT\" \"HTML\" (\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" 15 1) "
             + "\"ALTERNATIVE\" (\"BOUNDARY\" \"b10\")) "
@@ -191,7 +202,8 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
     @Test("a single part still falls back to BODY[TEXT] for part 1")
     func singlePartStillUsesWholeBodyFallback() throws {
         let raw = "Body one"
-        let wire = "* 1 FETCH (UID 211 BODYSTRUCTURE (\"TEXT\" \"PLAIN\" "
+        let wire =
+            "* 1 FETCH (UID 211 BODYSTRUCTURE (\"TEXT\" \"PLAIN\" "
             + "(\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" \(raw.utf8.count) 1) "
             + "BODY[TEXT] {\(raw.utf8.count)}\r\n\(raw))\r\n"
         let response = try IMAPFetchWire.parsedLine(wire)
@@ -208,7 +220,8 @@ struct IMAPFetchBodyStructureEdgeCaseTests {
     @Test("a single part falls back to BODY[] as well as BODY[TEXT]")
     func singlePartFallsBackToWholeBodyKey() throws {
         let raw = "Body one"
-        let wire = "* 1 FETCH (UID 212 BODYSTRUCTURE (\"TEXT\" \"PLAIN\" "
+        let wire =
+            "* 1 FETCH (UID 212 BODYSTRUCTURE (\"TEXT\" \"PLAIN\" "
             + "(\"CHARSET\" \"UTF-8\") NIL NIL \"7BIT\" \(raw.utf8.count) 1) "
             + "BODY[] {\(raw.utf8.count)}\r\n\(raw))\r\n"
         let response = try IMAPFetchWire.parsedLine(wire)

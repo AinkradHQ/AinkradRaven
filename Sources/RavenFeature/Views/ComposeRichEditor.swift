@@ -1,7 +1,7 @@
-import SwiftUI
-import AppKit
 import AinkradAppKit
 import AinkradAppKitUI
+import AppKit
+import SwiftUI
 
 /// The compose body field: a rich-text editor over `RichBody`, plus the format
 /// bar above it.
@@ -54,9 +54,10 @@ struct ComposeBodyField: View {
         //
         // It reads `richBody.text`, which IS the plain body — the same string
         // that used to be `bodyText`, so detection is unchanged.
-        .environment(\.layoutDirection,
-                     BaseTextDirection.detect(richBody.text) == .rightToLeft
-                        ? .rightToLeft : .leftToRight)
+        .environment(
+            \.layoutDirection,
+            BaseTextDirection.detect(richBody.text) == .rightToLeft
+                ? .rightToLeft : .leftToRight)
     }
 
     private var editorSurface: some View {
@@ -72,20 +73,25 @@ struct ComposeBodyField: View {
                     .padding(.vertical, AinkradSpacing.sm)
                     .allowsHitTesting(false)
             }
-            ComposeRichEditor(richBody: $richBody,
-                              handle: handle,
-                              font: bodyFont,
-                              textColor: NSColor(theme.foreground),
-                              tintColor: NSColor(theme.accentSecondary),
-                              onFocusChange: { isEditing = $0 })
+            ComposeRichEditor(
+                richBody: $richBody,
+                handle: handle,
+                font: bodyFont,
+                textColor: NSColor(theme.foreground),
+                tintColor: NSColor(theme.accentSecondary),
+                onFocusChange: { isEditing = $0 })
         }
         .frame(minHeight: minHeight)
         .background(ChamferShape(cut: 8).fill(theme.surfaceElevated.opacity(0.5)))
-        .overlay(ChamferShape(cut: 8).strokeBorder(
-            theme.accentPrimary.opacity(isEditing ? 0.9 : 0.25),
-            lineWidth: isEditing ? 1.5 : 1.25))
-        .shadow(color: theme.accentSecondary.opacity(isEditing ? 0.4 : 0),
-                radius: isEditing ? 6 : 0)
+        .overlay(
+            ChamferShape(cut: 8).strokeBorder(
+                theme.accentPrimary.opacity(isEditing ? 0.9 : 0.25),
+                lineWidth: isEditing ? 1.5 : 1.25)
+        )
+        .shadow(
+            color: theme.accentSecondary.opacity(isEditing ? 0.4 : 0),
+            radius: isEditing ? 6 : 0
+        )
         .animation(AinkradMotion.hover, value: isEditing)
     }
 
@@ -183,8 +189,9 @@ struct ComposeRichEditor: NSViewRepresentable {
         // on a theme change and nothing in it can be invisible against the new
         // background.
         if let storage = tv.textStorage, storage.length > 0 {
-            storage.addAttribute(.foregroundColor, value: textColor,
-                                 range: NSRange(location: 0, length: storage.length))
+            storage.addAttribute(
+                .foregroundColor, value: textColor,
+                range: NSRange(location: 0, length: storage.length))
         }
     }
 

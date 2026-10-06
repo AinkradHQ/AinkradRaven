@@ -37,10 +37,13 @@ public enum UnifiedInbox {
     /// followed by another's. Ties break on account id then thread id purely so
     /// the order is stable between calls.
     @MainActor
-    public static func summaries(store: MailStore, accountIDs: [String]? = nil,
-                                 months: [String]) -> [ThreadSummary] {
+    public static func summaries(
+        store: MailStore, accountIDs: [String]? = nil,
+        months: [String]
+    ) -> [ThreadSummary] {
         let ids = accountIDs ?? store.accounts().map(\.id)
-        return ids
+        return
+            ids
             .flatMap { store.summaries(accountID: $0, months: months) }
             .sorted(by: isBefore)
     }
@@ -66,14 +69,19 @@ public enum UnifiedInbox {
     /// arbitrary subset is worse than showing none while the account's own settings
     /// row explains it is not set up.
     @MainActor
-    public static func inbox(store: MailStore, accountIDs: [String]? = nil,
-                            months: [String]) -> [ThreadSummary] {
+    public static func inbox(
+        store: MailStore, accountIDs: [String]? = nil,
+        months: [String]
+    ) -> [ThreadSummary] {
         let ids = accountIDs ?? store.accounts().map(\.id)
         return ids.flatMap { accountID -> [ThreadSummary] in
-            guard let vocabulary = LabelVocabularyResolver.vocabulary(
-                forAccountID: accountID, store: store) else { return [] }
-            return InboxFilter.apply(store.summaries(accountID: accountID, months: months),
-                                     vocabulary: vocabulary)
+            guard
+                let vocabulary = LabelVocabularyResolver.vocabulary(
+                    forAccountID: accountID, store: store)
+            else { return [] }
+            return InboxFilter.apply(
+                store.summaries(accountID: accountID, months: months),
+                vocabulary: vocabulary)
         }.sorted(by: isBefore)
     }
 

@@ -19,28 +19,28 @@ public enum BaseTextDirection: String, Equatable, Sendable {
     public var htmlDir: String { rawValue }
 }
 
-public extension BaseTextDirection {
+extension BaseTextDirection {
     /// Whether `scalar` is a strong right-to-left character (Arabic, Hebrew,
     /// Syriac, Thaana, N'Ko, Samaritan, and the Arabic presentation forms).
     ///
     /// Ranges rather than a `CharacterSet` so the classification is visible and
     /// testable; digits, punctuation, whitespace and symbols are intentionally
     /// *neutral* — a line of "١٢٣ - 456" says nothing about base direction.
-    static func isStrongRTL(_ scalar: Unicode.Scalar) -> Bool {
+    public static func isStrongRTL(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
-        case 0x0590...0x05FF,   // Hebrew
-             0x0600...0x06FF,   // Arabic
-             0x0700...0x074F,   // Syriac
-             0x0750...0x077F,   // Arabic Supplement
-             0x0780...0x07BF,   // Thaana
-             0x07C0...0x07FF,   // N'Ko
-             0x0800...0x083F,   // Samaritan
-             0x0840...0x085F,   // Mandaic
-             0x0860...0x08FF,   // Syriac Supplement, Arabic Extended-A
-             0xFB1D...0xFDFF,   // Hebrew/Arabic presentation forms A
-             0xFE70...0xFEFF,   // Arabic presentation forms B
-             0x10800...0x10FFF, // Cypriot … Old Hungarian
-             0x1E800...0x1EFFF: // Mende Kikakui … Arabic Mathematical
+        case 0x0590...0x05FF,  // Hebrew
+            0x0600...0x06FF,  // Arabic
+            0x0700...0x074F,  // Syriac
+            0x0750...0x077F,  // Arabic Supplement
+            0x0780...0x07BF,  // Thaana
+            0x07C0...0x07FF,  // N'Ko
+            0x0800...0x083F,  // Samaritan
+            0x0840...0x085F,  // Mandaic
+            0x0860...0x08FF,  // Syriac Supplement, Arabic Extended-A
+            0xFB1D...0xFDFF,  // Hebrew/Arabic presentation forms A
+            0xFE70...0xFEFF,  // Arabic presentation forms B
+            0x10800...0x10FFF,  // Cypriot … Old Hungarian
+            0x1E800...0x1EFFF:  // Mende Kikakui … Arabic Mathematical
             return true
         default:
             return false
@@ -50,7 +50,7 @@ public extension BaseTextDirection {
     /// Whether `scalar` is a strong left-to-right letter. Only *letters* count:
     /// an Arabic paragraph containing a URL or a product code must not be
     /// dragged left-to-right by it.
-    static func isStrongLTR(_ scalar: Unicode.Scalar) -> Bool {
+    public static func isStrongLTR(_ scalar: Unicode.Scalar) -> Bool {
         guard scalar.properties.isAlphabetic else { return false }
         return !isStrongRTL(scalar)
     }
@@ -64,7 +64,7 @@ public extension BaseTextDirection {
     /// writing. Ties and "no strong characters at all" resolve to
     /// `leftToRight`, which is the safe default — it is what every existing
     /// message already got.
-    static func detect(_ text: String) -> BaseTextDirection {
+    public static func detect(_ text: String) -> BaseTextDirection {
         let considered = authoredPortion(of: text)
         var rtl = 0
         var ltr = 0
@@ -82,7 +82,7 @@ public extension BaseTextDirection {
     ///
     /// Falls back to the whole text when that leaves nothing, since reading a
     /// quoted-only draft's direction beats reading an empty string's.
-    static func authoredPortion(of text: String) -> String {
+    public static func authoredPortion(of text: String) -> String {
         let body = QuotedRegion.split(Signature.split(text).body).body
         return body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? text : body
     }

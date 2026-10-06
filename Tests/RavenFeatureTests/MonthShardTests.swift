@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 @Suite("Month sharding")
@@ -16,22 +17,25 @@ struct MonthShardTests {
 
     @Test("a range spanning a year boundary lists every month inclusively")
     func rangeAcrossYear() throws {
-        let keys = MonthShard.keys(from: try date("2025-11-02T00:00:00Z"),
-                                   to: try date("2026-01-20T00:00:00Z"))
+        let keys = MonthShard.keys(
+            from: try date("2025-11-02T00:00:00Z"),
+            to: try date("2026-01-20T00:00:00Z"))
         #expect(keys == ["2025-11", "2025-12", "2026-01"])
     }
 
     @Test("a range inside one month yields one key")
     func singleMonth() throws {
-        let keys = MonthShard.keys(from: try date("2026-01-02T00:00:00Z"),
-                                   to: try date("2026-01-20T00:00:00Z"))
+        let keys = MonthShard.keys(
+            from: try date("2026-01-02T00:00:00Z"),
+            to: try date("2026-01-20T00:00:00Z"))
         #expect(keys == ["2026-01"])
     }
 
     @Test("an inverted range yields nothing rather than looping")
     func invertedRange() throws {
-        let keys = MonthShard.keys(from: try date("2026-05-01T00:00:00Z"),
-                                   to: try date("2026-01-01T00:00:00Z"))
+        let keys = MonthShard.keys(
+            from: try date("2026-05-01T00:00:00Z"),
+            to: try date("2026-01-01T00:00:00Z"))
         #expect(keys.isEmpty)
     }
 
@@ -67,8 +71,9 @@ struct MonthShardTests {
         // to 2026-03-01T00:30:00Z (after midnight UTC on first day of Mar).
         // Even in a timezone that would shift these to adjacent days locally,
         // the UTC calendar must yield both "2026-02" and "2026-03".
-        let keys = MonthShard.keys(from: try date("2026-02-28T23:30:00Z"),
-                                   to: try date("2026-03-01T00:30:00Z"))
+        let keys = MonthShard.keys(
+            from: try date("2026-02-28T23:30:00Z"),
+            to: try date("2026-03-01T00:30:00Z"))
         #expect(keys == ["2026-02", "2026-03"])
     }
 }

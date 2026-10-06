@@ -1,6 +1,7 @@
-import Testing
-import SwiftUI
 import AinkradAppKit
+import SwiftUI
+import Testing
+
 @testable import RavenFeature
 
 /// Raven's basic mode: read the inbox, open a thread. No composing.

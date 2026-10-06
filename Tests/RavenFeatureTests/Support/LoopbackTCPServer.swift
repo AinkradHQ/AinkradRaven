@@ -1,5 +1,6 @@
 import Foundation
 import Network
+
 @testable import RavenFeature
 
 /// A one-connection plaintext TCP server on 127.0.0.1, for the only tests in this
@@ -49,7 +50,8 @@ final class LoopbackTCPServer: @unchecked Sendable {
 
     /// Everything the client sent, in order.
     var received: Data {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         return receivedBytes
     }
 
@@ -68,9 +70,10 @@ final class LoopbackTCPServer: @unchecked Sendable {
                 switch state {
                 case .ready:
                     self.port = self.listener.port?.rawValue ?? 0
-                    guard_.fire(self.port == 0
-                                ? .failure(NWError.posix(.EADDRNOTAVAIL))
-                                : .success(()))
+                    guard_.fire(
+                        self.port == 0
+                            ? .failure(NWError.posix(.EADDRNOTAVAIL))
+                            : .success(()))
                 case .failed(let error):
                     guard_.fire(.failure(error))
                 default:
@@ -111,16 +114,23 @@ final class LoopbackTCPServer: @unchecked Sendable {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) {
             [weak self] data, _, isComplete, error in
             guard let self, error == nil, !isComplete else { return }
-            guard let data, !data.isEmpty else { self.receiveLoop(connection); return }
+            guard let data, !data.isEmpty else {
+                self.receiveLoop(connection)
+                return
+            }
             self.lock.lock()
             self.receivedBytes.append(data)
             let text = String(decoding: self.receivedBytes, as: UTF8.self)
             let due = self.rules.first { !self.matched.contains($0.needle) && text.contains($0.needle) }
             if let due { self.matched.insert(due.needle) }
             self.lock.unlock()
-            guard let due else { self.receiveLoop(connection); return }
-            connection.send(content: due.reply,
-                            completion: .contentProcessed { _ in self.receiveLoop(connection) })
+            guard let due else {
+                self.receiveLoop(connection)
+                return
+            }
+            connection.send(
+                content: due.reply,
+                completion: .contentProcessed { _ in self.receiveLoop(connection) })
         }
     }
 }

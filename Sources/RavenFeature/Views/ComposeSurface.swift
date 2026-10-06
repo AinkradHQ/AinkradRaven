@@ -1,8 +1,8 @@
-import SwiftUI
-import AppKit
-import UniformTypeIdentifiers
 import AinkradAppKit
 import AinkradAppKitUI
+import AppKit
+import SwiftUI
+import UniformTypeIdentifiers
 
 /// The ONE composing surface, presented as an overlay by `RavenShell`.
 ///
@@ -106,9 +106,11 @@ public struct ComposeSurface: View {
     /// "Sent." and much too short to read a sentence explaining what to do next.
     static let alertToast: TimeInterval = 9
 
-    public init(runtime: RavenRuntime, context: ComposeContext = .new,
-                showsDraftsRail: Bool = true,
-                onClose: @escaping () -> Void = {}) {
+    public init(
+        runtime: RavenRuntime, context: ComposeContext = .new,
+        showsDraftsRail: Bool = true,
+        onClose: @escaping () -> Void = {}
+    ) {
         self.runtime = runtime
         self.context = context
         self.showsDraftsRail = showsDraftsRail
@@ -147,8 +149,9 @@ public struct ComposeSurface: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
-            ComposeTitleBar(context: activeContext, isEditingDraft: keeper.draftID != nil,
-                           onClose: onClose)
+            ComposeTitleBar(
+                context: activeContext, isEditingDraft: keeper.draftID != nil,
+                onClose: onClose)
             // Two columns, deliberately: the composer is the PRIMARY column and
             // takes all the width left over, the drafts rail is a fixed
             // secondary column pinned to the trailing edge. It used to be the
@@ -211,16 +214,18 @@ public struct ComposeSurface: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
-            ComposeRecipients(runtime: runtime, context: activeContext,
-                              toChips: $toChips, ccChips: $ccChips, bccChips: $bccChips,
-                              selectedFromAccountID: $selectedFromAccountID,
-                              isExpanded: $copyFieldsExpanded,
-                              candidates: suggestionCandidates)
+            ComposeRecipients(
+                runtime: runtime, context: activeContext,
+                toChips: $toChips, ccChips: $ccChips, bccChips: $bccChips,
+                selectedFromAccountID: $selectedFromAccountID,
+                isExpanded: $copyFieldsExpanded,
+                candidates: suggestionCandidates)
             AinkradTextField(text: $subject, placeholder: "Subject")
             // The rich editor, its format bar, and the base-direction handling
             // that used to sit here — all in `ComposeBodyField`.
-            ComposeBodyField(richBody: $richBody,
-                             placeholder: "Write your message\u{2026}", minHeight: 140)
+            ComposeBodyField(
+                richBody: $richBody,
+                placeholder: "Write your message\u{2026}", minHeight: 140)
 
             ComposeAdviceView(findings: findings, onApply: apply)
 
@@ -233,9 +238,10 @@ public struct ComposeSurface: View {
             // lets the scheduled wake (or, failing that, the 120s backstop
             // timer) drain and transmit it — no special-casing needed here.
             if let undoDeadline {
-                ComposeUndoBanner(deadline: undoDeadline, holdWindow: runtime.holdWindow,
-                                 appearance: runtime.appearanceStore.appearance,
-                                 onUndo: undoSend)
+                ComposeUndoBanner(
+                    deadline: undoDeadline, holdWindow: runtime.holdWindow,
+                    appearance: runtime.appearanceStore.appearance,
+                    onUndo: undoSend)
             }
 
             // Pushes the action row to the BOTTOM of the primary column instead
@@ -335,9 +341,10 @@ public struct ComposeSurface: View {
         // queued, so nothing can later leave from the wrong address. A reply is
         // always attributed (to the thread's account) and so never lands here.
         guard outgoing.accountID != nil else {
-            toasts.show("Several accounts are connected, so Raven cannot tell which one should "
-                        + "send this. Choose a From account above; nothing was queued.",
-                        status: .warning, duration: Self.alertToast)
+            toasts.show(
+                "Several accounts are connected, so Raven cannot tell which one should "
+                    + "send this. Choose a From account above; nothing was queued.",
+                status: .warning, duration: Self.alertToast)
             return
         }
         isSending = true
@@ -346,12 +353,13 @@ public struct ComposeSurface: View {
         let scheduledFor = scheduledSendAt
         Task {
             do {
-                let result = try await SendAttempt.send(outgoing, draftID: draftID,
-                                                        outbox: runtime.outbox,
-                                                        store: runtime.store,
-                                                        holdUntil: holdUntil,
-                                                        sendAt: scheduledFor,
-                                                        drain: runtime.drainOutbox)
+                let result = try await SendAttempt.send(
+                    outgoing, draftID: draftID,
+                    outbox: runtime.outbox,
+                    store: runtime.store,
+                    holdUntil: holdUntil,
+                    sendAt: scheduledFor,
+                    drain: runtime.drainOutbox)
                 if result.isSent {
                     // Transmitted immediately in this same call — only
                     // possible if a test or future caller passes a `nil`
@@ -382,8 +390,9 @@ public struct ComposeSurface: View {
                     }
                     clear()
                     draftStateText = nil
-                    toasts.show(scheduleNote ?? "Queued — you can still undo it.",
-                                status: .success)
+                    toasts.show(
+                        scheduleNote ?? "Queued — you can still undo it.",
+                        status: .success)
                 } else {
                     toasts.show(result.message, status: .danger, duration: Self.alertToast)
                 }
@@ -393,9 +402,10 @@ public struct ComposeSurface: View {
                 // — the message itself already says what to do about it.
                 toasts.show(message, status: .warning, duration: Self.alertToast)
             } catch {
-                toasts.show("Could not queue send: \(error). Your message was not sent and has "
-                            + "been left in the composer.",
-                            status: .danger, duration: Self.alertToast)
+                toasts.show(
+                    "Could not queue send: \(error). Your message was not sent and has "
+                        + "been left in the composer.",
+                    status: .danger, duration: Self.alertToast)
             }
             isSending = false
         }

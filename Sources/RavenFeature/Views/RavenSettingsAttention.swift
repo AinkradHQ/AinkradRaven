@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The outbox entries a human has to resolve, at the TOP of Settings and styled
 /// as a problem.
@@ -30,18 +30,23 @@ struct OutboxAttentionGroup: View {
     @State private var version = 0
 
     var body: some View {
-        let needsReview = { _ = version; return runtime.outboxNeedsReview }()
+        let needsReview = {
+            _ = version
+            return runtime.outboxNeedsReview
+        }()
         let deadLettered = runtime.outboxDeadLettered
         let unreadable = runtime.outboxUnreadableEntryCount
         let queueUnreadable = runtime.outboxQueueUnreadable
         Group {
             if needsReview.isEmpty && deadLettered.isEmpty && unreadable == 0
-                && !queueUnreadable {
+                && !queueUnreadable
+            {
                 EmptyView()
             } else {
                 VStack(alignment: .leading, spacing: AinkradSpacing.md) {
-                    header(count: needsReview.count + deadLettered.count + unreadable
-                        + (queueUnreadable ? 1 : 0))
+                    header(
+                        count: needsReview.count + deadLettered.count + unreadable
+                            + (queueUnreadable ? 1 : 0))
                     if queueUnreadable { queueUnreadableSection() }
                     if unreadable > 0 { unreadableSection(count: unreadable) }
                     if !needsReview.isEmpty {
@@ -63,10 +68,13 @@ struct OutboxAttentionGroup: View {
                 }
                 .padding(AinkradSpacing.lg)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(ChamferShape(cut: AinkradRadius.md)
-                    .fill(statusColors.warning.opacity(0.10)))
-                .overlay(ChamferShape(cut: AinkradRadius.md)
-                    .strokeBorder(statusColors.warning.opacity(0.55), lineWidth: 1))
+                .background(
+                    ChamferShape(cut: AinkradRadius.md)
+                        .fill(statusColors.warning.opacity(0.10))
+                )
+                .overlay(
+                    ChamferShape(cut: AinkradRadius.md)
+                        .strokeBorder(statusColors.warning.opacity(0.55), lineWidth: 1))
             }
         }
         .onAppear { runtime.refreshOutboxSnapshots() }
@@ -82,8 +90,10 @@ struct OutboxAttentionGroup: View {
         }
     }
 
-    private func section(title: String, note: String, status: AinkradStatus,
-                        entries: [OutboxEntry]) -> some View {
+    private func section(
+        title: String, note: String, status: AinkradStatus,
+        entries: [OutboxEntry]
+    ) -> some View {
         AinkradSectionFrame(title: title) {
             VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
                 Text(note)
@@ -117,11 +127,12 @@ struct OutboxAttentionGroup: View {
         // overwrites it on disk. Telling someone to update and reopen would be
         // true only if they never touched the outbox in between, which they
         // cannot know. The honest instruction is to re-send.
-        note("\(count) queued operation\(count == 1 ? "" : "s") could not be read by this "
-            + "version of Raven — most likely written by a newer one. "
-            + "\(count == 1 ? "It was" : "They were") NOT sent, and this version cannot send "
-            + "\(count == 1 ? "it" : "them") or recover \(count == 1 ? "it" : "them"). "
-            + "Re-send anything you were expecting to go out.",
+        note(
+            "\(count) queued operation\(count == 1 ? "" : "s") could not be read by this "
+                + "version of Raven — most likely written by a newer one. "
+                + "\(count == 1 ? "It was" : "They were") NOT sent, and this version cannot send "
+                + "\(count == 1 ? "it" : "them") or recover \(count == 1 ? "it" : "them"). "
+                + "Re-send anything you were expecting to go out.",
             title: "Unreadable")
     }
 
@@ -129,9 +140,10 @@ struct OutboxAttentionGroup: View {
     /// newer Raven introduced. How many operations were in it is unknowable, so
     /// this deliberately claims no number.
     private func queueUnreadableSection() -> some View {
-        note("Raven could not read the send queue at all. Anything that was waiting to be sent "
-            + "was NOT sent, and there is no way to tell how much was in it. Re-send anything "
-            + "you were expecting to go out.",
+        note(
+            "Raven could not read the send queue at all. Anything that was waiting to be sent "
+                + "was NOT sent, and there is no way to tell how much was in it. Re-send anything "
+                + "you were expecting to go out.",
             title: "Send queue unreadable")
     }
 

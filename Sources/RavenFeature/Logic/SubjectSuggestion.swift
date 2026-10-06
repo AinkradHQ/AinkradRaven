@@ -19,7 +19,8 @@ public enum SubjectSuggestion {
     public static func suggest(from bodyText: String) -> String? {
         let authored = QuotedRegion.split(Signature.split(bodyText).body).body
         for rawLine in authored.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = rawLine
+            let line =
+                rawLine
                 .components(separatedBy: .whitespacesAndNewlines)
                 .filter { !$0.isEmpty }
                 .joined(separator: " ")
@@ -35,12 +36,15 @@ public enum SubjectSuggestion {
     /// writes, and only when the WHOLE line is one — "Hi Bea, about the invoice"
     /// is a perfectly good subject line and must not be skipped.
     static func isGreeting(_ line: String) -> Bool {
-        let core = line
+        let core =
+            line
             .trimmingCharacters(in: CharacterSet(charactersIn: " ,.!:؛،"))
             .lowercased()
         let arabic = AttachmentIntent.normalizedArabic(core)
-        let salutations = ["hi", "hey", "hello", "dear", "good morning", "good afternoon",
-                           "good evening", "greetings", "morning"]
+        let salutations = [
+            "hi", "hey", "hello", "dear", "good morning", "good afternoon",
+            "good evening", "greetings", "morning",
+        ]
         let arabicSalutations = ["السلام عليكم", "اهلا", "مرحبا", "صباح الخير", "مساء الخير", "تحيه"]
         if salutations.contains(core) { return true }
         if arabicSalutations.contains(arabic) { return true }

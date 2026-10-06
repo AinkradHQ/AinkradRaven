@@ -87,10 +87,15 @@ struct IMAPAccountSettings: Codable, Equatable, Sendable {
     /// `nil` when this account has no configured submission server — see above.
     let smtp: SMTPAccountSettings?
 
-    init(host: String, port: UInt16 = 993, username: String,
-         tls: MailTransportTLS = .implicit, smtp: SMTPAccountSettings? = nil) {
-        self.host = host; self.port = port; self.username = username
-        self.tls = tls; self.smtp = smtp
+    init(
+        host: String, port: UInt16 = 993, username: String,
+        tls: MailTransportTLS = .implicit, smtp: SMTPAccountSettings? = nil
+    ) {
+        self.host = host
+        self.port = port
+        self.username = username
+        self.tls = tls
+        self.smtp = smtp
     }
 
     init(from decoder: Decoder) throws {
@@ -142,7 +147,8 @@ extension IMAPProvider {
     /// transfers the closure once, which is exactly the lifetime it has here: it is
     /// called and awaited before `withSession` returns, and never stored.
     func withSession<T: Sendable>(
-        _ body: sending (IMAPWorkingSession) async throws -> T) async throws -> T {
+        _ body: sending (IMAPWorkingSession) async throws -> T
+    ) async throws -> T {
         let lease = try await acquire()
         do {
             let value = try await body(lease.working)
@@ -182,8 +188,10 @@ extension IMAPProvider {
     /// The `LIST "" "*"` happens here, once per session, because every later call is
     /// written in mailbox names and a directory fetched per operation would cost a
     /// round trip on each of them.
-    static func openSession(settings: IMAPAccountSettings,
-                           credential: IMAPCredential) async throws -> IMAPWorkingSession {
+    static func openSession(
+        settings: IMAPAccountSettings,
+        credential: IMAPCredential
+    ) async throws -> IMAPWorkingSession {
         let transport = NetworkTransport(endpoint: settings.endpoint)
         let session = IMAPSession(transport: transport)
         let greeting = try await session.connect()

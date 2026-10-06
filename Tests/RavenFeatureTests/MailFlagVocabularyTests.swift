@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The canonical flag vocabulary and its per-provider translation.
@@ -117,22 +118,29 @@ import Foundation
 
     @Suite struct CanonicalMutations {
         @Test func actionsNameStatesNotProviderLabels() {
-            #expect(ThreadAction.archive.mutation(threadIDs: ["t1"])
-                == FlagMutation(threadIDs: ["t1"], remove: [.inbox]))
-            #expect(ThreadAction.trash.mutation(threadIDs: ["t1"])
-                == FlagMutation(threadIDs: ["t1"], add: [.trash], remove: [.inbox]))
-            #expect(ThreadAction.star(true).mutation(threadIDs: ["t1"])
-                == FlagMutation(threadIDs: ["t1"], add: [.starred]))
-            #expect(ThreadAction.setRead(true).mutation(threadIDs: ["t1"])
-                == FlagMutation(threadIDs: ["t1"], remove: [.unread]))
-            #expect(ThreadAction.setRead(false).mutation(threadIDs: ["t1"])
-                == FlagMutation(threadIDs: ["t1"], add: [.unread]))
+            #expect(
+                ThreadAction.archive.mutation(threadIDs: ["t1"])
+                    == FlagMutation(threadIDs: ["t1"], remove: [.inbox]))
+            #expect(
+                ThreadAction.trash.mutation(threadIDs: ["t1"])
+                    == FlagMutation(threadIDs: ["t1"], add: [.trash], remove: [.inbox]))
+            #expect(
+                ThreadAction.star(true).mutation(threadIDs: ["t1"])
+                    == FlagMutation(threadIDs: ["t1"], add: [.starred]))
+            #expect(
+                ThreadAction.setRead(true).mutation(threadIDs: ["t1"])
+                    == FlagMutation(threadIDs: ["t1"], remove: [.unread]))
+            #expect(
+                ThreadAction.setRead(false).mutation(threadIDs: ["t1"])
+                    == FlagMutation(threadIDs: ["t1"], add: [.unread]))
         }
 
         /// No Gmail spelling survives on the canonical side.
         @Test func canonicalTokensAreProviderIndependent() {
-            let tokens = ThreadAction.trash.mutation(threadIDs: ["t1"])
-                .add.map(\.canonicalToken) + ThreadAction.trash.mutation(threadIDs: ["t1"])
+            let tokens =
+                ThreadAction.trash.mutation(threadIDs: ["t1"])
+                .add.map(\.canonicalToken)
+                + ThreadAction.trash.mutation(threadIDs: ["t1"])
                 .remove.map(\.canonicalToken)
             #expect(tokens == ["trash", "inbox"])
         }
@@ -142,8 +150,10 @@ import Foundation
 
     @Suite struct FlagCoding {
         @Test func everyFlagRoundTripsThroughItsToken() {
-            let flags: [MailFlag] = [.inbox, .unread, .starred, .trash, .spam,
-                                     .sent, .draft, .archive, .user("Label_17")]
+            let flags: [MailFlag] = [
+                .inbox, .unread, .starred, .trash, .spam,
+                .sent, .draft, .archive, .user("Label_17"),
+            ]
             for flag in flags {
                 #expect(MailFlag(canonicalToken: flag.canonicalToken) == flag)
             }
@@ -167,8 +177,9 @@ import Foundation
         /// A user label whose text collides with a canonical token still
         /// round-trips, because the `user:` prefix disambiguates it.
         @Test func userLabelNamedLikeACanonicalTokenRoundTrips() {
-            #expect(MailFlag(canonicalToken: MailFlag.user("inbox").canonicalToken)
-                == .user("inbox"))
+            #expect(
+                MailFlag(canonicalToken: MailFlag.user("inbox").canonicalToken)
+                    == .user("inbox"))
         }
     }
 
@@ -186,10 +197,11 @@ import Foundation
 
         @Test func inboxFilterAgreesWithTheOldLabelComparison() {
             func summary(_ labels: [String]) -> ThreadSummary {
-                ThreadSummary(id: "t1", accountID: "a", subject: "Subject 1",
-                              participants: [], lastMessageDate: Date(),
-                              messageCount: 1, unreadCount: 0, isStarred: false,
-                              labelIDs: labels, snippet: "")
+                ThreadSummary(
+                    id: "t1", accountID: "a", subject: "Subject 1",
+                    participants: [], lastMessageDate: Date(),
+                    messageCount: 1, unreadCount: 0, isStarred: false,
+                    labelIDs: labels, snippet: "")
             }
             #expect(InboxFilter.isInInbox(summary(["INBOX"])))
             #expect(InboxFilter.isInInbox(summary(["INBOX", "TRASH"])) == false)
@@ -207,12 +219,12 @@ import Foundation
         /// A literal `thread-t1` document in the shape the pre-canonical build
         /// wrote: labels as Gmail's own strings.
         private let legacyThreadJSON = """
-        {"id":"t1","accountID":"a1","messages":[
-          {"id":"m1","threadID":"t1","subject":"Subject 1","date":"2026-02-01T00:00:00Z",
-           "isRead":false,"isStarred":true,
-           "labelIDs":["INBOX","UNREAD","STARRED"],
-           "hasAttachments":false,"snippet":""}]}
-        """
+            {"id":"t1","accountID":"a1","messages":[
+              {"id":"m1","threadID":"t1","subject":"Subject 1","date":"2026-02-01T00:00:00Z",
+               "isRead":false,"isStarred":true,
+               "labelIDs":["INBOX","UNREAD","STARRED"],
+               "hasAttachments":false,"snippet":""}]}
+            """
 
         @Test func legacyThreadDocumentStillDecodesWithTheSameState() throws {
             let documents = InMemoryDocumentStore()
@@ -239,10 +251,12 @@ import Foundation
             #expect(thread.messages[0].labelIDs == ["INBOX", "STARRED"])
             #expect(thread.messages[0].isRead)
             #expect(thread.messages[0].isStarred)
-            let raw = try #require(String(data: documents.storage["thread-t1"] ?? Data(),
-                                         encoding: .utf8))
+            let raw = try #require(
+                String(
+                    data: documents.storage["thread-t1"] ?? Data(),
+                    encoding: .utf8))
             #expect(raw.contains("\"INBOX\""))
-            #expect(raw.contains("unread") == false)   // no canonical token leaked
+            #expect(raw.contains("unread") == false)  // no canonical token leaked
             #expect(raw.contains("user:") == false)
         }
     }
@@ -298,10 +312,11 @@ import Foundation
     }
 
     @Test func inboxFilterUsesTheGivenVocabularyNotGmails() {
-        let summary = ThreadSummary(id: "t1", accountID: "a", subject: "Subject 1",
-                                    participants: [], lastMessageDate: Date(),
-                                    messageCount: 1, unreadCount: 1, isStarred: false,
-                                    labelIDs: ["INBOX-FOLDER"], snippet: "")
+        let summary = ThreadSummary(
+            id: "t1", accountID: "a", subject: "Subject 1",
+            participants: [], lastMessageDate: Date(),
+            messageCount: 1, unreadCount: 1, isStarred: false,
+            labelIDs: ["INBOX-FOLDER"], snippet: "")
         #expect(InboxFilter.isInInbox(summary, vocabulary: SeenFlagVocabulary()))
         #expect(InboxFilter.isInInbox(summary) == false)
     }
@@ -346,8 +361,9 @@ import Foundation
         #expect(vocabulary.flags(from: []).isEmpty)
     }
 
-    @Test("backends with no vocabulary on this overload do not resolve to a wrong one",
-          arguments: [MailAccount.ProviderKind.imap, .unsupported("quantumpost")])
+    @Test(
+        "backends with no vocabulary on this overload do not resolve to a wrong one",
+        arguments: [MailAccount.ProviderKind.imap, .unsupported("quantumpost")])
     func unbuiltBackendsDoNotResolve(kind: MailAccount.ProviderKind) {
         // The important half is that this is nil rather than Gmail's mapping.
         #expect(LabelVocabularyResolver.vocabulary(for: kind) == nil)
@@ -379,13 +395,19 @@ import Foundation
     func viewModelRefusesUnresolvableBackend() throws {
         let store = DocumentMailStore(documents: InMemoryDocumentStore())
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: FakeMailProvider())
-        try store.saveAccount(MailAccount(id: "im1", provider: .imap,
-                                          address: "i@example.test", displayName: "I",
-                                          state: .ready))
-        try store.upsertThread(MailThread(id: "t1", accountID: "im1", messages: [
-            MailMessage(id: "m1", threadID: "t1", from: MailAddress(email: "b@example.test"),
+        try store.saveAccount(
+            MailAccount(
+                id: "im1", provider: .imap,
+                address: "i@example.test", displayName: "I",
+                state: .ready))
+        try store.upsertThread(
+            MailThread(
+                id: "t1", accountID: "im1",
+                messages: [
+                    MailMessage(
+                        id: "m1", threadID: "t1", from: MailAddress(email: "b@example.test"),
                         subject: "Subject 1", date: Date(), labelIDs: ["INBOX"], snippet: "s")
-        ]))
+                ]))
 
         let model = RavenViewModel(store: store, outbox: outbox)
         model.reload()

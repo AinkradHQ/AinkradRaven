@@ -67,8 +67,10 @@ public struct IMAPMailbox: Equatable, Sendable, Codable {
     /// the failure this whole file exists to avoid.
     public let isSpecialUseDeclared: Bool
 
-    init(name: String, delimiter: String?, attributes: [String], flag: MailFlag,
-         isSpecialUseDeclared: Bool) {
+    init(
+        name: String, delimiter: String?, attributes: [String], flag: MailFlag,
+        isSpecialUseDeclared: Bool
+    ) {
         self.name = name
         self.delimiter = delimiter
         self.attributes = attributes
@@ -85,10 +87,12 @@ public struct IMAPMailbox: Equatable, Sendable, Codable {
         let name = try container.decode(String.self, forKey: .name)
         let delimiter = try container.decodeIfPresent(String.self, forKey: .delimiter)
         let attributes = try container.decodeIfPresent([String].self, forKey: .attributes) ?? []
-        let resolved = IMAPMailboxList.resolve(name: name, attributes: attributes,
-                                               delimiter: delimiter)
-        self.init(name: name, delimiter: delimiter, attributes: attributes,
-                  flag: resolved.flag, isSpecialUseDeclared: resolved.declared)
+        let resolved = IMAPMailboxList.resolve(
+            name: name, attributes: attributes,
+            delimiter: delimiter)
+        self.init(
+            name: name, delimiter: delimiter, attributes: attributes,
+            flag: resolved.flag, isSpecialUseDeclared: resolved.declared)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -189,8 +193,9 @@ enum IMAPMailboxList {
         }
 
         let resolved = resolve(name: name, attributes: attributes, delimiter: delimiter)
-        return IMAPMailbox(name: name, delimiter: delimiter, attributes: attributes,
-                           flag: resolved.flag, isSpecialUseDeclared: resolved.declared)
+        return IMAPMailbox(
+            name: name, delimiter: delimiter, attributes: attributes,
+            flag: resolved.flag, isSpecialUseDeclared: resolved.declared)
     }
 
     /// The canonical meaning of a mailbox, attributes first.
@@ -199,8 +204,10 @@ enum IMAPMailboxList {
     /// `\Trash` while calling it `Folder A` means it: honouring the name instead
     /// would leave the account with no trash folder and a "Folder A" the user
     /// deletes into by accident.
-    static func resolve(name: String, attributes: [String],
-                        delimiter: String?) -> (flag: MailFlag, declared: Bool) {
+    static func resolve(
+        name: String, attributes: [String],
+        delimiter: String?
+    ) -> (flag: MailFlag, declared: Bool) {
         for attribute in attributes {
             if let flag = specialUse[attribute.lowercased()] {
                 return (flag, true)
@@ -215,7 +222,8 @@ enum IMAPMailboxList {
             return (flag, false)
         }
         if let component = inboxRootedComponent(of: name, delimiter: delimiter),
-           let flag = nameHeuristics[component.lowercased()] {
+            let flag = nameHeuristics[component.lowercased()]
+        {
             return (flag, false)
         }
         return (.user(name), false)
@@ -232,7 +240,7 @@ enum IMAPMailboxList {
         guard let delimiter, !delimiter.isEmpty else { return nil }
         let prefix = "INBOX" + delimiter
         guard name.count > prefix.count,
-              name.prefix(prefix.count).caseInsensitiveCompare(prefix) == .orderedSame
+            name.prefix(prefix.count).caseInsensitiveCompare(prefix) == .orderedSame
         else { return nil }
         let remainder = String(name.dropFirst(prefix.count))
         guard !remainder.isEmpty, !remainder.contains(delimiter) else { return nil }

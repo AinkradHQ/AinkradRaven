@@ -147,8 +147,10 @@ struct IMAPDeltaStrategy: Sendable {
     /// path within the window, which is what the equality test pins.
     let flagRescanWindow: UInt32
 
-    init(session: IMAPSession, identity: IMAPDeltaIdentity,
-         flagRescanWindow: UInt32 = 5_000) {
+    init(
+        session: IMAPSession, identity: IMAPDeltaIdentity,
+        flagRescanWindow: UInt32 = 5_000
+    ) {
         self.session = session
         self.identity = identity
         self.flagRescanWindow = flagRescanWindow
@@ -158,8 +160,10 @@ struct IMAPDeltaStrategy: Sendable {
     ///
     /// A thin pass-through on purpose: it exists so the refusal has one spelling
     /// and `nil` cannot be quietly turned into `"Archive"` at a call site.
-    static func mailboxName(for flag: MailFlag,
-                            in directory: IMAPMailboxDirectory) throws -> String {
+    static func mailboxName(
+        for flag: MailFlag,
+        in directory: IMAPMailboxDirectory
+    ) throws -> String {
         guard let mailbox = directory.mailbox(for: flag) else {
             throw IMAPDeltaError.mailboxNotFound(flag)
         }
@@ -207,48 +211,58 @@ struct IMAPDeltaStrategy: Sendable {
         try collectRemovals(from: selected.untagged, into: &removed)
 
         if hasCondstore, let since = resume?.highestModSeq {
-            try await walkChangedSince(since, resume: resume, selected: selected,
-                                       hasQresync: hasQresync,
-                                       changed: &changed, removed: &removed)
+            try await walkChangedSince(
+                since, resume: resume, selected: selected,
+                hasQresync: hasQresync,
+                changed: &changed, removed: &removed)
         } else {
-            try await walkWithoutCondstore(resume: resume, selected: selected,
-                                           changed: &changed, removed: &removed)
+            try await walkWithoutCondstore(
+                resume: resume, selected: selected,
+                changed: &changed, removed: &removed)
         }
 
         // `advance` is monotonic, so a `nil` UIDNEXT floors to 1 and leaves the
         // position exactly where it was rather than rewinding it.
-        working.advance(mailbox: mailbox, uidValidity: selected.uidValidity,
-                        uidNext: selected.uidNext ?? 1,
-                        highestModSeq: selected.highestModSeq)
+        working.advance(
+            mailbox: mailbox, uidValidity: selected.uidValidity,
+            uidNext: selected.uidNext ?? 1,
+            highestModSeq: selected.highestModSeq)
         // The single write. Everything above may throw; nothing above mutates
         // the caller's cursor.
         cursor = working
-        return MailDelta(changedThreadIDs: changed.subtracting(removed).sorted(),
-                         removedThreadIDs: removed.sorted(),
-                         newCursor: working.encoded())
+        return MailDelta(
+            changedThreadIDs: changed.subtracting(removed).sorted(),
+            removedThreadIDs: removed.sorted(),
+            newCursor: working.encoded())
     }
 
     // MARK: - SELECT
 
-    private func select(mailbox: String,
-                        resumeFrom stored: IMAPMailboxSyncState?) async throws
-        -> IMAPSelectedMailbox {
+    private func select(
+        mailbox: String,
+        resumeFrom stored: IMAPMailboxSyncState?
+    ) async throws
+        -> IMAPSelectedMailbox
+    {
         var arguments: [IMAPCommand.Argument] = [.text(mailbox)]
         if let stored, let modSeq = stored.highestModSeq {
             // RFC 7162 §3.2. The pair is (UIDVALIDITY, MODSEQ) and sending a
             // modseq from a *different* generation would ask the server to
             // resynchronise against UIDs that no longer mean anything, so the
             // stored uidValidity travels with it rather than the live one.
-            arguments.append(.list([
-                .atom("QRESYNC"),
-                .list([.atom(String(stored.uidValidity)), .atom(String(modSeq))]),
-            ]))
+            arguments.append(
+                .list([
+                    .atom("QRESYNC"),
+                    .list([.atom(String(stored.uidValidity)), .atom(String(modSeq))]),
+                ]))
         }
         let response = try await session.execute(
             IMAPCommand("SELECT", arguments, isExclusive: true))
         let lines = response.untagged
-        guard let uidValidity = Self.numericResponseCode("UIDVALIDITY", in: lines, or: response)
-            .flatMap({ UInt32(exactly: $0) }) else {
+        guard
+            let uidValidity = Self.numericResponseCode("UIDVALIDITY", in: lines, or: response)
+                .flatMap({ UInt32(exactly: $0) })
+        else {
             throw IMAPDeltaError.missingUIDValidity(mailbox)
         }
         return IMAPSelectedMailbox(
@@ -262,7 +276,7 @@ struct IMAPDeltaStrategy: Sendable {
 
     private static func existsCount(_ line: IMAPUntaggedResponse) -> UInt64? {
         guard case .number(let count)? = line.tokens.first,
-              line.tokens.dropFirst().first?.stringValue?.uppercased() == "EXISTS"
+            line.tokens.dropFirst().first?.stringValue?.uppercased() == "EXISTS"
         else { return nil }
         return count
     }
@@ -270,9 +284,11 @@ struct IMAPDeltaStrategy: Sendable {
     /// The first `[NAME n]` response code found on any untagged line, falling
     /// back to the tagged completion — servers legitimately publish these in
     /// either place.
-    private static func numericResponseCode(_ name: String,
-                                           in lines: [IMAPUntaggedResponse],
-                                           or completion: IMAPTaggedResponse) -> UInt64? {
+    private static func numericResponseCode(
+        _ name: String,
+        in lines: [IMAPUntaggedResponse],
+        or completion: IMAPTaggedResponse
+    ) -> UInt64? {
         for line in lines {
             if let value = numericResponseCode(name, in: line.tokens) { return value }
         }
@@ -281,9 +297,10 @@ struct IMAPDeltaStrategy: Sendable {
 
     static func numericResponseCode(_ name: String, in tokens: [IMAPToken]) -> UInt64? {
         guard let open = tokens.firstIndex(of: .bracketOpen),
-              open + 2 < tokens.count,
-              tokens[open + 1].stringValue?.uppercased() == name.uppercased(),
-              case .number(let value) = tokens[open + 2] else { return nil }
+            open + 2 < tokens.count,
+            tokens[open + 1].stringValue?.uppercased() == name.uppercased(),
+            case .number(let value) = tokens[open + 2]
+        else { return nil }
         return value
     }
 
@@ -301,12 +318,14 @@ struct IMAPDeltaStrategy: Sendable {
     /// never be reported, and since the cursor advances afterwards, never
     /// revisited: permanent, silent loss. The set difference is the only thing
     /// that sees it, so it runs whenever `QRESYNC` did not.
-    private func walkChangedSince(_ modSeq: UInt64,
-                                  resume: IMAPMailboxSyncState?,
-                                  selected: IMAPSelectedMailbox,
-                                  hasQresync: Bool,
-                                  changed: inout Set<String>,
-                                  removed: inout Set<String>) async throws {
+    private func walkChangedSince(
+        _ modSeq: UInt64,
+        resume: IMAPMailboxSyncState?,
+        selected: IMAPSelectedMailbox,
+        hasQresync: Bool,
+        changed: inout Set<String>,
+        removed: inout Set<String>
+    ) async throws {
         let firstArrival = resume?.nextArrivalUID ?? 1
         // The change scan asks for `(UID FLAGS MODSEQ)` and stops below the first
         // arrival. Both halves of that matter: a flag change is overwhelmingly the
@@ -316,11 +335,14 @@ struct IMAPDeltaStrategy: Sendable {
         // genuinely needs the envelope; a flag change does not, and the two are
         // now separate commands rather than one expensive compromise.
         if firstArrival > 1 {
-            let response = try await session.execute(IMAPCommand(
-                "UID FETCH",
-                [.atom("1:\(firstArrival - 1)"), Self.flagItems,
-                 .list([.atom("CHANGEDSINCE"), .atom(String(modSeq))])],
-                isExclusive: true))
+            let response = try await session.execute(
+                IMAPCommand(
+                    "UID FETCH",
+                    [
+                        .atom("1:\(firstArrival - 1)"), Self.flagItems,
+                        .list([.atom("CHANGEDSINCE"), .atom(String(modSeq))]),
+                    ],
+                    isExclusive: true))
             try collectRemovals(from: response.untagged, into: &removed)
             // Every line the server returned is, by construction, a change since
             // `modSeq`. No local comparison is applied: the server is
@@ -332,12 +354,16 @@ struct IMAPDeltaStrategy: Sendable {
             }
         }
 
-        try await walkArrivals(from: firstArrival, selected: selected,
-                               changed: &changed, removed: &removed)
+        try await walkArrivals(
+            from: firstArrival, selected: selected,
+            changed: &changed, removed: &removed)
 
         guard !hasQresync else { return }
-        guard let rescan = try await rescanFlags(below: firstArrival,
-                                                 removed: &removed) else { return }
+        guard
+            let rescan = try await rescanFlags(
+                below: firstArrival,
+                removed: &removed)
+        else { return }
         // Removals only. The flag comparison is deliberately NOT applied here:
         // `CHANGEDSINCE` already answered "what changed", authoritatively and
         // without a window bound, and re-deriving it from stored flags would
@@ -347,16 +373,22 @@ struct IMAPDeltaStrategy: Sendable {
 
     // MARK: - The fallback
 
-    private func walkWithoutCondstore(resume: IMAPMailboxSyncState?,
-                                      selected: IMAPSelectedMailbox,
-                                      changed: inout Set<String>,
-                                      removed: inout Set<String>) async throws {
+    private func walkWithoutCondstore(
+        resume: IMAPMailboxSyncState?,
+        selected: IMAPSelectedMailbox,
+        changed: inout Set<String>,
+        removed: inout Set<String>
+    ) async throws {
         let firstArrival = resume?.nextArrivalUID ?? 1
-        try await walkArrivals(from: firstArrival, selected: selected,
-                               changed: &changed, removed: &removed)
+        try await walkArrivals(
+            from: firstArrival, selected: selected,
+            changed: &changed, removed: &removed)
 
-        guard let rescan = try await rescanFlags(below: firstArrival,
-                                                 removed: &removed) else { return }
+        guard
+            let rescan = try await rescanFlags(
+                below: firstArrival,
+                removed: &removed)
+        else { return }
         for fetched in rescan.fetched {
             guard let uid = Self.uid(of: fetched) else { continue }
             // The comparison is what keeps the fallback from reporting the whole
@@ -376,16 +408,19 @@ struct IMAPDeltaStrategy: Sendable {
     /// The skip is what makes a flag-only pass cheap end to end: without it every
     /// tick would still ask for `ENVELOPE BODYSTRUCTURE BODY.PEEK[…]` over a range
     /// the server has already told us is empty.
-    private func walkArrivals(from firstArrival: UInt32,
-                              selected: IMAPSelectedMailbox,
-                              changed: inout Set<String>,
-                              removed: inout Set<String>) async throws {
+    private func walkArrivals(
+        from firstArrival: UInt32,
+        selected: IMAPSelectedMailbox,
+        changed: inout Set<String>,
+        removed: inout Set<String>
+    ) async throws {
         // A missing UIDNEXT is not evidence of an empty tail, so it fetches.
         if let uidNext = selected.uidNext, uidNext <= firstArrival { return }
-        let arrivals = try await session.execute(IMAPCommand(
-            "UID FETCH",
-            [.atom("\(firstArrival):*"), Self.fullItems],
-            isExclusive: true))
+        let arrivals = try await session.execute(
+            IMAPCommand(
+                "UID FETCH",
+                [.atom("\(firstArrival):*"), Self.fullItems],
+                isExclusive: true))
         try collectRemovals(from: arrivals.untagged, into: &removed)
         for fetched in try Self.fetches(in: arrivals.untagged) {
             guard let uid = Self.uid(of: fetched) else { continue }
@@ -403,26 +438,32 @@ struct IMAPDeltaStrategy: Sendable {
         let seen: Set<UInt32>
     }
 
-    private func rescanFlags(below firstArrival: UInt32,
-                             removed: inout Set<String>) async throws -> FlagRescan? {
+    private func rescanFlags(
+        below firstArrival: UInt32,
+        removed: inout Set<String>
+    ) async throws -> FlagRescan? {
         guard firstArrival > 1 else { return nil }
         let high = firstArrival - 1
         let low = high >= flagRescanWindow ? high - flagRescanWindow + 1 : 1
-        let response = try await session.execute(IMAPCommand(
-            "UID FETCH",
-            [.atom("\(low):\(high)"), .list([.atom("UID"), .atom("FLAGS")])],
-            isExclusive: true))
+        let response = try await session.execute(
+            IMAPCommand(
+                "UID FETCH",
+                [.atom("\(low):\(high)"), .list([.atom("UID"), .atom("FLAGS")])],
+                isExclusive: true))
         try collectRemovals(from: response.untagged, into: &removed)
         let fetched = try Self.fetches(in: response.untagged)
-        return FlagRescan(low: low, high: high, fetched: fetched,
-                          seen: Set(fetched.compactMap(Self.uid)))
+        return FlagRescan(
+            low: low, high: high, fetched: fetched,
+            seen: Set(fetched.compactMap(Self.uid)))
     }
 
     /// A UID we hold, inside the range the server just enumerated, that the server
     /// did not mention, is gone. This is the fallback's `VANISHED` — and, on a
     /// CONDSTORE-without-QRESYNC server, the fast path's only removal detection.
-    private func insertSetDifferenceRemovals(_ rescan: FlagRescan,
-                                             into removed: inout Set<String>) {
+    private func insertSetDifferenceRemovals(
+        _ rescan: FlagRescan,
+        into removed: inout Set<String>
+    ) {
         for uid in identity.knownUIDs()
         where uid >= rescan.low && uid <= rescan.high && !rescan.seen.contains(uid) {
             if let thread = identity.threadID(uid) { removed.insert(thread) }

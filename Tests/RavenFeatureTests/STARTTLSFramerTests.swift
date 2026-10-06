@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The framer that lets an explicit-TLS mail port work on a real `NWConnection`.
@@ -115,7 +116,8 @@ struct STARTTLSFramerTests {
         case .success:
             Issue.record("the upgrade reported success against a server with no TLS at all")
         case .failure(let error):
-            #expect(error as? MailTransportError
+            #expect(
+                error as? MailTransportError
                     == .tlsFailed("the TLS handshake did not complete in time"))
         case nil:
             return  // the deadline already recorded an Issue

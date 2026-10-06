@@ -88,8 +88,10 @@ struct IMAPLexer: Sendable {
     /// Sticky: once malformed, always malformed.
     private var failure: IMAPLexerError?
 
-    init(maxLiteralBytes: Int = IMAPLexer.defaultMaxLiteralBytes,
-         maxUnterminatedBytes: Int = IMAPLexer.defaultMaxUnterminatedBytes) {
+    init(
+        maxLiteralBytes: Int = IMAPLexer.defaultMaxLiteralBytes,
+        maxUnterminatedBytes: Int = IMAPLexer.defaultMaxUnterminatedBytes
+    ) {
         self.maxLiteralBytes = maxLiteralBytes
         self.maxUnterminatedBytes = maxUnterminatedBytes
     }
@@ -130,12 +132,16 @@ struct IMAPLexer: Sendable {
     /// Convenience for whole-buffer callers and for the reference side of the
     /// every-split-point test. Not used in production, where bytes always arrive
     /// in chunks.
-    static func tokenize(_ data: Data,
-                         maxLiteralBytes: Int = IMAPLexer.defaultMaxLiteralBytes,
-                         maxUnterminatedBytes: Int = IMAPLexer.defaultMaxUnterminatedBytes)
-        throws -> [IMAPToken] {
-        var lexer = IMAPLexer(maxLiteralBytes: maxLiteralBytes,
-                              maxUnterminatedBytes: maxUnterminatedBytes)
+    static func tokenize(
+        _ data: Data,
+        maxLiteralBytes: Int = IMAPLexer.defaultMaxLiteralBytes,
+        maxUnterminatedBytes: Int = IMAPLexer.defaultMaxUnterminatedBytes
+    )
+        throws -> [IMAPToken]
+    {
+        var lexer = IMAPLexer(
+            maxLiteralBytes: maxLiteralBytes,
+            maxUnterminatedBytes: maxUnterminatedBytes)
         lexer.append(data)
         return try lexer.drainTokens()
     }
@@ -200,9 +206,10 @@ struct IMAPLexer: Sendable {
         // (or with a leading zero, which is not a valid IMAP number) stays an
         // atom rather than being silently reinterpreted.
         if !text.isEmpty, text.count <= 19, text.allSatisfy(\.isASCII),
-           text.unicodeScalars.allSatisfy({ $0.value >= 48 && $0.value <= 57 }),
-           text.first != "0" || text == "0",
-           let value = UInt64(text) {
+            text.unicodeScalars.allSatisfy({ $0.value >= 48 && $0.value <= 57 }),
+            text.first != "0" || text == "0",
+            let value = UInt64(text)
+        {
             return .number(value)
         }
         return .atom(text)
@@ -235,7 +242,7 @@ struct IMAPLexer: Sendable {
             bytes.append(byte)
             index += 1
         }
-        return false // unterminated so far; the cap check catches a runaway
+        return false  // unterminated so far; the cap check catches a runaway
     }
 
     /// Parses `{n}CRLF` and arms literal mode. Returns false when the header is
@@ -266,7 +273,7 @@ struct IMAPLexer: Sendable {
                 throw IMAPLexerError.malformedLiteralHeader("literal length has too many digits")
             }
         }
-        guard index < buffer.count else { return false } // no `}` yet
+        guard index < buffer.count else { return false }  // no `}` yet
         guard !digits.isEmpty, let declared = UInt64(String(decoding: digits, as: UTF8.self)) else {
             throw IMAPLexerError.malformedLiteralHeader("empty or unparseable literal length")
         }
@@ -286,7 +293,7 @@ struct IMAPLexer: Sendable {
         literalPayload = []
         literalPayload.reserveCapacity(min(literalRemaining, 64 * 1024))
         var scratch: [IMAPToken] = []
-        _ = consumeLiteralBytes(into: &scratch) // completes a `{0}` immediately
+        _ = consumeLiteralBytes(into: &scratch)  // completes a `{0}` immediately
         tokens.append(contentsOf: scratch)
         return true
     }
@@ -344,7 +351,7 @@ private enum Byte {
     static func isDelimiter(_ byte: UInt8) -> Bool {
         switch byte {
         case space, tab, cr, lf, openParen, closeParen,
-             openBracket, closeBracket, openBrace, quote:
+            openBracket, closeBracket, openBrace, quote:
             return true
         default:
             return false

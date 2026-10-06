@@ -20,7 +20,9 @@ public enum LookalikeAddress {
         public let distance: Int
 
         public init(typed: MailAddress, suggestion: MailAddress, distance: Int) {
-            self.typed = typed; self.suggestion = suggestion; self.distance = distance
+            self.typed = typed
+            self.suggestion = suggestion
+            self.distance = distance
         }
     }
 
@@ -39,8 +41,10 @@ public enum LookalikeAddress {
     /// An address that is an EXACT (case-insensitive) match of any candidate —
     /// frequent or not — is never flagged: the account has demonstrably mailed
     /// it, so it is real regardless of what it resembles.
-    public static func matches(in addresses: [MailAddress],
-                               candidates: [RecipientSuggestions.Candidate]) -> [Match] {
+    public static func matches(
+        in addresses: [MailAddress],
+        candidates: [RecipientSuggestions.Candidate]
+    ) -> [Match] {
         let known = Set(candidates.map { $0.address.email.lowercased() })
         let frequent = candidates.filter { $0.frequency >= frequencyThreshold }
         guard !frequent.isEmpty else { return [] }
@@ -85,7 +89,8 @@ public enum LookalikeAddress {
     /// Levenshtein scores as two edits — enough to fall outside a tight
     /// threshold and miss the two most common real typos.
     static func editDistance(_ lhs: String, _ rhs: String) -> Int {
-        let a = Array(lhs), b = Array(rhs)
+        let a = Array(lhs)
+        let b = Array(rhs)
         if a.isEmpty { return b.count }
         if b.isEmpty { return a.count }
         // Three rolling rows: transposition needs the row before the previous.
@@ -96,9 +101,10 @@ public enum LookalikeAddress {
             current[0] = i
             for j in 1...b.count {
                 let cost = a[i - 1] == b[j - 1] ? 0 : 1
-                current[j] = min(previous[j] + 1,        // deletion
-                                 current[j - 1] + 1,     // insertion
-                                 previous[j - 1] + cost) // substitution
+                current[j] = min(
+                    previous[j] + 1,  // deletion
+                    current[j - 1] + 1,  // insertion
+                    previous[j - 1] + cost)  // substitution
                 if i > 1, j > 1, a[i - 1] == b[j - 2], a[i - 2] == b[j - 1] {
                     current[j] = min(current[j], twoBack[j - 2] + 1)
                 }

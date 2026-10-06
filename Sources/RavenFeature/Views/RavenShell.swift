@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The app's root view: the inbox+thread split at full height, with one
 /// floating compose affordance over it.
@@ -80,9 +80,11 @@ public struct RavenShell: View {
         HStack(spacing: AinkradSpacing.sm) {
             InboxSurface(model: runtime.model, runtime: runtime)
                 .frame(width: Self.inboxWidth)
-            ThreadSurface(model: runtime.model, runtime: runtime,
-                          onCompose: { composing = $0 })
-                .frame(maxWidth: .infinity)
+            ThreadSurface(
+                model: runtime.model, runtime: runtime,
+                onCompose: { composing = $0 }
+            )
+            .frame(maxWidth: .infinity)
         }
         .padding(AinkradSpacing.md)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -115,34 +117,38 @@ public struct RavenShell: View {
         // `RavenTranslucentModal` for why that modifier is local. It also
         // publishes `ravenModalPresented` so the inbox rail's focus ring stops
         // painting over this scrim.
-        .ravenTranslucentModal(isPresented: isComposing,
-                              contentWidth: Self.composeWidth(in: availableWidth),
-                              appearance: runtime.appearanceStore.appearance) {
+        .ravenTranslucentModal(
+            isPresented: isComposing,
+            contentWidth: Self.composeWidth(in: availableWidth),
+            appearance: runtime.appearanceStore.appearance
+        ) {
             if let composing {
-                ComposeSurface(runtime: runtime, context: composing,
-                              // Below the threshold the rail is dropped rather
-                              // than squeezed: at that width it would be taking
-                              // room from the fields the user is actually typing
-                              // into, and the drafts it lists are still reachable
-                              // by reopening the composer.
-                              showsDraftsRail:
-                                Self.composeWidth(in: availableWidth) >= Self.draftsRailMinWidth,
-                              onClose: { self.composing = nil })
-                    // `maxHeight`, not a fixed height: the modal is scoped to
-                    // this view's bounds, and a fixed 520 would overflow a
-                    // short window (Raven runs in the host's overlay
-                    // presentation as well as a full pane).
-                    .frame(maxHeight: Self.composeHeight)
-                    // Mounted HERE, not inside `ComposeSurface`, and that is
-                    // load-bearing: `.ainkradToastHost()` re-injects its own
-                    // `AinkradToastCenter` for its content, so the view that
-                    // mounts it reads the environment DEFAULT (a fresh instance
-                    // per read) and would call `show(_:)` on a center nothing
-                    // renders. Wrapping the composer makes it the content.
-                    //
-                    // Scoped to the composer's bounds so send feedback appears
-                    // over the message it is about, not in the window corner.
-                    .ainkradToastHost()
+                ComposeSurface(
+                    runtime: runtime, context: composing,
+                    // Below the threshold the rail is dropped rather
+                    // than squeezed: at that width it would be taking
+                    // room from the fields the user is actually typing
+                    // into, and the drafts it lists are still reachable
+                    // by reopening the composer.
+                    showsDraftsRail:
+                        Self.composeWidth(in: availableWidth) >= Self.draftsRailMinWidth,
+                    onClose: { self.composing = nil }
+                )
+                // `maxHeight`, not a fixed height: the modal is scoped to
+                // this view's bounds, and a fixed 520 would overflow a
+                // short window (Raven runs in the host's overlay
+                // presentation as well as a full pane).
+                .frame(maxHeight: Self.composeHeight)
+                // Mounted HERE, not inside `ComposeSurface`, and that is
+                // load-bearing: `.ainkradToastHost()` re-injects its own
+                // `AinkradToastCenter` for its content, so the view that
+                // mounts it reads the environment DEFAULT (a fresh instance
+                // per read) and would call `show(_:)` on a center nothing
+                // renders. Wrapping the composer makes it the content.
+                //
+                // Scoped to the composer's bounds so send feedback appears
+                // over the message it is about, not in the window corner.
+                .ainkradToastHost()
             }
         }
         // LAST in the chain, deliberately. `.ravenTranslucentModal`'s content is
@@ -212,18 +218,21 @@ private struct ComposeFloatingButton: View {
         // `size` — this adds only the accent-tinted riser that makes it read as
         // FLOATING above the panes rather than as one more toolbar glyph.
         // Nothing here re-implements the button's own chrome.
-        AinkradIconButton(systemName: "square.and.pencil", size: Self.size,
-                          tooltip: "Compose (new message)", action: action)
-            .background(
-                // Every colour from the theme, including the lift: a fixed
-                // black shadow vanishes on a light theme, so the riser is the
-                // theme's own accent at low opacity.
-                ChamferShape(cut: Self.size * 0.2)
-                    .fill(theme.accentPrimary.opacity(hovering ? 0.30 : 0.18))
-                    .shadow(color: theme.accentSecondary.opacity(hovering ? 0.45 : 0.28),
-                            radius: hovering ? 14 : 8, x: 0, y: 2)
-            )
-            .onHover { hovering = $0 }
-            .animation(reduceMotion ? nil : AinkradMotion.hover, value: hovering)
+        AinkradIconButton(
+            systemName: "square.and.pencil", size: Self.size,
+            tooltip: "Compose (new message)", action: action
+        )
+        .background(
+            // Every colour from the theme, including the lift: a fixed
+            // black shadow vanishes on a light theme, so the riser is the
+            // theme's own accent at low opacity.
+            ChamferShape(cut: Self.size * 0.2)
+                .fill(theme.accentPrimary.opacity(hovering ? 0.30 : 0.18))
+                .shadow(
+                    color: theme.accentSecondary.opacity(hovering ? 0.45 : 0.28),
+                    radius: hovering ? 14 : 8, x: 0, y: 2)
+        )
+        .onHover { hovering = $0 }
+        .animation(reduceMotion ? nil : AinkradMotion.hover, value: hovering)
     }
 }

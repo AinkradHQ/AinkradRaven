@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// Sharded JSON over the host's key→Data store. There is no database available
 /// to a plugin, so the shape of the keys IS the index: one document per thread,
@@ -88,8 +88,9 @@ import AinkradAppKit
     }
 
     public func upsertThread(_ thread: MailThread) throws {
-        try removeStaleIndexRow(threadID: thread.id, accountID: thread.accountID,
-                                newMonth: MonthShard.key(for: thread.lastMessageDate))
+        try removeStaleIndexRow(
+            threadID: thread.id, accountID: thread.accountID,
+            newMonth: MonthShard.key(for: thread.lastMessageDate))
         try save(thread, DocumentKeys.thread(thread.id))
         try updateIndex(accountID: thread.accountID, date: thread.lastMessageDate) { rows in
             let summary = thread.summary()
@@ -103,8 +104,10 @@ import AinkradAppKit
 
     /// A thread's month can change when a new message arrives. Without this the
     /// old shard keeps a stale summary and the inbox shows the thread twice.
-    private func removeStaleIndexRow(threadID: String, accountID: String,
-                                     newMonth: String) throws {
+    private func removeStaleIndexRow(
+        threadID: String, accountID: String,
+        newMonth: String
+    ) throws {
         guard let previous = try loadStrict(MailThread.self, DocumentKeys.thread(threadID))
         else { return }
         let previousMonth = MonthShard.key(for: previous.lastMessageDate)
@@ -131,18 +134,21 @@ import AinkradAppKit
             // Strict: a losing thread we cannot decode must not be deleted, and
             // its messages must not silently vanish from the merged thread.
             guard let document = try loadStrict(MailThread.self, DocumentKeys.thread(id))
-            else { continue }   // unknown id — a no-op for this id, not a failure
+            else { continue }  // unknown id — a no-op for this id, not a failure
             losing.append(document)
         }
-        let merged = MailThread(id: thread.id, accountID: thread.accountID,
-                                messages: Self.union(thread.messages, losing.flatMap(\.messages)))
+        let merged = MailThread(
+            id: thread.id, accountID: thread.accountID,
+            messages: Self.union(thread.messages, losing.flatMap(\.messages)))
         let survivingMonth = MonthShard.key(for: merged.lastMessageDate)
 
         // A thread can have occupied several month shards over its life, so the
         // sweep covers every month the account ever registered — not just the
         // one the losing thread's last message currently lands in.
-        var months = try loadStrict([String].self,
-                                    DocumentKeys.indexMonths(accountID: thread.accountID)) ?? []
+        var months =
+            try loadStrict(
+                [String].self,
+                DocumentKeys.indexMonths(accountID: thread.accountID)) ?? []
         if !months.contains(survivingMonth) { months.append(survivingMonth) }
         var pending: [String: [ThreadSummary]] = [:]
         for month in months {
@@ -165,8 +171,10 @@ import AinkradAppKit
     /// copy of a message wins — and ordered oldest-first, which is the order
     /// `MailThread.messages` documents and `lastMessageDate` depends on. The
     /// index tiebreak keeps the sort stable for messages sharing a timestamp.
-    private static func union(_ winning: [MailMessage],
-                             _ losing: [MailMessage]) -> [MailMessage] {
+    private static func union(
+        _ winning: [MailMessage],
+        _ losing: [MailMessage]
+    ) -> [MailMessage] {
         var seen = Set<String>()
         let deduped = (winning + losing).filter { seen.insert($0.id).inserted }
         return deduped.enumerated()
@@ -184,7 +192,8 @@ import AinkradAppKit
         // it would leave the summary row behind in whatever shard it actually lives in — the
         // same ghost-row bug fixed for upsertThread via removeStaleIndexRow. Only fall back
         // to the caller's date when there's no stored thread left to read (already gone).
-        let shardDate = try loadStrict(MailThread.self, DocumentKeys.thread(id))?
+        let shardDate =
+            try loadStrict(MailThread.self, DocumentKeys.thread(id))?
             .lastMessageDate ?? date
         documents.setData(nil, forKey: DocumentKeys.thread(id))
         try updateIndex(accountID: accountID, date: shardDate) { rows in
@@ -192,8 +201,10 @@ import AinkradAppKit
         }
     }
 
-    private func updateIndex(accountID: String, date: Date,
-                             _ mutate: (inout [ThreadSummary]) -> Void) throws {
+    private func updateIndex(
+        accountID: String, date: Date,
+        _ mutate: (inout [ThreadSummary]) -> Void
+    ) throws {
         let month = MonthShard.key(for: date)
         let key = DocumentKeys.index(accountID: accountID, month: month)
         var rows = try loadStrict([ThreadSummary].self, key) ?? []
@@ -275,8 +286,11 @@ import AinkradAppKit
         // the host store still cannot enumerate keys.
         let reasonMonthsKey = DocumentKeys.labelReasonMonths(accountID: accountID)
         for month in load([String].self, reasonMonthsKey) ?? [] {
-            documents.setData(nil, forKey: DocumentKeys.labelReasons(accountID: accountID,
-                                                                     month: month))
+            documents.setData(
+                nil,
+                forKey: DocumentKeys.labelReasons(
+                    accountID: accountID,
+                    month: month))
         }
         documents.setData(nil, forKey: reasonMonthsKey)
         try removeAccount(accountID)
@@ -306,8 +320,9 @@ import AinkradAppKit
         let now = Date()
         for month in months {
             let key = DocumentKeys.labelReasons(accountID: accountID, month: month)
-            let loaded = LabelReasonLog.load(documents.data(forKey: key),
-                                             decoder: decoder, now: now)
+            let loaded = LabelReasonLog.load(
+                documents.data(forKey: key),
+                decoder: decoder, now: now)
             unreadableLabelReasonCount += loaded.unreadableEntryCount
             if loaded.documentUnreadable { unreadableLabelReasonKey = key }
             found.append(contentsOf: loaded.entries)
@@ -324,9 +339,10 @@ import AinkradAppKit
     public func recordLabelReason(_ reason: LabelReason, accountID: String) throws {
         let month = MonthShard.key(for: reason.recordedAt)
         let key = DocumentKeys.labelReasons(accountID: accountID, month: month)
-        let updated = try LabelReasonLog.appended(reason, to: documents.data(forKey: key),
-                                                  key: key, encoder: encoder,
-                                                  decoder: decoder, now: reason.recordedAt)
+        let updated = try LabelReasonLog.appended(
+            reason, to: documents.data(forKey: key),
+            key: key, encoder: encoder,
+            decoder: decoder, now: reason.recordedAt)
         documents.setData(updated, forKey: key)
         try registerLabelReasonMonth(month, accountID: accountID)
     }
@@ -349,8 +365,10 @@ import AinkradAppKit
         load(IMAPMailboxDirectory.self, DocumentKeys.imapMailboxes(accountID: accountID))
     }
 
-    public func saveIMAPMailboxDirectory(_ directory: IMAPMailboxDirectory,
-                                         accountID: String) throws {
+    public func saveIMAPMailboxDirectory(
+        _ directory: IMAPMailboxDirectory,
+        accountID: String
+    ) throws {
         try save(directory, DocumentKeys.imapMailboxes(accountID: accountID))
     }
 

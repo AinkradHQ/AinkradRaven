@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// The user's surface setting, carried down the view tree.
 ///
@@ -25,16 +25,16 @@ private struct RavenAppearanceKey: EnvironmentKey {
     static let defaultValue = RavenAppearance.default
 }
 
-public extension EnvironmentValues {
-    var ravenAppearance: RavenAppearance {
+extension EnvironmentValues {
+    public var ravenAppearance: RavenAppearance {
         get { self[RavenAppearanceKey.self] }
         set { self[RavenAppearanceKey.self] = newValue }
     }
 }
 
-public extension View {
+extension View {
     /// Publishes the surface setting to every Raven surface below this point.
-    func ravenAppearanceEnvironment(_ appearance: RavenAppearance) -> some View {
+    public func ravenAppearanceEnvironment(_ appearance: RavenAppearance) -> some View {
         environment(\.ravenAppearance, appearance)
     }
 }
@@ -87,10 +87,14 @@ struct RavenSectionFrame<Content: View>: View {
         // larger of the two lifts — because a titled block is a deliberate
         // grouping and has to be findable, the same call `InboxRow` makes for
         // a hovered row.
-        .background(ChamferShape(cut: AinkradRadius.md)
-            .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false))))
-        .overlay(ChamferShape(cut: AinkradRadius.md)
-            .strokeBorder(theme.accentSecondary
-                .opacity(appearance.cardBorderOpacity(isRead: true)), lineWidth: 1))
+        .background(
+            ChamferShape(cut: AinkradRadius.md)
+                .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)))
+        )
+        .overlay(
+            ChamferShape(cut: AinkradRadius.md)
+                .strokeBorder(
+                    theme.accentSecondary
+                        .opacity(appearance.cardBorderOpacity(isRead: true)), lineWidth: 1))
     }
 }

@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Moved out of `GmailAuthTests` when PKCE was extracted into the

@@ -28,20 +28,24 @@ public enum CalendarRSVP {
     /// address is unknown — both refusals rather than sending a reply with no
     /// meaningful recipient or no `ATTENDEE` line identifying who is
     /// responding.
-    public static func makeReply(to invite: CalendarInvite, partstat: PartStat,
-                                 attendeeEmail: String, attendeeName: String?) -> OutgoingMessage? {
+    public static func makeReply(
+        to invite: CalendarInvite, partstat: PartStat,
+        attendeeEmail: String, attendeeName: String?
+    ) -> OutgoingMessage? {
         guard let organizer = invite.organizer else { return nil }
-        let ics = buildICS(invite: invite, partstat: partstat,
-                           attendeeEmail: attendeeEmail, attendeeName: attendeeName)
+        let ics = buildICS(
+            invite: invite, partstat: partstat,
+            attendeeEmail: attendeeEmail, attendeeName: attendeeName)
         let subjectPrefix: String
         switch partstat {
         case .accepted: subjectPrefix = "Accepted: "
         case .tentative: subjectPrefix = "Tentative: "
         case .declined: subjectPrefix = "Declined: "
         }
-        let bodyText = "\(attendeeName ?? attendeeEmail) has \(partstat.humanLabel) this invitation.\n\n" +
-            "This reply does not add the event to any Calendar on this device — it only tells " +
-            "\(organizer.displayLabel) how to record your response."
+        let bodyText =
+            "\(attendeeName ?? attendeeEmail) has \(partstat.humanLabel) this invitation.\n\n"
+            + "This reply does not add the event to any Calendar on this device — it only tells "
+            + "\(organizer.displayLabel) how to record your response."
         return OutgoingMessage(
             to: [MailAddress(email: organizer.email, name: organizer.name)],
             subject: subjectPrefix + invite.summary,
@@ -54,12 +58,15 @@ public enum CalendarRSVP {
     /// original event's `UID`/`DTSTART`/`ORGANIZER`/`SUMMARY` echoed back —
     /// the fields a receiving calendar needs to match this reply to the
     /// invite it sent and update that one attendee's status.
-    private static func buildICS(invite: CalendarInvite, partstat: PartStat,
-                                 attendeeEmail: String, attendeeName: String?) -> String {
-        let organizerLine = invite.organizer.map { organizer -> String in
-            let cn = organizer.name.map { ";CN=\(escapeText($0))" } ?? ""
-            return "ORGANIZER\(cn):mailto:\(organizer.email)"
-        } ?? ""
+    private static func buildICS(
+        invite: CalendarInvite, partstat: PartStat,
+        attendeeEmail: String, attendeeName: String?
+    ) -> String {
+        let organizerLine =
+            invite.organizer.map { organizer -> String in
+                let cn = organizer.name.map { ";CN=\(escapeText($0))" } ?? ""
+                return "ORGANIZER\(cn):mailto:\(organizer.email)"
+            } ?? ""
         let attendeeCN = attendeeName.map { ";CN=\(escapeText($0))" } ?? ""
         let dtstampFormatter = DateFormatter()
         dtstampFormatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"

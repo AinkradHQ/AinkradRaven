@@ -82,8 +82,9 @@ struct RFC822Message {
         collectBody(bodyData, contentType: contentType, headers: headers, plain: &plain, html: &html)
 
         let text = plain ?? html.map(BodySanitizer.plainText(fromHTML:)) ?? ""
-        return RFC822Message(headers: headers.map { (name: $0.0, value: RFC2047.decode($0.1)) },
-                             plainText: text, html: html)
+        return RFC822Message(
+            headers: headers.map { (name: $0.0, value: RFC2047.decode($0.1)) },
+            plainText: text, html: html)
     }
 
     // MARK: - Header block
@@ -115,7 +116,8 @@ struct RFC822Message {
         }
         let headerData = Data(bytes[0..<split.headerEnd])
         let bodyData = Data(bytes[split.bodyStart..<bytes.count])
-        let headerText = String(data: headerData, encoding: .utf8)
+        let headerText =
+            String(data: headerData, encoding: .utf8)
             ?? String(data: headerData, encoding: .isoLatin1) ?? ""
         return (headerText, bodyData)
     }
@@ -137,7 +139,7 @@ struct RFC822Message {
             .map { $0.hasSuffix("\r") ? String($0.dropLast()) : $0 }
         var lines: [String] = []
         for line in rawLines {
-            if let first = line.first, (first == " " || first == "\t"), !lines.isEmpty {
+            if let first = line.first, first == " " || first == "\t", !lines.isEmpty {
                 lines[lines.count - 1] += " " + line.trimmingCharacters(in: .whitespaces)
             } else if !line.isEmpty {
                 lines.append(line)
@@ -160,9 +162,11 @@ struct RFC822Message {
 
     // MARK: - Body / MIME parts
 
-    private static func collectBody(_ data: Data, contentType: String,
-                                     headers: [(String, String)],
-                                     plain: inout String?, html: inout String?) {
+    private static func collectBody(
+        _ data: Data, contentType: String,
+        headers: [(String, String)],
+        plain: inout String?, html: inout String?
+    ) {
         let lower = contentType.lowercased()
         if lower.hasPrefix("multipart/"), let boundary = parameter(contentType, "boundary") {
             for part in splitParts(data, boundary: boundary) {
@@ -171,8 +175,9 @@ struct RFC822Message {
                 let partType = headerValue(partHeaders, "Content-Type") ?? "text/plain"
                 let decodedBody = decodeTransferEncoding(
                     partBody, encoding: headerValue(partHeaders, "Content-Transfer-Encoding"))
-                collectBody(decodedBody, contentType: partType, headers: partHeaders,
-                           plain: &plain, html: &html)
+                collectBody(
+                    decodedBody, contentType: partType, headers: partHeaders,
+                    plain: &plain, html: &html)
             }
             return
         }
@@ -214,7 +219,10 @@ struct RFC822Message {
                     // Soft line break: skip the CRLF/LF it introduces.
                     index = text.index(after: next)
                     if index < text.endIndex, text[text.index(before: index)] == "\r",
-                       text[index] == "\n" { index = text.index(after: index) }
+                        text[index] == "\n"
+                    {
+                        index = text.index(after: index)
+                    }
                     continue
                 }
                 let hexEnd = text.index(index, offsetBy: 3, limitedBy: text.endIndex) ?? text.endIndex
@@ -246,13 +254,11 @@ struct RFC822Message {
         guard segments.count > 1 else { return [] }
         var parts: [Data] = []
         for segment in segments.dropFirst() {
-            if segment.hasPrefix("--") { continue } // closing delimiter
+            if segment.hasPrefix("--") { continue }  // closing delimiter
             var body = segment
-            if body.hasPrefix("\r\n") { body.removeFirst(2) }
-            else if body.hasPrefix("\n") { body.removeFirst(1) }
+            if body.hasPrefix("\r\n") { body.removeFirst(2) } else if body.hasPrefix("\n") { body.removeFirst(1) }
             // Trim the trailing CRLF the NEXT boundary line introduced.
-            if body.hasSuffix("\r\n") { body.removeLast(2) }
-            else if body.hasSuffix("\n") { body.removeLast(1) }
+            if body.hasSuffix("\r\n") { body.removeLast(2) } else if body.hasSuffix("\n") { body.removeLast(1) }
             parts.append(Data(body.utf8))
         }
         return parts

@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 // Shared fixtures and the connected-session factory for the `IMAPAuth*` suites.
@@ -68,16 +69,16 @@ func boundedOutcome<T: Sendable>(
 ) async -> Result<T, any Error>? {
     let box = BoundedOutcomeBox<T>()
     let task = Task {
-        do { await box.set(.success(try await body())) }
-        catch { await box.set(.failure(error)) }
+        do { await box.set(.success(try await body())) } catch { await box.set(.failure(error)) }
     }
     for _ in 0..<200 {
         if let value = await box.value { return value }
         try? await Task.sleep(for: .milliseconds(10))
     }
     task.cancel()
-    Issue.record("an operation never resolved within 2s — the leaked-continuation shape",
-                 sourceLocation: sourceLocation)
+    Issue.record(
+        "an operation never resolved within 2s — the leaked-continuation shape",
+        sourceLocation: sourceLocation)
     return nil
 }
 
@@ -90,8 +91,9 @@ func expectAuthFailure<T: Sendable>(
     guard let outcome = await boundedOutcome(sourceLocation: sourceLocation, body) else { return }
     switch outcome {
     case .success(let value):
-        Issue.record("expected \(expected) but it succeeded: \(value)",
-                     sourceLocation: sourceLocation)
+        Issue.record(
+            "expected \(expected) but it succeeded: \(value)",
+            sourceLocation: sourceLocation)
     case .failure(let error):
         #expect(error as? IMAPAuthError == expected, sourceLocation: sourceLocation)
     }
@@ -106,8 +108,9 @@ func authFailure<T: Sendable>(
     guard let outcome = await boundedOutcome(sourceLocation: sourceLocation, body) else { return nil }
     switch outcome {
     case .success(let value):
-        Issue.record("expected a failure but it succeeded: \(value)",
-                     sourceLocation: sourceLocation)
+        Issue.record(
+            "expected a failure but it succeeded: \(value)",
+            sourceLocation: sourceLocation)
         return nil
     case .failure(let error):
         return error

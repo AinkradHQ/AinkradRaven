@@ -103,8 +103,10 @@ enum IMAPFetchParser {
         return try parseItems(&reader, sequenceNumber: sequenceNumber)
     }
 
-    private static func parseItems(_ reader: inout IMAPValueReader,
-                                   sequenceNumber: UInt64) throws -> IMAPFetchResponse {
+    private static func parseItems(
+        _ reader: inout IMAPValueReader,
+        sequenceNumber: UInt64
+    ) throws -> IMAPFetchResponse {
         var uid: UInt64?
         var flags: Set<MailFlag> = []
         var arrivalDate: Date?
@@ -116,7 +118,10 @@ enum IMAPFetchParser {
 
         while true {
             guard let token = reader.peek() else { throw IMAPFetchParseError.truncated }
-            if token == .listClose { reader.advance(); break }
+            if token == .listClose {
+                reader.advance()
+                break
+            }
             guard let name = token.stringValue?.uppercased() else {
                 throw IMAPFetchParseError.unexpectedToken(token.description)
             }
@@ -165,7 +170,8 @@ enum IMAPFetchParser {
     /// The key is the specifier's first token uppercased — `TEXT`,
     /// `HEADER.FIELDS`, `1`, `2.1`, or `""` for the whole-message `BODY[]`.
     private static func parseSection(
-        _ reader: inout IMAPValueReader) throws -> (String, Data?) {
+        _ reader: inout IMAPValueReader
+    ) throws -> (String, Data?) {
         guard reader.consume(.bracketOpen) else { throw IMAPFetchParseError.truncated }
         var key: String?
         var depth = 0
@@ -223,10 +229,12 @@ enum IMAPFetchParser {
     private static func address(_ value: IMAPValue) -> MailAddress? {
         guard let items = value.listValue, items.count >= 4 else { return nil }
         guard let mailbox = items[2].stringValue, let host = items[3].stringValue,
-              !mailbox.isEmpty, !host.isEmpty else { return nil }
+            !mailbox.isEmpty, !host.isEmpty
+        else { return nil }
         let name = items[0].stringValue.map(RFC2047.decode)
-        return MailAddress(email: "\(mailbox)@\(host)",
-                           name: (name?.isEmpty ?? true) ? nil : name)
+        return MailAddress(
+            email: "\(mailbox)@\(host)",
+            name: (name?.isEmpty ?? true) ? nil : name)
     }
 
     private static func stripAngleBrackets(_ raw: String) -> String {
@@ -319,9 +327,11 @@ enum IMAPFetchParser {
     /// write them all, and show an empty list. The default is gone rather than
     /// corrected: a caller that genuinely has no mailbox to name should have to say
     /// so, because silently passing none is the bug.
-    static func message(_ response: IMAPFetchResponse,
-                        id: String, threadID: String,
-                        labelIDs: [String]) -> MailMessage {
+    static func message(
+        _ response: IMAPFetchResponse,
+        id: String, threadID: String,
+        labelIDs: [String]
+    ) -> MailMessage {
         let envelope = response.envelope
         let attachments = response.bodyStructure?.attachments ?? []
         // Matches `GmailMapping.message`'s fallback so an empty-subject message
@@ -381,8 +391,10 @@ enum IMAPFetchParser {
     /// A single-part message is normally fetched as `BODY[TEXT]` (the part number
     /// `1` never appears in that response), so `allowsWholeBodyFallback` lets
     /// part 1 read those keys. It must be false for a multipart — see `body`.
-    private static func text(of part: IMAPBodyPart, in response: IMAPFetchResponse,
-                             allowsWholeBodyFallback: Bool) -> String? {
+    private static func text(
+        of part: IMAPBodyPart, in response: IMAPFetchResponse,
+        allowsWholeBodyFallback: Bool
+    ) -> String? {
         var payload = part.partNumber.flatMap { response.sections[$0] }
         if payload == nil, allowsWholeBodyFallback, part.partNumber == "1" {
             payload = response.sections["TEXT"] ?? response.sections[""]

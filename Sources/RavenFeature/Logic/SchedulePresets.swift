@@ -16,7 +16,9 @@ public enum SchedulePresets {
         public let date: Date
 
         public init(id: String, title: String, date: Date) {
-            self.id = id; self.title = title; self.date = date
+            self.id = id
+            self.title = title
+            self.date = date
         }
     }
 
@@ -33,14 +35,18 @@ public enum SchedulePresets {
     /// "tonight" means at 11pm.
     public static func presets(now: Date, calendar: Calendar = .current) -> [Preset] {
         var out: [Preset] = [
-            Preset(id: "hour", title: "In an hour", date: now.addingTimeInterval(3600)),
+            Preset(id: "hour", title: "In an hour", date: now.addingTimeInterval(3600))
         ]
-        if let tonight = nextOccurrence(ofHour: eveningHour, after: now, calendar: calendar,
-                                       sameDayOnly: true) {
+        if let tonight = nextOccurrence(
+            ofHour: eveningHour, after: now, calendar: calendar,
+            sameDayOnly: true)
+        {
             out.append(Preset(id: "tonight", title: "Tonight", date: tonight))
         }
-        if let morning = nextOccurrence(ofHour: morningHour, after: now, calendar: calendar,
-                                       sameDayOnly: false, minimumDayOffset: 1) {
+        if let morning = nextOccurrence(
+            ofHour: morningHour, after: now, calendar: calendar,
+            sameDayOnly: false, minimumDayOffset: 1)
+        {
             out.append(Preset(id: "tomorrow", title: "Tomorrow morning", date: morning))
         }
         if let monday = nextWeekday(2, hour: morningHour, after: now, calendar: calendar) {
@@ -54,16 +60,21 @@ public enum SchedulePresets {
     /// passed, otherwise not offered at all) from a preset that is allowed to
     /// roll forward; `minimumDayOffset` forces "tomorrow" to actually be
     /// tomorrow even when called at 3am.
-    static func nextOccurrence(ofHour hour: Int, after: Date, calendar: Calendar,
-                               sameDayOnly: Bool, minimumDayOffset: Int = 0) -> Date? {
+    static func nextOccurrence(
+        ofHour hour: Int, after: Date, calendar: Calendar,
+        sameDayOnly: Bool, minimumDayOffset: Int = 0
+    ) -> Date? {
         var components = calendar.dateComponents([.year, .month, .day], from: after)
         components.hour = hour
         components.minute = 0
         components.second = 0
         guard var candidate = calendar.date(from: components) else { return nil }
         if minimumDayOffset > 0 {
-            guard let shifted = calendar.date(byAdding: .day, value: minimumDayOffset,
-                                              to: candidate) else { return nil }
+            guard
+                let shifted = calendar.date(
+                    byAdding: .day, value: minimumDayOffset,
+                    to: candidate)
+            else { return nil }
             candidate = shifted
         }
         if candidate <= after {
@@ -76,14 +87,17 @@ public enum SchedulePresets {
     /// `hour:00` on the next `weekday` (1 = Sunday, per `Calendar`) strictly
     /// after `after`. Called on a Monday morning before 9 this returns TODAY,
     /// which is right — "Monday 9am" means the next one, and that is it.
-    static func nextWeekday(_ weekday: Int, hour: Int, after: Date,
-                            calendar: Calendar) -> Date? {
+    static func nextWeekday(
+        _ weekday: Int, hour: Int, after: Date,
+        calendar: Calendar
+    ) -> Date? {
         var components = DateComponents()
         components.weekday = weekday
         components.hour = hour
         components.minute = 0
         components.second = 0
-        return calendar.nextDate(after: after, matching: components,
-                                 matchingPolicy: .nextTime, direction: .forward)
+        return calendar.nextDate(
+            after: after, matching: components,
+            matchingPolicy: .nextTime, direction: .forward)
     }
 }

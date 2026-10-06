@@ -60,9 +60,11 @@ actor SMTPSession {
     /// that no credential-bearing line is recorded verbatim here.
     private(set) var issuedVerbs: [String] = []
 
-    init(transport: any MailTransport,
-         security: MailTransportTLS,
-         clientDomain: String = "[127.0.0.1]") {
+    init(
+        transport: any MailTransport,
+        security: MailTransportTLS,
+        clientDomain: String = "[127.0.0.1]"
+    ) {
         self.transport = transport
         self.security = security
         self.clientDomain = clientDomain
@@ -138,8 +140,9 @@ actor SMTPSession {
                 throw SMTPSessionError.mechanismUnavailable("XOAUTH2")
             }
             let payload = SASLMechanism.base64(
-                SASLMechanism.xoauth2InitialResponse(username: username,
-                                                     accessToken: accessToken))
+                SASLMechanism.xoauth2InitialResponse(
+                    username: username,
+                    accessToken: accessToken))
             let reply = try await command("AUTH XOAUTH2 \(payload)", redactedAs: "AUTH XOAUTH2")
             if reply.code == 334 {
                 // XOAUTH2 reports failure as a *challenge* carrying base64 JSON,
@@ -148,8 +151,9 @@ actor SMTPSession {
                 // send its real refusal. Same shape as `IMAPAuth`'s
                 // `answersFailureChallenge`.
                 let refusal = try await command("", redactedAs: "<SASL ack>")
-                throw SMTPSessionError.authenticationRefused(code: refusal.code,
-                                                             text: refusal.text)
+                throw SMTPSessionError.authenticationRefused(
+                    code: refusal.code,
+                    text: refusal.text)
             }
             try expectAuthenticated(reply)
         case .appPassword(let username, let password):
@@ -171,12 +175,20 @@ actor SMTPSession {
     /// it is tried only when `PLAIN` is absent.
     private func authenticateLogin(username: String, password: String) async throws {
         let start = try await command("AUTH LOGIN")
-        guard start.code == 334 else { try expectAuthenticated(start); return }
-        let user = try await command(SASLMechanism.base64(Data(username.utf8)),
-                                    redactedAs: "<AUTH LOGIN username>")
-        guard user.code == 334 else { try expectAuthenticated(user); return }
-        let reply = try await command(SASLMechanism.base64(Data(password.utf8)),
-                                     redactedAs: "<AUTH LOGIN password>")
+        guard start.code == 334 else {
+            try expectAuthenticated(start)
+            return
+        }
+        let user = try await command(
+            SASLMechanism.base64(Data(username.utf8)),
+            redactedAs: "<AUTH LOGIN username>")
+        guard user.code == 334 else {
+            try expectAuthenticated(user)
+            return
+        }
+        let reply = try await command(
+            SASLMechanism.base64(Data(password.utf8)),
+            redactedAs: "<AUTH LOGIN password>")
         try expectAuthenticated(reply)
     }
 
@@ -280,7 +292,8 @@ actor SMTPSession {
     ///   in-memory copy of a SASL payload for anything else to find.
     @discardableResult
     private func command(_ line: String, redactedAs redacted: String? = nil) async throws
-        -> SMTPReply {
+        -> SMTPReply
+    {
         issuedVerbs.append(redacted ?? line)
         try await transport.send(Data((line + "\r\n").utf8))
         return try await readReply()

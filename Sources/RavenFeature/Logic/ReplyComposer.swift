@@ -18,8 +18,10 @@ public enum ReplyComposer {
     ///   - lastMessageBody: that message's plain-text body, already loaded.
     ///   - ownAddress: the signed-in account's own address, excluded from a
     ///     reply-all so the account never mails itself.
-    public static func compose(mode: Mode, thread: MailThread, lastMessage: MailMessage,
-                               lastMessageBody: String, ownAddress: String?) -> OutgoingMessage {
+    public static func compose(
+        mode: Mode, thread: MailThread, lastMessage: MailMessage,
+        lastMessageBody: String, ownAddress: String?
+    ) -> OutgoingMessage {
         OutgoingMessage(
             to: recipients(mode: mode, lastMessage: lastMessage, ownAddress: ownAddress),
             subject: prefixedSubject(thread.subject, isForward: mode == .forward),
@@ -33,8 +35,10 @@ public enum ReplyComposer {
     /// EXCLUDED — replying-all must never queue a message addressed to the
     /// account's own mailbox. Forward: nobody; the user fills in a fresh
     /// recipient.
-    static func recipients(mode: Mode, lastMessage: MailMessage,
-                           ownAddress: String?) -> [MailAddress] {
+    static func recipients(
+        mode: Mode, lastMessage: MailMessage,
+        ownAddress: String?
+    ) -> [MailAddress] {
         switch mode {
         case .forward:
             return []
@@ -76,9 +80,9 @@ public enum ReplyComposer {
     /// pattern, so a reply composed here round-trips back through that same
     /// trimmer when the recipient's own client renders it.
     static func quoteBody(mode: Mode, message: MailMessage, bodyText: String) -> String {
-        let attribution = "On \(attributionDate(message.date)), " +
-            "\(message.from?.displayLabel ?? "someone") wrote:"
-        let quoted = bodyText
+        let attribution = "On \(attributionDate(message.date)), " + "\(message.from?.displayLabel ?? "someone") wrote:"
+        let quoted =
+            bodyText
             .components(separatedBy: "\n")
             .map { "> \($0)" }
             .joined(separator: "\n")

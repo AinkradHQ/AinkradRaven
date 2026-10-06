@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// The document-backed preferences and the one place saved rules get applied.
 ///
@@ -52,7 +52,8 @@ extension RavenRuntime {
     /// change here.
     public func updateSignature(_ signature: String, accountID: String) {
         guard var account = store.accounts().first(where: { $0.id == accountID }),
-              account.signature != signature else { return }
+            account.signature != signature
+        else { return }
         account.signature = signature
         do {
             try store.saveAccount(account)
@@ -71,7 +72,7 @@ extension RavenRuntime {
     public var holdWindow: TimeInterval {
         get {
             guard let data = host.documents.data(forKey: Self.holdWindowKey),
-                  let seconds = try? JSONDecoder().decode(Double.self, from: data)
+                let seconds = try? JSONDecoder().decode(Double.self, from: data)
             else { return SendAttempt.defaultHoldWindow }
             return seconds
         }

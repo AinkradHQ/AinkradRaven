@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 
 // Lifted verbatim (bodies unchanged) out of the provider-specific auth type
 // these helpers used to live on, which also knew one provider's endpoints — see

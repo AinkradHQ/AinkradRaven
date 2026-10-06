@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import RavenFeature
 
 @Suite("Body sanitizer")
@@ -36,8 +37,9 @@ struct BodySanitizerTests {
 
     @Test("script with attribute or unusual casing/whitespace is stripped")
     func stripsScriptWithAttributesAndCasing() {
-        let html = "<p>A</p><SCRIPT >alert('x')</SCRIPT><p>B</p>" +
-            "<script type=\"text/javascript\">alert('y')</script><p>C</p>"
+        let html =
+            "<p>A</p><SCRIPT >alert('x')</SCRIPT><p>B</p>"
+            + "<script type=\"text/javascript\">alert('y')</script><p>C</p>"
         let text = BodySanitizer.plainText(fromHTML: html)
         #expect(text.contains("alert") == false)
         #expect(text.contains("A"))
@@ -118,20 +120,22 @@ struct BodySanitizerTests {
 
     @Test("unquoted image src attributes are detected across quoting styles")
     func unquotedAndQuotedImageSrcAreAllDetected() {
-        let html = "<img src=http://a.example/x.gif>" +
-            "<img src=\"https://b.example/y.gif\">" +
-            "<img src='https://c.example/z.gif'>"
+        let html =
+            "<img src=http://a.example/x.gif>" + "<img src=\"https://b.example/y.gif\">"
+            + "<img src='https://c.example/z.gif'>"
         let urls = BodySanitizer.remoteImageURLs(inHTML: html)
-        #expect(urls == [
-            "http://a.example/x.gif",
-            "https://b.example/y.gif",
-            "https://c.example/z.gif",
-        ])
+        #expect(
+            urls == [
+                "http://a.example/x.gif",
+                "https://b.example/y.gif",
+                "https://c.example/z.gif",
+            ])
     }
 
     @Test("deep nesting and large input stay cheap after the decode/strip loop")
     func costProfileStaysBounded() {
-        let deepNest = String(repeating: "<scr", count: 2000)
+        let deepNest =
+            String(repeating: "<scr", count: 2000)
             + "<script>" + String(repeating: "ipt>", count: 2000) + "alert(1)</script>"
         let start1 = Date()
         _ = BodySanitizer.plainText(fromHTML: deepNest)

@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Split out of `GraphMutationTests.swift`, which crossed the branch's 450-line
@@ -91,7 +92,8 @@ struct GraphVocabularyTests {
     @Test("an opaque folder id and an unknown well-known name both read as user labels")
     func unknownStringsSurviveAsUserLabels() {
         #expect(vocabulary.flag(for: "folder-b-id") == .user("folder-b-id"))
-        #expect(vocabulary.flag(for: "\u{1}folder:conversationhistory")
+        #expect(
+            vocabulary.flag(for: "\u{1}folder:conversationhistory")
                 == .user("\u{1}folder:conversationhistory"))
         #expect(vocabulary.flag(for: "\u{1}folder:") == .user("\u{1}folder:"))
         // A server-defined flag shape this build has never heard of routes to a user
@@ -115,8 +117,9 @@ struct GraphVocabularyTests {
         #expect(cases.count == 5)
         for (label, isFlag, folder, isCategory) in cases {
             #expect(GraphVocabulary.isSystemFlag(label) == isFlag, "isSystemFlag(\(label))")
-            #expect(GraphVocabulary.wellKnownFolder(in: label) == folder,
-                    "wellKnownFolder(\(label))")
+            #expect(
+                GraphVocabulary.wellKnownFolder(in: label) == folder,
+                "wellKnownFolder(\(label))")
             #expect(GraphVocabulary.isCategory(label) == isCategory, "isCategory(\(label))")
         }
     }
@@ -143,9 +146,10 @@ struct GraphVocabularyTests {
         // Rendered through a whole mutation, which is where the drop actually
         // happens (`LabelVocabulary.render` compactMaps the nils away): the crafted
         // label is gone and the ordinary one beside it is not.
-        let rendered = vocabulary.render(FlagMutation(
-            threadIDs: ["AAQkCONV-1"],
-            add: [.user(marker + "deleteditems"), .user("Category A")]))
+        let rendered = vocabulary.render(
+            FlagMutation(
+                threadIDs: ["AAQkCONV-1"],
+                add: [.user(marker + "deleteditems"), .user("Category A")]))
         #expect(rendered.add == ["Category A"])
         #expect(rendered.remove.isEmpty)
     }
@@ -155,8 +159,10 @@ struct GraphVocabularyTests {
     /// above, because the derivation is the part a reader would get wrong.
     @Test("a move destination prefers the added folder and derives archive from a removal")
     func moveDestinationRules() {
-        #expect(GraphProvider.moveDestination(added: ["deleteditems"],
-                                              removed: ["inbox"]) == "deleteditems")
+        #expect(
+            GraphProvider.moveDestination(
+                added: ["deleteditems"],
+                removed: ["inbox"]) == "deleteditems")
         #expect(GraphProvider.moveDestination(added: [], removed: ["inbox"]) == "archive")
         #expect(GraphProvider.moveDestination(added: [], removed: []) == nil)
     }

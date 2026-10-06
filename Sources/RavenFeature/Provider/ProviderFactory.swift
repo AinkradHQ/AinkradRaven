@@ -1,5 +1,5 @@
-import Foundation
 import AinkradAppKit
+import Foundation
 
 /// The one place a `MailProvider` is constructed.
 ///
@@ -93,14 +93,16 @@ import AinkradAppKit
     /// compiled into the binary.
     private static func makeGmailAuth(host: HostServices) -> GmailAuth? {
         if let clientID = BakedOAuthCredentials.clientID,
-           let clientSecret = BakedOAuthCredentials.clientSecret {
+            let clientSecret = BakedOAuthCredentials.clientSecret
+        {
             return GmailAuth(secrets: host.secrets, clientID: clientID, clientSecret: clientSecret)
         }
         // Fallback for a developer build with no Config/oauth-client.json: the
         // manually-entered credentials saved via `saveGmailCredentials`.
         guard let idData = host.documents.data(forKey: clientIDKey),
-              let clientID = String(data: idData, encoding: .utf8),
-              let clientSecret = host.secrets.secret(forKey: clientSecretKey) else { return nil }
+            let clientID = String(data: idData, encoding: .utf8),
+            let clientSecret = host.secrets.secret(forKey: clientSecretKey)
+        else { return nil }
         return GmailAuth(secrets: host.secrets, clientID: clientID, clientSecret: clientSecret)
     }
 
@@ -116,19 +118,22 @@ import AinkradAppKit
         // The secret, when there is one, is passed straight through and never
         // written to `host.documents` — same rule as Gmail's.
         if let clientID = BakedOAuthCredentials.azureClientID {
-            return GraphAuth(secrets: host.secrets, clientID: clientID,
-                             clientSecret: BakedOAuthCredentials.azureClientSecret,
-                             tenantID: BakedOAuthCredentials.azureTenantID
-                                ?? GraphAuth.commonTenant)
+            return GraphAuth(
+                secrets: host.secrets, clientID: clientID,
+                clientSecret: BakedOAuthCredentials.azureClientSecret,
+                tenantID: BakedOAuthCredentials.azureTenantID
+                    ?? GraphAuth.commonTenant)
         }
         guard let idData = host.documents.data(forKey: azureClientIDKey),
-              let clientID = String(data: idData, encoding: .utf8),
-              !clientID.isEmpty else { return nil }
+            let clientID = String(data: idData, encoding: .utf8),
+            !clientID.isEmpty
+        else { return nil }
         let tenantID = host.documents.data(forKey: azureTenantIDKey)
             .flatMap { String(data: $0, encoding: .utf8) }
-        return GraphAuth(secrets: host.secrets, clientID: clientID,
-                         clientSecret: host.secrets.secret(forKey: azureClientSecretKey),
-                         tenantID: (tenantID?.isEmpty == false) ? tenantID! : GraphAuth.commonTenant)
+        return GraphAuth(
+            secrets: host.secrets, clientID: clientID,
+            clientSecret: host.secrets.secret(forKey: azureClientSecretKey),
+            tenantID: (tenantID?.isEmpty == false) ? tenantID! : GraphAuth.commonTenant)
     }
 
     // MARK: Credentials
@@ -160,8 +165,9 @@ import AinkradAppKit
         guard let data = clientID.data(using: .utf8) else { return }
         host.documents.setData(data, forKey: Self.clientIDKey)
         host.secrets.setSecret(clientSecret, forKey: Self.clientSecretKey)
-        gmailAuth = GmailAuth(secrets: host.secrets, clientID: clientID,
-                              clientSecret: clientSecret)
+        gmailAuth = GmailAuth(
+            secrets: host.secrets, clientID: clientID,
+            clientSecret: clientSecret)
     }
 
     // MARK: Authorization
@@ -186,9 +192,12 @@ import AinkradAppKit
     /// `.notAuthenticated` here rather than pretending it could connect —
     /// callers test `hasGraphCredentials` first to avoid offering the button
     /// at all.
-    public func authorize(kind: MailAccount.ProviderKind,
-                          onAuthorizationURL: (@Sendable (URL) -> Void)? = nil)
-        async throws -> (accountID: String, address: String) {
+    public func authorize(
+        kind: MailAccount.ProviderKind,
+        onAuthorizationURL: (@Sendable (URL) -> Void)? = nil
+    )
+        async throws -> (accountID: String, address: String)
+    {
         switch kind {
         case .gmail:
             guard let gmailAuth else { throw MailError.notAuthenticated(accountID: "") }
@@ -254,8 +263,9 @@ import AinkradAppKit
     private func makeAppleMailProvider(for account: MailAccount) throws -> MailProvider {
         let key = DocumentKeys.appleMailDirectory(accountID: account.id)
         guard let data = host.documents.data(forKey: key) else {
-            throw MailError.unsupportedProvider(kind: account.provider.identifier,
-                                                accountID: account.id)
+            throw MailError.unsupportedProvider(
+                kind: account.provider.identifier,
+                accountID: account.id)
         }
         do {
             let resolved = try MailDirectoryBookmark(data: data)
@@ -271,8 +281,9 @@ import AinkradAppKit
             // A bookmark that no longer resolves (the folder moved or the
             // sandbox grant lapsed) is this ONE account failing to attach,
             // reported by id like any other unbuildable account.
-            throw MailError.unsupportedProvider(kind: account.provider.identifier,
-                                                accountID: account.id)
+            throw MailError.unsupportedProvider(
+                kind: account.provider.identifier,
+                accountID: account.id)
         }
     }
 
@@ -293,21 +304,23 @@ import AinkradAppKit
     /// is what returns the connection slot, and it runs after every operation.
     private func makeIMAPProvider(for account: MailAccount) throws -> MailProvider {
         guard let data = host.documents.data(forKey: DocumentKeys.imapSettings(accountID: account.id)),
-              let settings = try? JSONDecoder().decode(IMAPAccountSettings.self, from: data),
-              let credential = IMAPAppPasswordStore.credential(
+            let settings = try? JSONDecoder().decode(IMAPAccountSettings.self, from: data),
+            let credential = IMAPAppPasswordStore.credential(
                 accountID: account.id, username: settings.username, secrets: host.secrets)
         else {
             // No settings row, or no stored password: this ONE account cannot be
             // built, reported by id like every other unbuildable account.
-            throw MailError.unsupportedProvider(kind: account.provider.identifier,
-                                                accountID: account.id)
+            throw MailError.unsupportedProvider(
+                kind: account.provider.identifier,
+                accountID: account.id)
         }
         let open = openIMAPSession
         let accountID = account.id
         return IMAPProvider(
             accountID: account.id,
-            submit: smtpSubmit(settings: settings, credential: credential,
-                               sender: account.address),
+            submit: smtpSubmit(
+                settings: settings, credential: credential,
+                sender: account.address),
             // Rebuilds a thread's locators from the store when the provider's
             // in-memory index has never seen it — i.e. after every relaunch. See
             // `IMAPProvider.storedLocators`; without this, `applyLabels` had no
@@ -326,7 +339,8 @@ import AinkradAppKit
             // than a lock bolted on.
             storedLocators: { @Sendable [weak self] threadID in
                 await self?.locators(threadID: threadID) ?? []
-            }) {
+            }
+        ) {
             [weak self] in
             let working = try await open(settings, credential)
             await self?.recordMailboxDirectory(working.directory, accountID: accountID)
@@ -381,8 +395,10 @@ import AinkradAppKit
     /// `PluginDocumentStore`, a coder pair, and a diagnostic key — so two instances
     /// read and write the same bytes, and this keeps the key name and the encoding
     /// in the one type that owns them instead of duplicating both here.
-    private func recordMailboxDirectory(_ directory: IMAPMailboxDirectory,
-                                        accountID: String) {
+    private func recordMailboxDirectory(
+        _ directory: IMAPMailboxDirectory,
+        accountID: String
+    ) {
         // Best effort: a failed write must never fail the operation the session was
         // acquired for. The consequence of a miss is one more stale read, which is
         // the state this whole method is improving on, not a new failure mode.
@@ -398,9 +414,13 @@ import AinkradAppKit
     /// every IMAP connection this app makes. Both `makeProvider` and
     /// `testIMAPConnection` go through it, so a test exercises the same code path
     /// production does rather than a parallel one.
-    var openIMAPSession: @Sendable (IMAPAccountSettings, IMAPCredential) async throws
-        -> IMAPWorkingSession = { try await IMAPProvider.openSession(settings: $0,
-                                                                     credential: $1) }
+    var openIMAPSession:
+        @Sendable (IMAPAccountSettings, IMAPCredential) async throws
+            -> IMAPWorkingSession = {
+                try await IMAPProvider.openSession(
+                    settings: $0,
+                    credential: $1)
+            }
 
     /// How this account submits mail, or `nil` when no SMTP server is configured.
     ///
@@ -408,12 +428,16 @@ import AinkradAppKit
     /// holds the credential path: the provider receives a closure it can call and
     /// never an `IMAPCredential`, so no part of the read/write path can reach the
     /// password even by accident.
-    private func smtpSubmit(settings: IMAPAccountSettings, credential: IMAPCredential,
-                            sender: String)
-        -> (@Sendable (OutgoingMessage) async throws -> String)? {
+    private func smtpSubmit(
+        settings: IMAPAccountSettings, credential: IMAPCredential,
+        sender: String
+    )
+        -> (@Sendable (OutgoingMessage) async throws -> String)?
+    {
         guard let endpoint = settings.smtpEndpoint else { return nil }
-        let submitter = SMTPSubmitter(endpoint: endpoint, sender: sender,
-                                      credential: credential)
+        let submitter = SMTPSubmitter(
+            endpoint: endpoint, sender: sender,
+            credential: credential)
         return { try await submitter.submit($0) }
     }
 
@@ -438,10 +462,13 @@ import AinkradAppKit
     /// *location* and goes to `host.documents`; `password` is a credential and goes
     /// to `host.secrets` through `IMAPAppPasswordStore` and nowhere else. This
     /// function is the only place in the app that writes an IMAP app password.
-    func saveIMAPAccount(settings: IMAPAccountSettings, password: String,
-                         accountID: String) throws {
-        host.documents.setData(try JSONEncoder().encode(settings),
-                               forKey: DocumentKeys.imapSettings(accountID: accountID))
+    func saveIMAPAccount(
+        settings: IMAPAccountSettings, password: String,
+        accountID: String
+    ) throws {
+        host.documents.setData(
+            try JSONEncoder().encode(settings),
+            forKey: DocumentKeys.imapSettings(accountID: accountID))
         IMAPAppPasswordStore.store(password, accountID: accountID, secrets: host.secrets)
     }
 
@@ -452,9 +479,11 @@ import AinkradAppKit
     /// attempt leaves no account row, no settings document and no secret behind —
     /// there is no "half-added account" state to clean up.
     func probeIMAP(settings: IMAPAccountSettings, password: String) async
-        -> Result<IMAPMailboxDirectory, IMAPAccountSetup.ConnectionFailure> {
-        let credential = IMAPCredential.appPassword(username: settings.username,
-                                                    password: password)
+        -> Result<IMAPMailboxDirectory, IMAPAccountSetup.ConnectionFailure>
+    {
+        let credential = IMAPCredential.appPassword(
+            username: settings.username,
+            password: password)
         do {
             let working = try await openIMAPSession(settings, credential)
             let directory = working.directory
@@ -468,8 +497,9 @@ import AinkradAppKit
     /// Records the folder an `.appleMail` account imports from, so the
     /// provider can be rebuilt on the next launch without re-prompting.
     public func saveAppleMailDirectory(_ bookmark: MailDirectoryBookmark, accountID: String) {
-        host.documents.setData(bookmark.data,
-                               forKey: DocumentKeys.appleMailDirectory(accountID: accountID))
+        host.documents.setData(
+            bookmark.data,
+            forKey: DocumentKeys.appleMailDirectory(accountID: accountID))
     }
 
     // MARK: Sign-out

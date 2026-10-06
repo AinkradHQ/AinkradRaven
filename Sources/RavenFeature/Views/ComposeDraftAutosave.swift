@@ -1,5 +1,5 @@
-import SwiftUI
 import AinkradAppKit
+import SwiftUI
 
 /// `ComposeSurface`'s prefill and draft-persistence half.
 ///
@@ -36,8 +36,9 @@ extension ComposeSurface {
             return
         }
         guard case .reply(let mode, let reference) = context,
-              let thread = runtime.store.thread(reference.threadID),
-              let last = thread.messages.last else { return }
+            let thread = runtime.store.thread(reference.threadID),
+            let last = thread.messages.last
+        else { return }
         let body = runtime.store.body(messageID: last.id)?.plainText ?? ""
         let draft = ReplyComposer.compose(
             mode: mode, thread: thread, lastMessage: last, lastMessageBody: body,
@@ -65,13 +66,15 @@ extension ComposeSurface {
         // Bcc is in the digest for the same reason To and Cc are, and it matters
         // more: a blind recipient dropped by a draft that did not notice it
         // changed is invisible in the message that goes out.
-        [toChips.map(\.raw).joined(separator: ","),
-         ccChips.map(\.raw).joined(separator: ","),
-         bccChips.map(\.raw).joined(separator: ","),
-         subject,
-         bodyText,
-         attachments.map(\.filename).joined(separator: ","),
-         selectedFromAccountID ?? ""].joined(separator: "\u{1F}")
+        [
+            toChips.map(\.raw).joined(separator: ","),
+            ccChips.map(\.raw).joined(separator: ","),
+            bccChips.map(\.raw).joined(separator: ","),
+            subject,
+            bodyText,
+            attachments.map(\.filename).joined(separator: ","),
+            selectedFromAccountID ?? "",
+        ].joined(separator: "\u{1F}")
     }
 
     /// Writes the draft `autosaveDelay` after the last edit.
@@ -167,7 +170,10 @@ extension ComposeSurface {
                 DraftBox.shared.remove(id)
                 // Deleting the draft being edited retires the session too, so the
                 // pending autosave cannot immediately write it back.
-                if keeper.draftID == id { keeper.retire(); clear() }
+                if keeper.draftID == id {
+                    keeper.retire()
+                    clear()
+                }
                 draftsVersion += 1
             })
     }
@@ -190,9 +196,11 @@ extension ComposeSurface {
         richBody = message.richBody ?? RichBody(plainText: message.bodyText)
         attachments = message.attachments
         if let threadID = message.threadID, let accountID = message.accountID {
-            activeContext = .reply(mode: .reply, thread: ComposeThreadReference(
-                threadID: threadID, accountID: accountID,
-                lastMessageRFC822ID: message.inReplyToMessageID))
+            activeContext = .reply(
+                mode: .reply,
+                thread: ComposeThreadReference(
+                    threadID: threadID, accountID: accountID,
+                    lastMessageRFC822ID: message.inReplyToMessageID))
         } else {
             activeContext = .new
             selectedFromAccountID = message.accountID
@@ -209,7 +217,11 @@ extension ComposeSurface {
     /// explicitly, because `clear` is also how a session legitimately starts over
     /// and a retire there would be silent.
     func clear() {
-        toChips = []; ccChips = []; bccChips = []; subject = ""; bodyText = ""
+        toChips = []
+        ccChips = []
+        bccChips = []
+        subject = ""
+        bodyText = ""
         attachments = []
         copyFieldsExpanded = false
         selectedFromAccountID = nil

@@ -85,8 +85,10 @@ enum STARTTLSFramer {
 
         /// Installed by `NetworkTransport` before the connection is started, so
         /// neither callback can be missed.
-        func setHandlers(onStart: @escaping @Sendable () -> Void,
-                         onInput: @escaping @Sendable (Data) -> Void) {
+        func setHandlers(
+            onStart: @escaping @Sendable () -> Void,
+            onInput: @escaping @Sendable (Data) -> Void
+        ) {
             lock.lock()
             self.onStart = onStart
             self.onInput = onInput
@@ -126,8 +128,14 @@ enum STARTTLSFramer {
         @discardableResult
         func write(_ data: Data) -> Bool {
             lock.lock()
-            if didUpgrade { lock.unlock(); return false }
-            guard let framer else { lock.unlock(); return false }
+            if didUpgrade {
+                lock.unlock()
+                return false
+            }
+            guard let framer else {
+                lock.unlock()
+                return false
+            }
             lock.unlock()
             framer.async { framer.writeOutput(data: data) }
             return true
@@ -138,8 +146,14 @@ enum STARTTLSFramer {
         @discardableResult
         func upgrade() -> Bool {
             lock.lock()
-            guard let framer else { lock.unlock(); return false }
-            if didUpgrade { lock.unlock(); return true }
+            guard let framer else {
+                lock.unlock()
+                return false
+            }
+            if didUpgrade {
+                lock.unlock()
+                return true
+            }
             didUpgrade = true
             lock.unlock()
             framer.async {
@@ -186,8 +200,10 @@ enum STARTTLSFramer {
         func handleInput(framer: NWProtocolFramer.Instance) -> Int {
             while true {
                 var chunk = Data()
-                let parsed = framer.parseInput(minimumIncompleteLength: 1,
-                                               maximumLength: 64 * 1024) { buffer, _ in
+                let parsed = framer.parseInput(
+                    minimumIncompleteLength: 1,
+                    maximumLength: 64 * 1024
+                ) { buffer, _ in
                     guard let buffer, !buffer.isEmpty else { return 0 }
                     chunk = Data(buffer)
                     return buffer.count
@@ -205,10 +221,12 @@ enum STARTTLSFramer {
         /// `.ready`), and after it `passThroughOutput()` bypasses this handler. It
         /// is a faithful no-framing pass-through so that, if it ever is reached,
         /// bytes go out unaltered rather than being dropped.
-        func handleOutput(framer: NWProtocolFramer.Instance,
-                          message: NWProtocolFramer.Message,
-                          messageLength: Int,
-                          isComplete: Bool) {
+        func handleOutput(
+            framer: NWProtocolFramer.Instance,
+            message: NWProtocolFramer.Message,
+            messageLength: Int,
+            isComplete: Bool
+        ) {
             try? framer.writeOutputNoCopy(length: messageLength)
         }
 

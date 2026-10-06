@@ -22,7 +22,9 @@ public enum RecipientSuggestions {
         public let mostRecent: Date
 
         public init(address: MailAddress, frequency: Int, mostRecent: Date) {
-            self.address = address; self.frequency = frequency; self.mostRecent = mostRecent
+            self.address = address
+            self.frequency = frequency
+            self.mostRecent = mostRecent
         }
     }
 
@@ -31,7 +33,11 @@ public enum RecipientSuggestions {
     /// over time, the name attached to the most recent thread wins — an old
     /// nickname should not outlive a more recent, presumably more current, one.
     public static func candidates(from summaries: [ThreadSummary]) -> [Candidate] {
-        struct Accumulator { var address: MailAddress; var frequency: Int; var mostRecent: Date }
+        struct Accumulator {
+            var address: MailAddress
+            var frequency: Int
+            var mostRecent: Date
+        }
         var byEmail: [String: Accumulator] = [:]
         for summary in summaries {
             for participant in summary.participants {
@@ -44,13 +50,17 @@ public enum RecipientSuggestions {
                     }
                     byEmail[key] = existing
                 } else {
-                    byEmail[key] = Accumulator(address: participant, frequency: 1,
-                                               mostRecent: summary.lastMessageDate)
+                    byEmail[key] = Accumulator(
+                        address: participant, frequency: 1,
+                        mostRecent: summary.lastMessageDate)
                 }
             }
         }
-        return byEmail.values.map { Candidate(address: $0.address, frequency: $0.frequency,
-                                              mostRecent: $0.mostRecent) }
+        return byEmail.values.map {
+            Candidate(
+                address: $0.address, frequency: $0.frequency,
+                mostRecent: $0.mostRecent)
+        }
     }
 
     /// Candidates whose address OR display name contains `query`
@@ -59,10 +69,13 @@ public enum RecipientSuggestions {
     /// same way, so the field can show "recent people" before anything is typed.
     public static func match(_ query: String, in candidates: [Candidate]) -> [Candidate] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let filtered = needle.isEmpty ? candidates : candidates.filter {
-            $0.address.email.lowercased().contains(needle)
-                || ($0.address.name?.lowercased().contains(needle) ?? false)
-        }
+        let filtered =
+            needle.isEmpty
+            ? candidates
+            : candidates.filter {
+                $0.address.email.lowercased().contains(needle)
+                    || ($0.address.name?.lowercased().contains(needle) ?? false)
+            }
         return filtered.sorted {
             if $0.frequency != $1.frequency { return $0.frequency > $1.frequency }
             return $0.mostRecent > $1.mostRecent

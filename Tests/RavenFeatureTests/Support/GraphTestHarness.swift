@@ -1,6 +1,7 @@
-import Testing
-import Foundation
 import AinkradAppKit
+import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Shared plumbing for the Graph suites, which are split across several files
@@ -9,8 +10,9 @@ import AinkradAppKit
 
 /// One recorded Graph fixture's bytes.
 func graphFixture(_ name: String) throws -> Data {
-    let url = try #require(Bundle(for: FixtureBundleMarker.self)
-        .url(forResource: name, withExtension: "json"))
+    let url = try #require(
+        Bundle(for: FixtureBundleMarker.self)
+            .url(forResource: name, withExtension: "json"))
     return try Data(contentsOf: url)
 }
 
@@ -19,12 +21,15 @@ func graphFixture(_ name: String) throws -> Data {
 @MainActor func makeGraphProvider(accountID: String = "a1") -> GraphProvider {
     let secrets = InMemorySecretStore()
     secrets.setSecret("refresh-token", forKey: "graph-refresh-\(accountID)")
-    let auth = GraphAuth(secrets: secrets, clientID: "azure", tenantID: "tenant-abc",
-                         session: StubURLProtocol.makeSession()) { _ in
+    let auth = GraphAuth(
+        secrets: secrets, clientID: "azure", tenantID: "tenant-abc",
+        session: StubURLProtocol.makeSession()
+    ) { _ in
         ("access-token", 3600)
     }
-    return GraphProvider(accountID: accountID, auth: auth,
-                         session: StubURLProtocol.makeSession())
+    return GraphProvider(
+        accountID: accountID, auth: auth,
+        session: StubURLProtocol.makeSession())
 }
 
 /// Which of `graphBounded`'s two racers answered first. A top-level type
@@ -58,20 +63,25 @@ struct GraphDeadlineExceeded: Error, CustomStringConvertible {
 /// So: an `AsyncStream` race. Breaking out of the loop terminates the stream,
 /// which cancels both tasks, and the helper returns at the deadline whether or
 /// not the work ever answers.
-@MainActor func graphBounded<T: Sendable>(_ label: String,
-                                          sourceLocation: SourceLocation = #_sourceLocation,
-                                          _ body: @MainActor @escaping () async throws -> T)
-    async throws -> T {
+@MainActor func graphBounded<T: Sendable>(
+    _ label: String,
+    sourceLocation: SourceLocation = #_sourceLocation,
+    _ body: @MainActor @escaping () async throws -> T
+)
+    async throws -> T
+{
     let stream = AsyncStream<GraphBoundedOutcome<T>> { continuation in
         let work = Task { @MainActor in
-            do { continuation.yield(.value(try await body())) }
-            catch { continuation.yield(.failure(error)) }
+            do { continuation.yield(.value(try await body())) } catch { continuation.yield(.failure(error)) }
         }
         let deadline = Task {
             try? await Task.sleep(for: .seconds(10))
             continuation.yield(.timedOut)
         }
-        continuation.onTermination = { _ in work.cancel(); deadline.cancel() }
+        continuation.onTermination = { _ in
+            work.cancel()
+            deadline.cancel()
+        }
     }
     for await first in stream {
         switch first {
@@ -88,17 +98,27 @@ struct GraphDeadlineExceeded: Error, CustomStringConvertible {
 /// What each intercepted request was, so a test can assert on the URL and the
 /// Authorization header rather than only on the decoded result.
 final class SeenRequests: @unchecked Sendable {
-    struct Entry { let url: String; let authorization: String? }
+    struct Entry {
+        let url: String
+        let authorization: String?
+    }
     private let lock = NSLock()
     private var entries: [Entry] = []
 
     func record(_ request: URLRequest) {
-        let entry = Entry(url: request.url?.absoluteString ?? "",
-                          authorization: request.value(forHTTPHeaderField: "Authorization"))
-        lock.lock(); entries.append(entry); lock.unlock()
+        let entry = Entry(
+            url: request.url?.absoluteString ?? "",
+            authorization: request.value(forHTTPHeaderField: "Authorization"))
+        lock.lock()
+        entries.append(entry)
+        lock.unlock()
     }
 
-    var all: [Entry] { lock.lock(); defer { lock.unlock() }; return entries }
+    var all: [Entry] {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries
+    }
 }
 
 /// Method, URL and body of every intercepted request, together.
@@ -127,7 +147,8 @@ final class RecordedRequests: @unchecked Sendable {
         /// `flagStatus` that landed at the top level.
         var json: [String: Any]? {
             guard let data = body.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
+                let object = try? JSONSerialization.jsonObject(with: data)
+            else { return nil }
             return object as? [String: Any]
         }
     }
@@ -136,13 +157,20 @@ final class RecordedRequests: @unchecked Sendable {
     private var entries: [Entry] = []
 
     func record(_ request: URLRequest) {
-        let entry = Entry(method: request.httpMethod ?? "",
-                          url: request.url?.absoluteString ?? "",
-                          body: Self.body(of: request))
-        lock.lock(); entries.append(entry); lock.unlock()
+        let entry = Entry(
+            method: request.httpMethod ?? "",
+            url: request.url?.absoluteString ?? "",
+            body: Self.body(of: request))
+        lock.lock()
+        entries.append(entry)
+        lock.unlock()
     }
 
-    var all: [Entry] { lock.lock(); defer { lock.unlock() }; return entries }
+    var all: [Entry] {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries
+    }
     var count: Int { all.count }
 
     /// `StubURLProtocol` hands a POST's body over as a stream rather than on
@@ -187,8 +215,14 @@ final class RecordedBodies: @unchecked Sendable {
         } else {
             body = ""
         }
-        lock.lock(); entries.append(body); lock.unlock()
+        lock.lock()
+        entries.append(body)
+        lock.unlock()
     }
 
-    var all: [String] { lock.lock(); defer { lock.unlock() }; return entries }
+    var all: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries
+    }
 }

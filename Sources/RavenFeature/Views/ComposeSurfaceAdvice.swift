@@ -1,6 +1,6 @@
-import SwiftUI
 import AinkradAppKit
 import AinkradAppKitUI
+import SwiftUI
 
 /// `ComposeSurface`'s guard half: gathering the draft's facts, and applying a
 /// correction the user pressed.
@@ -50,8 +50,9 @@ extension ComposeSurface {
     /// `ComposeAdvice` skip those rules entirely.
     var replyAllParticipants: [MailAddress]? {
         guard case .reply(let mode, let reference) = activeContext, mode == .replyAll,
-              let thread = runtime.store.thread(reference.threadID),
-              let last = thread.messages.last else { return nil }
+            let thread = runtime.store.thread(reference.threadID),
+            let last = thread.messages.last
+        else { return nil }
         return [last.from].compactMap { $0 } + last.to + last.cc
     }
 
@@ -69,10 +70,13 @@ extension ComposeSurface {
                     chips[index] = replacement
                 }
             }
-            swap(&toChips); swap(&ccChips); swap(&bccChips)
+            swap(&toChips)
+            swap(&ccChips)
+            swap(&bccChips)
         case .dedupeRecipients:
-            let result = RecipientDedupe.apply(to: draftFacts.to, cc: draftFacts.cc,
-                                               bcc: draftFacts.bcc, ownAddress: sendingAddress)
+            let result = RecipientDedupe.apply(
+                to: draftFacts.to, cc: draftFacts.cc,
+                bcc: draftFacts.bcc, ownAddress: sendingAddress)
             // Only the VALID chips are rebuilt from the deduped result; an
             // invalid chip has no address to compare and must survive untouched
             // rather than being silently dropped by a tidy-up.

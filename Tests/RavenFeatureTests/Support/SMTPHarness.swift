@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Shared scripting and **deadlines** for the `SMTP*` suites.
@@ -21,8 +22,9 @@ enum SMTPHarness {
     /// A fixture's bytes, byte-for-byte. CRLF-exact (`-text` in `.gitattributes`),
     /// so no newline translation happens on either side of the blob.
     static func fixtureText(_ name: String) throws -> String {
-        let url = try #require(Bundle(for: FixtureBundleMarker.self)
-            .url(forResource: name, withExtension: "txt"),
+        let url = try #require(
+            Bundle(for: FixtureBundleMarker.self)
+                .url(forResource: name, withExtension: "txt"),
             "fixture \(name).txt is not in the test bundle — run `xcodegen generate`")
         let data = try Data(contentsOf: url)
         return try #require(String(data: data, encoding: .utf8))
@@ -62,8 +64,10 @@ enum SMTPHarness {
 
     /// Scripts a successful `MAIL FROM`/`RCPT TO`/`DATA`/end-of-data transaction.
     /// `RCPT TO` and `QUIT` are repeatable; the rest fire once, in dialogue order.
-    static func scriptTransaction(_ transport: ScriptedTransport,
-                                  endOfData: String = "250 2.0.0 Ok: queued as QUEUEID\r\n") async {
+    static func scriptTransaction(
+        _ transport: ScriptedTransport,
+        endOfData: String = "250 2.0.0 Ok: queued as QUEUEID\r\n"
+    ) async {
         await transport.respond(to: "MAIL FROM", with: "250 2.1.0 sender ok\r\n")
         await transport.respond(to: "RCPT TO", with: "250 2.1.5 recipient ok\r\n", repeatable: true)
         await transport.respond(to: "DATA", with: "354 end with <CRLF>.<CRLF>\r\n")
@@ -72,20 +76,27 @@ enum SMTPHarness {
     }
 
     /// The 465 endpoint used throughout: implicit TLS, so no upgrade is scripted.
-    static let implicitEndpoint = MailTransportEndpoint(host: "mail.example.test",
-                                                        port: 465, tls: .implicit)
+    static let implicitEndpoint = MailTransportEndpoint(
+        host: "mail.example.test",
+        port: 465, tls: .implicit)
     /// The 587 endpoint: explicit TLS, upgraded mid-dialogue.
-    static let explicitEndpoint = MailTransportEndpoint(host: "mail.example.test",
-                                                        port: 587, tls: .explicit)
+    static let explicitEndpoint = MailTransportEndpoint(
+        host: "mail.example.test",
+        port: 587, tls: .explicit)
 
     /// A submitter wired to `transport`, with an app-password credential.
-    static func submitter(_ transport: ScriptedTransport,
-                          endpoint: MailTransportEndpoint,
-                          credential: IMAPCredential = .appPassword(username: address,
-                                                                    password: password))
-        -> SMTPSubmitter {
-        SMTPSubmitter(endpoint: endpoint, sender: address, credential: credential,
-                      makeTransport: { _ in transport })
+    static func submitter(
+        _ transport: ScriptedTransport,
+        endpoint: MailTransportEndpoint,
+        credential: IMAPCredential = .appPassword(
+            username: address,
+            password: password)
+    )
+        -> SMTPSubmitter
+    {
+        SMTPSubmitter(
+            endpoint: endpoint, sender: address, credential: credential,
+            makeTransport: { _ in transport })
     }
 
     /// A submitter that opens a **fresh transport per submission**, handing out
@@ -103,15 +114,22 @@ enum SMTPHarness {
     /// After the list is exhausted the last transport is handed out again, and
     /// `transportsHandedOut` counts every call — so an unexpected third
     /// submission is visible rather than silently aliased.
-    static func submitter(_ transports: [ScriptedTransport],
-                          endpoint: MailTransportEndpoint,
-                          credential: IMAPCredential = .appPassword(username: address,
-                                                                    password: password))
-        -> (submitter: SMTPSubmitter, queue: TransportQueue) {
+    static func submitter(
+        _ transports: [ScriptedTransport],
+        endpoint: MailTransportEndpoint,
+        credential: IMAPCredential = .appPassword(
+            username: address,
+            password: password)
+    )
+        -> (submitter: SMTPSubmitter, queue: TransportQueue)
+    {
         let queue = TransportQueue(transports)
-        return (SMTPSubmitter(endpoint: endpoint, sender: address, credential: credential,
-                              makeTransport: { _ in queue.next() }),
-                queue)
+        return (
+            SMTPSubmitter(
+                endpoint: endpoint, sender: address, credential: credential,
+                makeTransport: { _ in queue.next() }),
+            queue
+        )
     }
 
     /// Hands out pre-built transports in order. `makeTransport` is synchronous and
@@ -139,13 +157,16 @@ enum SMTPHarness {
     }
 
     /// An ordinary message with one `to`, one `cc` and one `bcc`.
-    static func message(bcc: [MailAddress] = [MailAddress(email: "blind@example.test")],
-                        bodyText: String = "Body 1") -> OutgoingMessage {
-        OutgoingMessage(to: [MailAddress(email: "to@example.test")],
-                        cc: [MailAddress(email: "cc@example.test")],
-                        bcc: bcc,
-                        subject: "Subject 1",
-                        bodyText: bodyText)
+    static func message(
+        bcc: [MailAddress] = [MailAddress(email: "blind@example.test")],
+        bodyText: String = "Body 1"
+    ) -> OutgoingMessage {
+        OutgoingMessage(
+            to: [MailAddress(email: "to@example.test")],
+            cc: [MailAddress(email: "cc@example.test")],
+            bcc: bcc,
+            subject: "Subject 1",
+            bodyText: bodyText)
     }
 
     /// The one send that carried the message data — the chunk ending in the
@@ -171,16 +192,16 @@ enum SMTPHarness {
     ) async -> Result<T, any Error>? {
         let box = OutcomeBox<T>()
         let task = Task {
-            do { await box.set(.success(try await body())) }
-            catch { await box.set(.failure(error)) }
+            do { await box.set(.success(try await body())) } catch { await box.set(.failure(error)) }
         }
         for _ in 0..<300 {
             if let value = await box.value { return value }
             try? await Task.sleep(for: .milliseconds(10))
         }
         task.cancel()
-        Issue.record("an SMTP operation never resolved within 3s — the hang shape",
-                     sourceLocation: sourceLocation)
+        Issue.record(
+            "an SMTP operation never resolved within 3s — the hang shape",
+            sourceLocation: sourceLocation)
         return nil
     }
 
@@ -193,8 +214,10 @@ enum SMTPHarness {
     /// the scripted server never answers) wedged the suite here until this helper
     /// existed.
     @MainActor
-    static func drain(_ outbox: Outbox,
-                      sourceLocation: SourceLocation = #_sourceLocation) async {
+    static func drain(
+        _ outbox: Outbox,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async {
         let flag = DrainFlag()
         let task = Task { @MainActor in
             await outbox.drain()
@@ -205,8 +228,9 @@ enum SMTPHarness {
             try? await Task.sleep(for: .milliseconds(10))
         }
         task.cancel()
-        Issue.record("outbox.drain() never returned within 3s — a send parked on the network",
-                     sourceLocation: sourceLocation)
+        Issue.record(
+            "outbox.drain() never returned within 3s — a send parked on the network",
+            sourceLocation: sourceLocation)
     }
 
     @MainActor private final class DrainFlag { var done = false }
@@ -234,8 +258,9 @@ enum SMTPHarness {
         guard let outcome = await outcome(sourceLocation: sourceLocation, body) else { return }
         switch outcome {
         case .success(let value):
-            Issue.record("expected \(expected) but it succeeded: \(value)",
-                         sourceLocation: sourceLocation)
+            Issue.record(
+                "expected \(expected) but it succeeded: \(value)",
+                sourceLocation: sourceLocation)
         case .failure(let error):
             #expect(error as? SMTPSessionError == expected, sourceLocation: sourceLocation)
         }
@@ -249,8 +274,9 @@ enum SMTPHarness {
         guard let outcome = await outcome(sourceLocation: sourceLocation, body) else { return nil }
         switch outcome {
         case .success(let value):
-            Issue.record("expected a failure but it succeeded: \(value)",
-                         sourceLocation: sourceLocation)
+            Issue.record(
+                "expected a failure but it succeeded: \(value)",
+                sourceLocation: sourceLocation)
             return nil
         case .failure(let error): return error
         }

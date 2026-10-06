@@ -21,7 +21,9 @@ public enum LocalThreading {
         public let inReplyTo: String?
 
         public init(messageID: String, references: [String], inReplyTo: String?) {
-            self.messageID = messageID; self.references = references; self.inReplyTo = inReplyTo
+            self.messageID = messageID
+            self.references = references
+            self.inReplyTo = inReplyTo
         }
     }
 
@@ -45,7 +47,8 @@ public enum LocalThreading {
             return current
         }
         func union(_ a: String, _ b: String) {
-            let rootA = find(a), rootB = find(b)
+            let rootA = find(a)
+            let rootB = find(b)
             guard rootA != rootB else { return }
             parent[rootA] = rootB
         }

@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// Task 13: `applyLabels` — canonical flags to `UID STORE`, and folder changes to
@@ -60,8 +61,9 @@ struct IMAPProviderMutationTests {
 
     @Test("archive uses UID MOVE when MOVE is advertised, to the account's own archive name")
     func archiveUsesMoveWhenAdvertised() async throws {
-        let wire = try await Self.applying(.archive, capabilities: "IMAP4rev1 MOVE",
-                                          steps: [.init("UID MOVE")])
+        let wire = try await Self.applying(
+            .archive, capabilities: "IMAP4rev1 MOVE",
+            steps: [.init("UID MOVE")])
         // `Folder B` is this account's `\Archive`. A provider that guessed
         // `"Archive"` would send a mailbox that does not exist here.
         #expect(wire.contains("UID MOVE 10,11,20 \"Folder B\""))
@@ -71,9 +73,11 @@ struct IMAPProviderMutationTests {
 
     @Test("archive falls back to COPY + STORE \\Deleted + EXPUNGE, in that order")
     func archiveFallsBackToCopyDeleteExpunge() async throws {
-        let wire = try await Self.applying(.archive, capabilities: "IMAP4rev1", steps: [
-            .init("UID COPY"), .init("UID STORE"), .init("EXPUNGE"),
-        ])
+        let wire = try await Self.applying(
+            .archive, capabilities: "IMAP4rev1",
+            steps: [
+                .init("UID COPY"), .init("UID STORE"), .init("EXPUNGE"),
+            ])
         #expect(wire.contains("UID COPY 10,11,20 \"Folder B\""))
         #expect(wire.contains("UID STORE 10,11,20 +FLAGS.SILENT (\\Deleted)"))
         #expect(wire.contains("EXPUNGE\r\n"))
@@ -103,8 +107,9 @@ struct IMAPProviderMutationTests {
 
     @Test("trash moves to the trash mailbox, not to the archive")
     func trashPrefersTheAddedMailbox() async throws {
-        let wire = try await Self.applying(.trash, capabilities: "IMAP4rev1 MOVE",
-                                          steps: [.init("UID MOVE")])
+        let wire = try await Self.applying(
+            .trash, capabilities: "IMAP4rev1 MOVE",
+            steps: [.init("UID MOVE")])
         // `.trash` renders BOTH `add: [Folder C]` and `remove: [INBOX]`. The added
         // mailbox is the destination; falling through to the archive — the plausible
         // wrong rule, since a mailbox was also removed — would file a deletion into
@@ -117,8 +122,9 @@ struct IMAPProviderMutationTests {
     func archiveWithoutAnArchiveMailboxRefuses() async throws {
         // INBOX only: no `\Archive` anywhere.
         let directory = IMAPMailboxDirectory([
-            IMAPMailbox(name: "INBOX", delimiter: "/", attributes: ["\\HasNoChildren"],
-                        flag: .inbox, isSpecialUseDeclared: false),
+            IMAPMailbox(
+                name: "INBOX", delimiter: "/", attributes: ["\\HasNoChildren"],
+                flag: .inbox, isSpecialUseDeclared: false)
         ])
         let (session, _) = try await IMAPDeltaHarness.session(
             capabilities: "IMAP4rev1 MOVE",
@@ -127,9 +133,13 @@ struct IMAPProviderMutationTests {
         let provider = IMAPProvider(accountID: IMAPProviderHarness.accountID) {
             IMAPSessionLease(working: working) {}
         }
-        guard await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: Self.since, pageToken: nil)
-        }) != nil else { return }
+        guard
+            await IMAPProviderHarness.expect(
+                "fetchThreads",
+                {
+                    try await provider.fetchThreads(since: Self.since, pageToken: nil)
+                }) != nil
+        else { return }
 
         let mutation = IMAPVocabulary(directory: directory)
             .render(ThreadAction.archive.mutation(threadIDs: [Self.m1Thread]))
@@ -142,27 +152,34 @@ struct IMAPProviderMutationTests {
         // A silent success is the failure mode: `ThreadMutationApplier` has already
         // updated the local copy, so a no-op leaves the UI claiming the thread was
         // archived forever.
-        #expect(error as? MailError
-            == .providerFailed(status: -1, message: "no archive mailbox for this account"))
+        #expect(
+            error as? MailError
+                == .providerFailed(status: -1, message: "no archive mailbox for this account"))
         await session.close()
     }
 
     /// Backfills, then applies `action` rendered through the account's vocabulary,
     /// and returns everything that reached the wire.
-    private static func applying(_ action: ThreadAction,
-                                 capabilities: String = "IMAP4rev1",
-                                 steps: [IMAPDeltaHarness.Step]) async throws -> String {
+    private static func applying(
+        _ action: ThreadAction,
+        capabilities: String = "IMAP4rev1",
+        steps: [IMAPDeltaHarness.Step]
+    ) async throws -> String {
         let (provider, transport, session, _) = try await IMAPProviderHarness.provider(
             capabilities: capabilities,
             steps: backfillSteps + [.init("SELECT \"INBOX\"", "imap-provider-select")] + steps)
-        _ = await IMAPProviderHarness.expect("fetchThreads", {
-            try await provider.fetchThreads(since: since, pageToken: nil)
-        })
+        _ = await IMAPProviderHarness.expect(
+            "fetchThreads",
+            {
+                try await provider.fetchThreads(since: since, pageToken: nil)
+            })
         let mutation = IMAPVocabulary(directory: try IMAPProviderHarness.directory())
             .render(action.mutation(threadIDs: [m1Thread]))
-        _ = await IMAPProviderHarness.expect("applyLabels", {
-            try await provider.applyLabels(mutation)
-        })
+        _ = await IMAPProviderHarness.expect(
+            "applyLabels",
+            {
+                try await provider.applyLabels(mutation)
+            })
         // Returned even when the call failed, deliberately: an early `return ""`
         // makes every byte assertion below fail with "false", which says nothing
         // about what actually went on the wire. The recorded bytes are the only

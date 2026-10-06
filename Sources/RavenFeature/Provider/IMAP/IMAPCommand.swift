@@ -80,13 +80,17 @@ struct IMAPCommand: Sendable, Equatable {
     /// share the channel with anything.
     let holdsChannelOpen: Bool
 
-    init(_ name: String, _ arguments: [Argument] = [],
-         reactiveContinuationLines: [Data] = [], isExclusive: Bool = false,
-         holdsChannelOpen: Bool = false) {
-        precondition(reactiveContinuationLines.isEmpty || isExclusive,
-                     "a command with reactive continuation lines must be exclusive")
-        precondition(!holdsChannelOpen || isExclusive,
-                     "a command that holds the channel open must be exclusive")
+    init(
+        _ name: String, _ arguments: [Argument] = [],
+        reactiveContinuationLines: [Data] = [], isExclusive: Bool = false,
+        holdsChannelOpen: Bool = false
+    ) {
+        precondition(
+            reactiveContinuationLines.isEmpty || isExclusive,
+            "a command with reactive continuation lines must be exclusive")
+        precondition(
+            !holdsChannelOpen || isExclusive,
+            "a command that holds the channel open must be exclusive")
         self.name = name
         self.arguments = arguments
         self.reactiveContinuationLines = reactiveContinuationLines
@@ -152,9 +156,10 @@ struct IMAPCommand: Sendable, Equatable {
         var chunks: [Data] = []
         var current = Data("\(tag) \(name)".utf8)
         for argument in arguments {
-            current.append(0x20) // space
-            append(argument, to: &current, chunks: &chunks,
-                   allowNonSynchronizingLiterals: allowNonSynchronizingLiterals)
+            current.append(0x20)  // space
+            append(
+                argument, to: &current, chunks: &chunks,
+                allowNonSynchronizingLiterals: allowNonSynchronizingLiterals)
         }
         current.append(contentsOf: Self.crlf)
         chunks.append(current)
@@ -164,17 +169,20 @@ struct IMAPCommand: Sendable, Equatable {
         return WirePlan(chunks: chunks)
     }
 
-    private func append(_ argument: Argument,
-                        to current: inout Data,
-                        chunks: inout [Data],
-                        allowNonSynchronizingLiterals: Bool) {
+    private func append(
+        _ argument: Argument,
+        to current: inout Data,
+        chunks: inout [Data],
+        allowNonSynchronizingLiterals: Bool
+    ) {
         switch argument {
         case .atom(let value):
             current.append(contentsOf: Data(value.utf8))
         case .quoted(let value):
             current.append(contentsOf: Data(Self.quote(value).utf8))
         case .literal(let payload):
-            let marker = allowNonSynchronizingLiterals
+            let marker =
+                allowNonSynchronizingLiterals
                 ? "{\(payload.count)+}" : "{\(payload.count)}"
             current.append(contentsOf: Data(marker.utf8))
             current.append(contentsOf: Self.crlf)
@@ -189,16 +197,18 @@ struct IMAPCommand: Sendable, Equatable {
                 current = payload
             }
         case .list(let elements):
-            current.append(0x28) // (
+            current.append(0x28)  // (
             for (index, element) in elements.enumerated() {
                 if index > 0 { current.append(0x20) }
-                append(element, to: &current, chunks: &chunks,
-                       allowNonSynchronizingLiterals: allowNonSynchronizingLiterals)
+                append(
+                    element, to: &current, chunks: &chunks,
+                    allowNonSynchronizingLiterals: allowNonSynchronizingLiterals)
             }
-            current.append(0x29) // )
+            current.append(0x29)  // )
         case .redacted(let inner):
-            append(inner, to: &current, chunks: &chunks,
-                   allowNonSynchronizingLiterals: allowNonSynchronizingLiterals)
+            append(
+                inner, to: &current, chunks: &chunks,
+                allowNonSynchronizingLiterals: allowNonSynchronizingLiterals)
         }
     }
 

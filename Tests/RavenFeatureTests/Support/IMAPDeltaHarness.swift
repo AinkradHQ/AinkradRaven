@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import RavenFeature
 
 /// The scripted server and the injected identity that `IMAPDeltaStrategyTests`
@@ -33,12 +34,14 @@ enum IMAPDeltaHarness {
     /// UID 20 walked, `HIGHESTMODSEQ 100` observed.
     static func storedCursor(highestModSeq: UInt64? = 100) -> IMAPSyncCursor {
         IMAPSyncCursor(mailboxes: [
-            mailbox: IMAPMailboxSyncState(uidValidity: 1, uidNext: 20,
-                                          highestModSeq: highestModSeq),
+            mailbox: IMAPMailboxSyncState(
+                uidValidity: 1, uidNext: 20,
+                highestModSeq: highestModSeq),
             // A second mailbox, present only so "a UIDVALIDITY change resets one
             // mailbox and no other" is assertable.
-            "Folder B": IMAPMailboxSyncState(uidValidity: 9, uidNext: 5,
-                                            highestModSeq: 55),
+            "Folder B": IMAPMailboxSyncState(
+                uidValidity: 9, uidNext: 5,
+                highestModSeq: 55),
         ])
     }
 
@@ -96,8 +99,9 @@ enum IMAPDeltaHarness {
     /// A fixture's bytes, byte-for-byte. CRLF-exact, `-text` in `.gitattributes`,
     /// so no newline translation happens on either side of the blob.
     static func fixtureText(_ name: String) throws -> String {
-        let url = try #require(Bundle(for: FixtureBundleMarker.self)
-            .url(forResource: name, withExtension: "txt"),
+        let url = try #require(
+            Bundle(for: FixtureBundleMarker.self)
+                .url(forResource: name, withExtension: "txt"),
             "fixture \(name).txt is not in the test bundle — run `xcodegen generate`")
         let data = try Data(contentsOf: url)
         return try #require(String(data: data, encoding: .utf8))
@@ -107,7 +111,8 @@ enum IMAPDeltaHarness {
     /// `CAPABILITY` command is issued and the tags the steps answer with are
     /// exactly `A0001…A000n` in step order.
     static func session(capabilities: String, steps: [Step]) async throws
-        -> (IMAPSession, ScriptedTransport) {
+        -> (IMAPSession, ScriptedTransport)
+    {
         let transport = ScriptedTransport(idleReads: .suspend)
         await transport.enqueue("* OK [CAPABILITY \(capabilities)] ready\r\n")
         for (index, step) in steps.enumerated() {
@@ -133,9 +138,12 @@ enum IMAPDeltaHarness {
     /// Runs one pass **with a deadline**. A strategy that never resolves is the
     /// leaked-continuation shape, and a hung suite reports as an infrastructure
     /// timeout rather than as the bug it is.
-    static func pass(_ strategy: IMAPDeltaStrategy, from cursor: IMAPSyncCursor,
-                     sourceLocation: SourceLocation = #_sourceLocation) async
-        -> Result<PassResult, any Error>? {
+    static func pass(
+        _ strategy: IMAPDeltaStrategy, from cursor: IMAPSyncCursor,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async
+        -> Result<PassResult, any Error>?
+    {
         await boundedOutcome(sourceLocation: sourceLocation) {
             var working = cursor
             // The mailbox is not passed: it travels inside the identity, so a
@@ -171,16 +179,23 @@ enum IMAPDeltaHarness {
     }
 
     /// Asserts a pass succeeded within the deadline.
-    static func expectPass(_ strategy: IMAPDeltaStrategy, from cursor: IMAPSyncCursor,
-                           sourceLocation: SourceLocation = #_sourceLocation) async
-        -> PassResult? {
-        guard let outcome = await pass(strategy, from: cursor,
-                                       sourceLocation: sourceLocation) else { return nil }
+    static func expectPass(
+        _ strategy: IMAPDeltaStrategy, from cursor: IMAPSyncCursor,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async
+        -> PassResult?
+    {
+        guard
+            let outcome = await pass(
+                strategy, from: cursor,
+                sourceLocation: sourceLocation)
+        else { return nil }
         switch outcome {
         case .success(let result): return result
         case .failure(let error):
-            Issue.record("expected the delta pass to succeed but it failed: \(error)",
-                         sourceLocation: sourceLocation)
+            Issue.record(
+                "expected the delta pass to succeed but it failed: \(error)",
+                sourceLocation: sourceLocation)
             return nil
         }
     }
