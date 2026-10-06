@@ -4,34 +4,33 @@ import SwiftUI
 
 // MARK: - Applying it
 
-/// The Ainkrad panel finish MINUS the blur: theme background at the user's
-/// opacity, chamfered clip, accent edge, panel glow.
+/// `AinkradPanel` with the user's opacity and no blur.
 ///
-/// This is `AinkradPanel`'s body with its `VisualEffectBlur` removed, and the
-/// removal is the whole point rather than an optimisation. The host already
-/// renders one shared blurred sky+island backdrop behind any pane whose
-/// `chromeFill` is sub-opaque; a `VisualEffectBlur(.withinWindow)` here
-/// re-blurs that and, because `.hudWindow` scatters light, lifts the result —
-/// which is what made the pane body read lighter than its flat title bar. Rune
-/// paints one flat translucent fill for the same reason (see
-/// `TerminalContainerView`: "The layer must be non-opaque", and it adds no blur
-/// of its own).
+/// No blur is the point rather than an optimisation. The host already renders
+/// one shared blurred sky+island backdrop behind any pane whose `chromeFill` is
+/// sub-opaque; a `VisualEffectBlur(.withinWindow)` here re-blurs that and,
+/// because `.hudWindow` scatters light, lifts the result — which is what made
+/// the pane body read lighter than its flat title bar. Rune paints one flat
+/// translucent fill for the same reason (see `TerminalContainerView`: "The
+/// layer must be non-opaque", and it adds no blur of its own).
 ///
-/// At full opacity there is nothing behind to sample either, so there is one
-/// path, not two.
+/// The kit takes both settings from `\.ainkradSurfaceOpacity` and
+/// `\.ainkradSurfaceBlur`, which the host sets at its root. An environment
+/// write reaches everything below it, so the content gets the values in force
+/// above this point back before the panel wraps it: only this panel takes
+/// Raven's setting, and a kit panel nested inside keeps the host's.
 private struct RavenSurface: ViewModifier {
     let appearance: RavenAppearance
-    @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSurfaceOpacity) private var outerOpacity
+    @Environment(\.ainkradSurfaceBlur) private var outerBlur
 
     func body(content: Content) -> some View {
         content
-            .background(theme.background.opacity(appearance.surfaceOpacity))
-            .clipShape(ChamferShape(cut: AinkradRadius.panel))
-            .overlay(
-                ChamferShape(cut: AinkradRadius.panel)
-                    .strokeBorder(theme.accentSecondary.opacity(0.4), lineWidth: 1)
-            )
-            .ainkradPanelGlow()
+            .environment(\.ainkradSurfaceOpacity, outerOpacity)
+            .environment(\.ainkradSurfaceBlur, outerBlur)
+            .ainkradPanel()
+            .environment(\.ainkradSurfaceOpacity, appearance.surfaceOpacity)
+            .environment(\.ainkradSurfaceBlur, false)
     }
 }
 
@@ -53,9 +52,8 @@ private struct RavenLegibleText: ViewModifier {
 }
 
 extension View {
-    /// The Raven pane finish: a flat translucent theme fill at the user's
-    /// chosen opacity, with the kit's chamfer, accent edge and glow. No blur —
-    /// see `RavenSurface`.
+    /// The Raven pane finish: `AinkradPanel` at the user's chosen opacity,
+    /// with no blur — see `RavenSurface`.
     public func ravenSurface(_ appearance: RavenAppearance) -> some View {
         modifier(RavenSurface(appearance: appearance))
     }
