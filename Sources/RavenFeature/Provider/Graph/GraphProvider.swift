@@ -11,7 +11,7 @@ import Foundation
 /// **Verified against recorded fixtures only.** There is no Azure app
 /// registration in this build, so nothing here — read or write — has met a live
 /// Graph endpoint; the live-verification checklist is Task 24's.
-public final class GraphProvider: MailProvider, @unchecked Sendable {
+public final class GraphProvider: MailProvider, Sendable {
     public let accountID: String
     /// `.readWrite` since the write paths landed, which is what lets
     /// `MailProviderRouter.writableProvider` route a mutation here at all.

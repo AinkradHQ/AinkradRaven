@@ -428,7 +428,7 @@ extension Duration {
 /// once property holds regardless of how callers are scheduled. Stress-tested
 /// in `LoopbackCallbackListenerTests.swift` by firing from many concurrent
 /// tasks and asserting the completion runs exactly once.
-final class OneShotResumeGuard<T>: @unchecked Sendable {
+final class OneShotResumeGuard<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var hasFired = false
     private let onFirstFire: (T) -> Void

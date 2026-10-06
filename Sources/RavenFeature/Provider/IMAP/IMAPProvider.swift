@@ -36,7 +36,7 @@ import Foundation
 ///    `!attachments.isEmpty`, which requires one, so the same message showed a
 ///    paperclip in one account and not in the other. That was cheap to correct in
 ///    one place and had no id-stability cost.
-final class IMAPProvider: MailProvider, @unchecked Sendable {
+final class IMAPProvider: MailProvider, Sendable {
     let accountID: String
     /// IMAP mutates flags and moves messages; SMTP (Task 15) transmits. `.readWrite`
     /// covers both halves of the protocol's contract, and `send` names the missing
