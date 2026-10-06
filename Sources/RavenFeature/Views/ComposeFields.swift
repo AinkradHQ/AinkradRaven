@@ -361,7 +361,7 @@ enum ComposeAttachmentPicker {
             do {
                 data = try Data(contentsOf: url)
             } catch {
-                Log.mime.error(
+                AinkradLog.logger("raven.mime").error(
                     "Could not read attachment \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
                 skipped.append(url.lastPathComponent)

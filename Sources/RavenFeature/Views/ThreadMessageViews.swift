@@ -324,7 +324,7 @@ struct AttachmentChipRow: View {
             do {
                 try data.write(to: url)
             } catch {
-                Log.mime.error(
+                AinkradLog.logger("raven.mime").error(
                     "Failed to write attachment (\(data.count, privacy: .public) bytes) to \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
             }

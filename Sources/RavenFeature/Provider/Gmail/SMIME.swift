@@ -1,3 +1,4 @@
+import AinkradAppKit
 import Foundation
 import Security
 
@@ -188,7 +189,7 @@ enum SMIME {
                 let ref = result
             else { return nil }
             guard CFGetTypeID(ref) == SecIdentityGetTypeID() else {
-                Log.auth.error("Keychain returned a non-identity for an identity query")
+                AinkradLog.logger("raven.auth").error("Keychain returned a non-identity for an identity query")
                 return nil
             }
             return (ref as! SecIdentity)
