@@ -86,7 +86,11 @@ extension RavenRuntime {
             do {
                 let threads = try await provider.searchThreads(query: trimmed, limit: 50)
                 for thread in threads {
-                    try? store.upsertThread(thread)
+                    do {
+                        try store.upsertThread(thread)
+                    } catch {
+                        host.log.error("RavenRuntime.searchArchive could not save \(thread.id): \(error)")
+                    }
                 }
                 groups.append(threads.map { $0.summary() })
                 succeeded = true

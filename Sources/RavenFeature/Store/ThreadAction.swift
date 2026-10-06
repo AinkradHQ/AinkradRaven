@@ -111,7 +111,13 @@ public enum ThreadMutationApplier {
                 thread.messages[index].isRead = !flags.contains(.unread)
                 thread.messages[index].isStarred = flags.contains(.starred)
             }
-            try? store.upsertThread(thread)
+            do {
+                try store.upsertThread(thread)
+            } catch {
+                Log.store.error(
+                    "Local label mutation for \(id, privacy: .public) was not saved: \(String(describing: error), privacy: .public)"
+                )
+            }
         }
     }
 }
