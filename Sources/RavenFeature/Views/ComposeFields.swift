@@ -70,7 +70,7 @@ struct RecipientChipField: View {
                     TextField("", text: $typed)
                         .textFieldStyle(.plain)
                         .focused($isFocused)
-                        .frame(minWidth: 80)
+                        .frame(minWidth: skin.size.s80)
                         .onSubmit { commit() }
                         .onChange(of: typed) { _, newValue in
                             if newValue.hasSuffix(",") {
@@ -226,7 +226,7 @@ struct RecipientDetail: View {
                 AinkradCaption("You have not mailed this address before.")
             }
         }
-        .frame(maxWidth: 260, alignment: .leading)
+        .frame(maxWidth: skin.size.s260, alignment: .leading)
     }
 }
 

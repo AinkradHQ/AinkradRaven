@@ -69,7 +69,7 @@ struct InboxRow: View {
             // treatment and the bold subject.
             AinkradIconGlyph(systemName: leadingGlyph, filled: isUnread)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: skin.size.s2) {
                 Text(summary.subject.isEmpty ? "(no subject)" : summary.subject)
                     .font(
                         AinkradFontResolver.font(

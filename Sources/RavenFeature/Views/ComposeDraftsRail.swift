@@ -27,6 +27,7 @@ struct ComposeDraftsRail: View {
     let onDelete: (String) -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     var body: some View {
@@ -40,7 +41,7 @@ struct ComposeDraftsRail: View {
                 return DraftBox.shared.all()
             }()
             ScrollView {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: skin.size.s2) {
                     ForEach(drafts, id: \.id) { entry in
                         AinkradListRow(
                             isSelected: selectedDraftID == entry.id,

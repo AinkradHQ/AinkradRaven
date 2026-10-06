@@ -317,6 +317,7 @@ private struct ThreadOriginalLoader: View {
     let runtime: RavenRuntime
     let onClose: () -> Void
 
+    @Environment(\.ainkradSkin) private var skin
     @State private var body_: MessageBody?
     @State private var isLoading = true
 
@@ -328,13 +329,13 @@ private struct ThreadOriginalLoader: View {
                     onClose: onClose)
             } else if isLoading {
                 AinkradLoadingState(label: "Loading original…")
-                    .frame(height: 200)
+                    .frame(height: skin.size.s200)
             } else {
                 AinkradEmptyState(
                     icon: "safari", title: "No original to show",
                     message: "This message was sent as plain text only."
                 )
-                .frame(height: 200)
+                .frame(height: skin.size.s200)
             }
         }
         .task(id: message.id) {

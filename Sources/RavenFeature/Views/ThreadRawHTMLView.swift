@@ -48,6 +48,7 @@ struct RawHTMLSheet: View {
     private var remoteImageCount: Int { BodySanitizer.remoteImageURLs(inHTML: html).count }
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     var body: some View {
@@ -81,7 +82,7 @@ struct RawHTMLSheet: View {
         // A fixed height, not a `minHeight`: this is presented inside
         // `.ainkradModal(contentWidth:)` now, whose content is offered the
         // width it asked for and is otherwise free to grow past the window.
-        .frame(height: 480)
+        .frame(height: skin.size.s480)
     }
 
     /// Blanks every remote `<img src>` so the page cannot fetch a tracking

@@ -158,7 +158,7 @@ struct RavenSettingsIMAPForm: View {
                         }),
                     placeholder: "Port"
                 )
-                .frame(width: 90)
+                .frame(width: skin.size.s90)
             }
         }
         inlineMessage(for: hostField)

@@ -31,6 +31,7 @@ struct RavenAccountsPane: View {
     let showsSignature: Bool
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     @State private var isConnecting = false
@@ -119,7 +120,7 @@ struct RavenAccountsPane: View {
                     actionTitle: "Connect Gmail",
                     action: { connect() }
                 )
-                .frame(height: 220)
+                .frame(height: skin.size.s220)
                 .disabled(!runtime.canConnectAccount || isConnecting)
             } else {
                 ForEach(accounts) { account in

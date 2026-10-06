@@ -15,6 +15,7 @@ struct PrivacySettingsGroup: View {
     let runtime: RavenRuntime
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     @State private var isExpanded = false
@@ -45,7 +46,7 @@ struct PrivacySettingsGroup: View {
                         "Nobody yet. Pressing \"Load images\" on a message adds that "
                             + "sender here, and images from them load automatically from then on.")
                 } else {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: skin.size.s2) {
                         ForEach(senders, id: \.self) { sender in
                             AinkradListRow(
                                 onTap: nil,

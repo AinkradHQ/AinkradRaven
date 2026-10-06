@@ -65,7 +65,7 @@ struct RulesSettingsGroup: View {
                 .foregroundStyle(theme.foreground.opacity(skin.opacity.o60))
                 .fixedSize(horizontal: false, vertical: true)
         } else {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: skin.size.s2) {
                 ForEach(Array(ruleSet.rules.enumerated()), id: \.element.id) { index, rule in
                     ruleRow(rule, index: index, ruleSet: ruleSet)
                 }

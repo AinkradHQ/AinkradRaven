@@ -13,6 +13,7 @@ struct SendingSettingsGroup: View {
     let runtime: RavenRuntime
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     /// Mirrors `runtime.holdWindow`. Held as text so a half-typed number does
@@ -38,7 +39,7 @@ struct SendingSettingsGroup: View {
                 ) {
                     HStack(spacing: AinkradSpacing.sm) {
                         AinkradTextField(text: $holdWindowText, placeholder: "20")
-                            .frame(width: 70)
+                            .frame(width: skin.size.s70)
                             .onChange(of: holdWindowText) { _, newValue in
                                 guard let seconds = Double(newValue), seconds >= 0 else { return }
                                 runtime.holdWindow = seconds
