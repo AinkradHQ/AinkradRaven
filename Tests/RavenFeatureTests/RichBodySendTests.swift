@@ -410,7 +410,7 @@ struct RichBodyMIMETests {
             .send(richMessage()), accountID: "a1",
             holdUntil: nil, sendAt: nil, draftID: draftID)
 
-        try outbox.discard(entryID)
+        outbox.discard(entryID)
 
         // Absence is NOT success: the entry is gone and the outcome still says
         // nothing was transmitted.

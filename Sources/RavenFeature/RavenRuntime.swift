@@ -365,7 +365,7 @@ import Foundation
     }
 
     public func discardOutboxEntry(_ id: UUID) {
-        try? outbox.discard(id)
+        outbox.discard(id)
         refreshOutboxSnapshots()
     }
 

@@ -4,7 +4,6 @@ public enum MailError: Error, Equatable {
     case notAuthenticated(accountID: String)
     case unknownAccount(String)
     case unknownThread(String)
-    case unknownDraft(String)
     case providerFailed(status: Int, message: String)
     case decodingFailed(String)
     /// A stored document exists but could not be decoded. Deliberately

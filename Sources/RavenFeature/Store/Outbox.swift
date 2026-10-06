@@ -390,7 +390,7 @@ import Foundation
         min(300, pow(2, Double(max(0, attempt))))
     }
 
-    public func discard(_ id: UUID) throws {
+    public func discard(_ id: UUID) {
         entries.removeAll { $0.id == id }
         persistRecordingFailure()
         scheduleWake()

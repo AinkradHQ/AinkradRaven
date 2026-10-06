@@ -233,7 +233,6 @@ import Observation
     public func archiveActive() { apply(.archive) }
     public func trashActive() { apply(.trash) }
     public func starActive(_ starred: Bool) { apply(.star(starred)) }
-    public func setReadActive(_ read: Bool) { apply(.setRead(read)) }
 
     /// `e` and the row archive button both call this.
     public func archive(_ threadIDs: [String]) { apply(.archive, ids: threadIDs) }
