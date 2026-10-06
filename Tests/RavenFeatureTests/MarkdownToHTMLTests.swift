@@ -133,7 +133,7 @@ struct MarkdownToHTMLTests {
     // MARK: All three regions together, in order
 
     @Test("a reply with typed markdown, a signature, and a quote emits exactly one of each, in order")
-    func allThreeRegionsInOrder() {
+    func allThreeRegionsInOrder() throws {
         let composed =
             "Hello **bold** reply."
             + ReplyComposer.quoteBody(
@@ -151,9 +151,9 @@ struct MarkdownToHTMLTests {
         #expect(html.components(separatedBy: "</blockquote>").count - 1 == 1)
 
         // Order: typed body → signature → quote.
-        let body = try! #require(html.range(of: "<strong>bold</strong>"))
-        let sig = try! #require(html.range(of: "<div class=\"sig\">"))
-        let quote = try! #require(html.range(of: "<blockquote>"))
+        let body = try #require(html.range(of: "<strong>bold</strong>"))
+        let sig = try #require(html.range(of: "<div class=\"sig\">"))
+        let quote = try #require(html.range(of: "<blockquote>"))
         #expect(body.upperBound <= sig.lowerBound)
         #expect(sig.upperBound <= quote.lowerBound)
 
@@ -174,15 +174,15 @@ struct MarkdownToHTMLTests {
     }
 
     @Test("a forward with a signature but no typed body emits the signature above the quote")
-    func forwardWithSignature() {
+    func forwardWithSignature() throws {
         let composed =
             ReplyComposer.quoteBody(
                 mode: .forward, message: Self.quotedMessage,
                 bodyText: "forwarded content")
             + Signature.sigdash + "Ahmed"
         let html = MarkdownToHTML.renderComposed(composed)
-        let sig = try! #require(html.range(of: "<div class=\"sig\">"))
-        let quote = try! #require(html.range(of: "<blockquote>"))
+        let sig = try #require(html.range(of: "<div class=\"sig\">"))
+        let quote = try #require(html.range(of: "<blockquote>"))
         #expect(sig.upperBound <= quote.lowerBound)
         #expect(html.contains("forwarded content"))
     }

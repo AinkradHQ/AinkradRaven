@@ -87,7 +87,7 @@ struct GmailSendEncodingTests {
     /// a multi-byte UTF-8 sequence across the fold — the classic bug that
     /// produces replacement characters in a recipient's client.
     @Test("a long non-ASCII subject folds across multiple encoded words without splitting a UTF-8 sequence")
-    func longNonASCIISubjectFoldsWithoutSplittingUTF8() {
+    func longNonASCIISubjectFoldsWithoutSplittingUTF8() throws {
         let subject = String(repeating: "café ☕️ مرحبا ", count: 15)
         let encoded = RFC2047.encode(subject)
 
@@ -107,7 +107,7 @@ struct GmailSendEncodingTests {
                 word
                 .replacingOccurrences(of: "=?UTF-8?B?", with: "")
                 .replacingOccurrences(of: "?=", with: "")
-            let data = try! #require(Data(base64Encoded: base64))
+            let data = try #require(Data(base64Encoded: base64))
             #expect(
                 String(data: data, encoding: .utf8) != nil,
                 "a chunk that isn't valid UTF-8 on its own means a scalar was split")

@@ -6,13 +6,15 @@ import Testing
 @Suite(".emlx parsing")
 struct EmlxParserTests {
     /// Builds a well-formed `.emlx` byte sequence: `<count>\n<rfc822 bytes><plist>`.
-    private func emlx(rfc822: String, plist: [String: Any]? = ["flags": ["read": true, "flagged": false]]) -> Data {
+    private func emlx(rfc822: String, plist: [String: Any]? = ["flags": ["read": true, "flagged": false]]) throws
+        -> Data
+    {
         let messageBytes = Data(rfc822.utf8)
         var data = Data("\(messageBytes.count)\n".utf8)
         data.append(messageBytes)
         if let plist {
             data.append(
-                try! PropertyListSerialization.data(
+                try PropertyListSerialization.data(
                     fromPropertyList: plist,
                     format: .xml, options: 0))
         }
@@ -20,7 +22,7 @@ struct EmlxParserTests {
     }
 
     @Test("a well-formed .emlx parses headers, body, and flags, reusing RFC 2047 decode")
-    func wellFormedParses() {
+    func wellFormedParses() throws {
         let raw = """
             Subject: =?UTF-8?B?SGVsbG8g8J+YgA==?=\r
             From: Alice <alice@example.com>\r
@@ -29,7 +31,7 @@ struct EmlxParserTests {
             \r
             Hello there.\r
             """
-        let data = emlx(rfc822: raw)
+        let data = try emlx(rfc822: raw)
 
         let parsed = EmlxParser.parse(data)
         #expect(parsed != nil)
@@ -74,8 +76,8 @@ struct EmlxParserTests {
     }
 
     @Test("a missing plist trailer still parses the message, defaulting flags")
-    func missingTrailerStillParses() {
-        let data = emlx(rfc822: "Subject: no trailer\r\n\r\nbody", plist: nil)
+    func missingTrailerStillParses() throws {
+        let data = try emlx(rfc822: "Subject: no trailer\r\n\r\nbody", plist: nil)
         let parsed = EmlxParser.parse(data)
         #expect(parsed != nil)
         #expect(parsed?.isRead == false)
