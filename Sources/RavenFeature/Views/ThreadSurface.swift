@@ -32,7 +32,6 @@ public struct ThreadSurface: View {
     /// The message whose raw HTML the toolbar's "Show original" is showing.
     @State private var originalMessage: MailMessage?
     @State private var showingOriginal = false
-    @State private var showingOverflow = false
 
     public init(
         model: RavenViewModel, runtime: RavenRuntime,
@@ -204,17 +203,13 @@ public struct ThreadSurface: View {
             }
             .disabled(thread.messages.isEmpty)
 
-            AinkradIconButton(systemName: "ellipsis", size: 26, tooltip: "More actions") {
-                showingOverflow.toggle()
-            }
             // The ⋯ menu and the pane's own right-click menu are built from the
             // SAME `[AinkradMenuItem]` array, so there is one declaration of
             // what "more actions" means rather than two that can drift.
-            .ainkradFloatingPanel(isPresented: $showingOverflow, maxHeight: 260) {
-                OverflowMenu(
-                    items: overflowItems(thread),
-                    onSelect: { showingOverflow = false })
+            AinkradMenuButton(items: overflowItems(thread), maxHeight: 260) {
+                OverflowTrigger(size: 26)
             }
+            .ainkradTooltip("More actions")
         }
         .padding(.horizontal, AinkradSpacing.md)
         .padding(.vertical, AinkradSpacing.sm)
@@ -279,40 +274,35 @@ public struct ThreadSurface: View {
     }
 }
 
-/// The ⋯ overflow list. `AinkradMenuItem` is the kit's menu-item model and
-/// `AinkradListRow` its row; the kit has no button-anchored menu component, so
-/// this composes those two inside `.ainkradFloatingPanel` rather than adding a
-/// bespoke menu look.
-private struct OverflowMenu: View {
-    let items: [AinkradMenuItem]
-    let onSelect: () -> Void
+/// The ⋯ trigger: `AinkradIconButton`'s look, as `AinkradMenuButton`'s label.
+///
+/// Not the kit button itself because that is a `Button`, and a `Button` inside
+/// `AinkradMenuButton`'s own takes the click, so the menu would never open. The
+/// button's component tokens are package-internal, so its values are restated
+/// here from the public ladders. The kit has no icon-only menu trigger; that is
+/// a kit gap, recorded in the ledger.
+private struct OverflowTrigger: View {
+    let size: CGFloat
 
     @Environment(\.ainkradTheme) private var theme
-    @Environment(\.ainkradStatusColors) private var statusColors
+    @Environment(\.ainkradSkin) private var skin
+    @Environment(\.ainkradReduceMotion) private var reduceMotion
+    @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(items) { item in
-                AinkradListRow(
-                    onTap: {
-                        item.action()
-                        onSelect()
-                    },
-                    leading: {
-                        if let systemName = item.systemName {
-                            AinkradIconGlyph(systemName: systemName)
-                        }
-                    },
-                    title: item.title,
-                    trailing: {
-                        if let shortcut = item.shortcut { AinkradKbd(shortcut) }
-                    }
-                )
-                .foregroundStyle(item.isDestructive ? statusColors.danger : theme.foreground)
-            }
-        }
-        .padding(AinkradSpacing.xs)
-        .frame(minWidth: 200)
+        let shape = ChamferShape(cut: size * skin.cut.r0_2)
+        let o = skin.opacity
+        Image(systemName: "ellipsis")
+            .font(skin.font(AinkradFontToken(sizeKey: "t11", weight: "semibold", scaled: false)))
+            .foregroundStyle(theme.foreground.opacity(hovering ? 1 : o.o75))
+            .frame(width: size, height: size)
+            .background(shape.fill(theme.surfaceElevated.opacity(hovering ? o.o70 : o.o40)))
+            .overlay(shape.strokeBorder(theme.accentSecondary.opacity(hovering ? o.o85 : o.o35), lineWidth: 1))
+            .shadow(color: theme.accentSecondary.opacity(hovering ? o.o50 : 0), radius: hovering ? skin.size.s5 : 0)
+            .contentShape(shape)
+            .scaleEffect(hovering && !reduceMotion ? 1.05 : 1.0)
+            .animation(skin.animation(skin.motion.hover), value: hovering)
+            .onHover { hovering = $0 }
     }
 }
 
