@@ -24,7 +24,7 @@ enum RichTextCommand: Equatable {
         guard range.length > 0, let storage = textView.textStorage else { return }
         let baseFont =
             (textView as? RichComposeTextView)?.baseFont
-            ?? textView.font ?? .systemFont(ofSize: 13)
+            ?? textView.font ?? .systemFont(ofSize: 13)  // design-lint: allow font-size token-gap type.nsFont
         let baseColor =
             (textView as? RichComposeTextView)?.baseColor
             ?? textView.textColor ?? .textColor

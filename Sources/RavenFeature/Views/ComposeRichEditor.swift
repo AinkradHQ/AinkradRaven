@@ -101,7 +101,7 @@ struct ComposeBodyField: View {
     private var bodyFont: NSFont {
         let size = AinkradFontResolver.pointSize(.body, typography: typo)
         if let family = typo.fontFamilyName, let f = NSFont(name: family, size: size) { return f }
-        return NSFont.systemFont(ofSize: size)
+        return NSFont.systemFont(ofSize: size)  // design-lint: allow font-size token-gap type.nsFont
     }
 }
 
@@ -224,7 +224,7 @@ struct ComposeRichEditor: NSViewRepresentable {
 /// tracking pixel or a remote stylesheet cannot survive into a sent message,
 /// not because it was sanitised but because it was never represented.
 final class RichComposeTextView: NSTextView {
-    var baseFont: NSFont = .systemFont(ofSize: 13)
+    var baseFont: NSFont = .systemFont(ofSize: 13)  // design-lint: allow font-size token-gap type.nsFont
     var baseColor: NSColor = .textColor
 
     /// The composer's own undo stack.
