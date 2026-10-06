@@ -97,28 +97,21 @@ struct GraphDeadlineExceeded: Error, CustomStringConvertible {
 
 /// What each intercepted request was, so a test can assert on the URL and the
 /// Authorization header rather than only on the decoded result.
-final class SeenRequests: @unchecked Sendable {
+final class SeenRequests: Sendable {
     struct Entry {
         let url: String
         let authorization: String?
     }
-    private let lock = NSLock()
-    private var entries: [Entry] = []
+    private let entries = Locked<[Entry]>([])
 
     func record(_ request: URLRequest) {
         let entry = Entry(
             url: request.url?.absoluteString ?? "",
             authorization: request.value(forHTTPHeaderField: "Authorization"))
-        lock.lock()
-        entries.append(entry)
-        lock.unlock()
+        entries.withLock { $0.append(entry) }
     }
 
-    var all: [Entry] {
-        lock.lock()
-        defer { lock.unlock() }
-        return entries
-    }
+    var all: [Entry] { entries.value }
 }
 
 /// Method, URL and body of every intercepted request, together.
@@ -128,7 +121,7 @@ final class SeenRequests: @unchecked Sendable {
 /// that a particular METHOD went to a particular PATH with a particular body, and
 /// correlating three parallel arrays by index is exactly the "payload injected at
 /// the wrong nesting level" mistake wearing a different hat.
-final class RecordedRequests: @unchecked Sendable {
+final class RecordedRequests: Sendable {
     struct Entry {
         let method: String
         let url: String
@@ -153,24 +146,17 @@ final class RecordedRequests: @unchecked Sendable {
         }
     }
 
-    private let lock = NSLock()
-    private var entries: [Entry] = []
+    private let entries = Locked<[Entry]>([])
 
     func record(_ request: URLRequest) {
         let entry = Entry(
             method: request.httpMethod ?? "",
             url: request.url?.absoluteString ?? "",
             body: Self.body(of: request))
-        lock.lock()
-        entries.append(entry)
-        lock.unlock()
+        entries.withLock { $0.append(entry) }
     }
 
-    var all: [Entry] {
-        lock.lock()
-        defer { lock.unlock() }
-        return entries
-    }
+    var all: [Entry] { entries.value }
     var count: Int { all.count }
 
     /// `StubURLProtocol` hands a POST's body over as a stream rather than on
@@ -193,9 +179,8 @@ final class RecordedRequests: @unchecked Sendable {
 
 /// Collects request BODIES from inside `StubURLProtocol`, which hands a POST's
 /// body over as a stream rather than on `httpBody`.
-final class RecordedBodies: @unchecked Sendable {
-    private let lock = NSLock()
-    private var entries: [String] = []
+final class RecordedBodies: Sendable {
+    private let entries = Locked<[String]>([])
 
     func record(_ request: URLRequest) {
         let body: String
@@ -215,14 +200,8 @@ final class RecordedBodies: @unchecked Sendable {
         } else {
             body = ""
         }
-        lock.lock()
-        entries.append(body)
-        lock.unlock()
+        entries.withLock { $0.append(body) }
     }
 
-    var all: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return entries
-    }
+    var all: [String] { entries.value }
 }

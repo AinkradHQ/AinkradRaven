@@ -21,20 +21,13 @@ private func bodyString(of request: URLRequest) -> String {
     return String(decoding: data, as: UTF8.self)
 }
 
-private final class RequestLog: @unchecked Sendable {
-    private let lock = NSLock()
-    private var entries: [(url: String, body: String)] = []
+private final class RequestLog: Sendable {
+    private let entries = Locked<[(url: String, body: String)]>([])
     func record(_ request: URLRequest) {
         let entry = (request.url?.absoluteString ?? "", bodyString(of: request))
-        lock.lock()
-        entries.append(entry)
-        lock.unlock()
+        entries.withLock { $0.append(entry) }
     }
-    var all: [(url: String, body: String)] {
-        lock.lock()
-        defer { lock.unlock() }
-        return entries
-    }
+    var all: [(url: String, body: String)] { entries.value }
 }
 
 private func makeConfiguration(clientSecret: String?) -> OAuthConfiguration {

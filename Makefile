@@ -33,7 +33,8 @@ sideload: build
 # the cap costs nothing and converts an unbounded hang into exit code 124.
 #
 # It is a real risk rather than a hypothetical: 338 async tests, of which only 46
-# use `boundedOutcome`, and NO suite carries swift-testing's `.timeLimit`. A test
+# use `boundedOutcome`, and swift-testing's `.timeLimit` is on only some suites
+# (the IMAP and SMTP ones; `grep -rl .timeLimit Tests`), not all. A test
 # driving a `ScriptedTransport` that never receives its scripted response leaves a
 # continuation suspended forever, and the runner waits with it.
 #

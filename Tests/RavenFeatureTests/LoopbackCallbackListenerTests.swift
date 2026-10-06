@@ -85,25 +85,10 @@ struct StateVerificationTests {
 /// small, and 200 concurrent firers reliably exercise the race in practice.
 @Suite("OneShotResumeGuard")
 struct OneShotResumeGuardTests {
-    private final class Counter: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value = 0
-        func increment() {
-            lock.lock()
-            value += 1
-            lock.unlock()
-        }
-        var current: Int {
-            lock.lock()
-            defer { lock.unlock() }
-            return value
-        }
-    }
-
     @Test("only the first of many concurrent fires invokes the completion")
     func exactlyOneCompletionUnderConcurrency() async {
-        let completions = Counter()
-        let resumeGuard = OneShotResumeGuard<Int> { _ in completions.increment() }
+        let completions = Locked(0)
+        let resumeGuard = OneShotResumeGuard<Int> { _ in completions.withLock { $0 += 1 } }
 
         await withTaskGroup(of: Void.self) { group in
             for i in 0..<200 {
@@ -111,23 +96,23 @@ struct OneShotResumeGuardTests {
             }
         }
 
-        #expect(completions.current == 1)
+        #expect(completions.value == 1)
     }
 
     @Test("fire() reports true for exactly one caller under concurrency")
     func exactlyOneTrueReturnUnderConcurrency() async {
-        let trueReturns = Counter()
+        let trueReturns = Locked(0)
         let resumeGuard = OneShotResumeGuard<Int> { _ in }
 
         await withTaskGroup(of: Void.self) { group in
             for i in 0..<200 {
                 group.addTask {
-                    if resumeGuard.fire(i) { trueReturns.increment() }
+                    if resumeGuard.fire(i) { trueReturns.withLock { $0 += 1 } }
                 }
             }
         }
 
-        #expect(trueReturns.current == 1)
+        #expect(trueReturns.value == 1)
     }
 }
 
@@ -142,24 +127,9 @@ struct OneShotResumeGuardTests {
 /// than fail, and the harness timeout would surface it as a stuck test run.
 @Suite("Loopback listener lifetime")
 struct LoopbackCallbackListenerLifetimeTests {
-    private final class Box: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value: UInt16?
-        func set(_ new: UInt16) {
-            lock.lock()
-            value = new
-            lock.unlock()
-        }
-        var current: UInt16? {
-            lock.lock()
-            defer { lock.unlock() }
-            return value
-        }
-    }
-
     @Test("the listener binds, reports its port, and times out with a definite error")
     func bindsAndTimesOutRatherThanLeaking() async {
-        let observedPort = Box()
+        let observedPort = Locked<UInt16?>(nil)
 
         await #expect(throws: LoopbackCallbackListener.ListenerError.timedOut) {
             try await LoopbackCallbackListener.run(
@@ -168,14 +138,14 @@ struct LoopbackCallbackListenerLifetimeTests {
                     // Only called from the `.ready` state handler, so reaching
                     // here proves the coordinator was still alive well after
                     // `run(...)` returned — the exact thing the bug broke.
-                    observedPort.set(port)
+                    observedPort.withLock { $0 = port }
                     return "http://localhost:\(port)"
                 },
                 expectedState: "test-state")
         }
 
         // A real, non-zero OS-assigned ephemeral port was bound.
-        #expect((observedPort.current ?? 0) > 0)
+        #expect((observedPort.value ?? 0) > 0)
     }
 
     @Test("a second flow can bind after the first tore itself down")
