@@ -30,9 +30,7 @@ struct RavenAccountsPane: View {
     /// would otherwise drop the setting entirely.
     let showsSignature: Bool
 
-    @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradSkin) private var skin
-    @Environment(\.ainkradTypography) private var typo
 
     @State private var isConnecting = false
     /// Tracked separately from `isConnecting` so a Graph flow in progress does not

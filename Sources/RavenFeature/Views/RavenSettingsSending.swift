@@ -12,9 +12,7 @@ import SwiftUI
 struct SendingSettingsGroup: View {
     let runtime: RavenRuntime
 
-    @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradSkin) private var skin
-    @Environment(\.ainkradTypography) private var typo
 
     /// Mirrors `runtime.holdWindow`. Held as text so a half-typed number does
     /// not momentarily read as a valid setting — only a parse that succeeds and

@@ -14,9 +14,7 @@ import SwiftUI
 struct PrivacySettingsGroup: View {
     let runtime: RavenRuntime
 
-    @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradSkin) private var skin
-    @Environment(\.ainkradTypography) private var typo
 
     @State private var isExpanded = false
     /// Bumped after a revoke so `runtime.allowedImageSenders` — a plain read

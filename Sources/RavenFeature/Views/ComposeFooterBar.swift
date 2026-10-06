@@ -18,7 +18,6 @@ struct ComposeFooterBar: View {
     let onSaveDraft: () -> Void
     let onSend: () -> Void
 
-    @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 

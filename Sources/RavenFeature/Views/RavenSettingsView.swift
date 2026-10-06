@@ -33,9 +33,6 @@ public struct RavenSettingsView: View {
     @State private var clientSecret = ""
     @State private var saveError: String?
 
-    @Environment(\.ainkradTheme) private var theme
-    @Environment(\.ainkradTypography) private var typo
-
     public init(
         runtime: RavenRuntime,
         presentation: any PluginPresentationControl,
