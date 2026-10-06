@@ -246,7 +246,6 @@ struct ComposeFieldWrap<Content: View>: View {
 
     @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradTypography) private var typo
-    @Environment(\.ravenAppearance) private var appearance
 
     var body: some View {
         AinkradCaptionedRow(label) {
@@ -257,41 +256,28 @@ struct ComposeFieldWrap<Content: View>: View {
                 // and the field shrink-wraps its content — a To field exactly as
                 // wide as the one chip in it.
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .modifier(ComposeFieldChrome(appearance: appearance))
+                .modifier(ComposeFieldChrome())
         }
     }
 }
 
-/// The chamfer + elevated fill + accent hairline that makes a chip field and an
-/// `AinkradTextField` read as one family. Extracted so the subject/body fields
-/// and the chip fields cannot drift apart.
+/// `AinkradTextField`'s chrome — the kit's `field` role: its chamfer, fill and
+/// resting edge — so a chip field and the Subject field beside it are one
+/// family by construction rather than by copied numbers.
+///
+/// Resting state only. The kit field brightens its edge while focused, but
+/// focus here lives in the chip field's own `TextField`, which this wrapper
+/// cannot see; a focus binding on the kit field is a kit gap (ledger).
 struct ComposeFieldChrome: ViewModifier {
-    let appearance: RavenAppearance
-
-    @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
 
     func body(content: Content) -> some View {
+        let field = skin.roles.field
+        let shape = AinkradSkinShape(token: field.shape)
         content
-            // Theme surface, not `Color.gray`: the field has to sit correctly on
-            // whichever theme the host is running, and a fixed grey wash reads as
-            // dirty on the light ones and invisible on the dark ones. Matches
-            // `AinkradTextField`'s own treatment (chamfer + elevated fill + accent
-            // hairline) so a chip field and a text field are visibly one family.
-            //
-            // The fill is the shared card budget, not the fixed 0.45 it was. 0.45
-            // over a compose panel that itself sits on the scrim composites to
-            // roughly 0.7 — a field well darker than the modal holding it, and the
-            // second-most solid thing in the overlay after the suggestion popover
-            // above. `cardFillOpacity(isRead: false)` is the same lift a hovered
-            // inbox row and an unread message card spend, so a field reads as
-            // raised without being a slab.
-            .background(
-                ChamferShape(cut: AinkradRadius.sm)
-                    .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)))
-            )
+            .background(shape.fill(skin.color(field.fill)))
             .overlay(
-                ChamferShape(cut: AinkradRadius.sm)
-                    .strokeBorder(theme.accentPrimary.opacity(0.2), lineWidth: 1))
+                shape.strokeBorder(skin.color(field.stroke.color), lineWidth: field.stroke.width.resolve([])))
     }
 }
 
