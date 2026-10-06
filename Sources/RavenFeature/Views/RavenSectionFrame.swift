@@ -2,43 +2,6 @@ import AinkradAppKit
 import AinkradAppKitUI
 import SwiftUI
 
-/// The user's surface setting, carried down the view tree.
-///
-/// Why an environment value when `InboxRow` and `ComposeUndoBanner` take it as
-/// a `let`: those are constructed by a view that already holds the runtime, so
-/// passing it costs one argument. The surfaces fixed here — a recipient
-/// suggestion popover, a chip field's well, a titled block inside a message —
-/// are three and four levels down from the nearest view that has a runtime, and
-/// threading an argument through every intermediate initialiser to reach them
-/// is how a translucency rule gets forgotten at one site (which is exactly what
-/// happened: `ComposeFields` took `AinkradPanel`'s opaque 0.94 default because
-/// nothing there had an `appearance` to hand).
-///
-/// The default is `RavenAppearance.default`, NOT the kit's opaque look, so a
-/// site that is somehow reached without an injection is still glass at the
-/// out-of-the-box setting rather than a slab.
-///
-/// Observation still works: `RavenShell` sets it from
-/// `runtime.appearanceStore.appearance` inside its own `body`, so the read is
-/// tracked and dragging the slider re-injects.
-private struct RavenAppearanceKey: EnvironmentKey {
-    static let defaultValue = RavenAppearance.default
-}
-
-extension EnvironmentValues {
-    public var ravenAppearance: RavenAppearance {
-        get { self[RavenAppearanceKey.self] }
-        set { self[RavenAppearanceKey.self] = newValue }
-    }
-}
-
-extension View {
-    /// Publishes the surface setting to every Raven surface below this point.
-    public func ravenAppearanceEnvironment(_ appearance: RavenAppearance) -> some View {
-        environment(\.ravenAppearance, appearance)
-    }
-}
-
 /// `AinkradSectionFrame`'s look, with an appearance-derived fill instead of its
 /// hardcoded one.
 ///
@@ -65,19 +28,24 @@ struct RavenSectionFrame<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
     @Environment(\.ravenAppearance) private var appearance
 
     var body: some View {
+        // The kit's `accentTick` role for the tick. The section frame's own
+        // component tokens (tick size, title colour) are not public, so those
+        // come from the ladders at the kit's values.
+        let tick = skin.roles.accentTick
         VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
             HStack(spacing: AinkradSpacing.xs) {
                 Rectangle()
-                    .fill(theme.accentSecondary)
-                    .frame(width: 14, height: 2)
-                    .shadow(color: theme.accentSecondary.opacity(0.6), radius: 2)
+                    .fill(skin.color(tick.fill))
+                    .frame(width: skin.size.s14, height: skin.size.s2)
+                    .shadow(color: skin.color(tick.glow.color.rest), radius: tick.glow.radius.rest)
                 Text(title.uppercased())
                     .font(AinkradFontResolver.font(.caption, weight: .semibold, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.7))
+                    .foregroundStyle(theme.foreground.opacity(skin.opacity.o70))
                     .tracking(1.2)
             }
             content()

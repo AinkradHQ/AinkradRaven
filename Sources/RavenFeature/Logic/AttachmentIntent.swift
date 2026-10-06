@@ -74,13 +74,13 @@ public enum AttachmentIntent {
                 continue
             // Hamza-bearing and wasla alefs fold to bare alef.
             case 0x0622, 0x0623, 0x0625, 0x0671:
-                out.append(Unicode.Scalar(0x0627)!)
+                out.append("\u{0627}")
             // Alef maksura folds to yeh.
             case 0x0649:
-                out.append(Unicode.Scalar(0x064A)!)
+                out.append("\u{064A}")
             // Teh marbuta folds to heh.
             case 0x0629:
-                out.append(Unicode.Scalar(0x0647)!)
+                out.append("\u{0647}")
             default:
                 out.append(scalar)
             }

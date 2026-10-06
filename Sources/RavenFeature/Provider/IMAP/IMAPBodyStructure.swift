@@ -93,8 +93,6 @@ struct IMAPValueReader {
         self.position = position
     }
 
-    var isAtEnd: Bool { position >= tokens.count }
-
     func peek() -> IMAPToken? { position < tokens.count ? tokens[position] : nil }
 
     mutating func advance() { position += 1 }

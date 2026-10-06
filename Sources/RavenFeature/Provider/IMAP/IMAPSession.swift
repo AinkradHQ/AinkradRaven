@@ -109,11 +109,9 @@ actor IMAPSession {
 
     init(transport: any MailTransport) {
         self.transport = transport
-        var continuation: AsyncStream<IMAPUntaggedResponse>.Continuation!
-        self.untaggedResponses = AsyncStream(bufferingPolicy: .bufferingNewest(512)) {
-            continuation = $0
-        }
-        self.untaggedContinuation = continuation
+        let stream = AsyncStream.makeStream(of: IMAPUntaggedResponse.self, bufferingPolicy: .bufferingNewest(512))
+        self.untaggedResponses = stream.stream
+        self.untaggedContinuation = stream.continuation
     }
 
     /// Only finishes the untagged stream. It deliberately does NOT try to resume
@@ -121,8 +119,8 @@ actor IMAPSession {
     /// `deinit` cannot run while any waiter exists.
     deinit { untaggedContinuation.finish() }
 
-    // MARK: - Introspection (assertions read these)
-
+    // MARK: - Introspection (test-only, so DEBUG-only: assertions read these)
+    #if DEBUG
     /// Commands whose completion has neither arrived nor been handed to a waiter.
     /// Must be 0 after `close()`.
     var inFlightCount: Int { inFlight.count }
@@ -138,6 +136,7 @@ actor IMAPSession {
         if case .running = state { return true }
         return false
     }
+    #endif
 
     // MARK: - Lifecycle
 

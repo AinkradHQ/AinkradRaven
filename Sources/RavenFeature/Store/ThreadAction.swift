@@ -114,7 +114,7 @@ public enum ThreadMutationApplier {
             do {
                 try store.upsertThread(thread)
             } catch {
-                Log.store.error(
+                AinkradLog.logger("raven.store").error(
                     "Local label mutation for \(id, privacy: .public) was not saved: \(String(describing: error), privacy: .public)"
                 )
             }

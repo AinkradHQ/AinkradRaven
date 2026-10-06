@@ -1,27 +1,24 @@
 import AinkradAppKit
 import AinkradAppKitUI
-import AppKit
 import SwiftUI
 
 /// `.ainkradModal(isPresented:contentWidth:)` with the panel's translucency
 /// taken from the user's setting instead of the kit's fixed 0.94.
 ///
-/// Why this is local rather than a call into the kit: `AinkradModalModifier`
-/// builds its panel with `.ainkradPanel(showsBrackets: true)`, which takes
-/// `AinkradPanel`'s default `backgroundOpacity` of 0.94, and exposes no way to
-/// change it. That is exactly the "flat opaque slab" the composer screenshot
-/// shows — the scrim behind it blurs correctly and then the panel paints 94% of
-/// the theme background over the result. Adding a `backgroundOpacity:`
-/// parameter to `.ainkradModal` is the right fix and would let this file be
-/// deleted, but the kit is pinned to the exact revision the host builds
-/// against, so changing it here would mean a plugin linking a kit the host does
-/// not have.
+/// The kit modal draws its panel with `AinkradPanel`, which reads its fill and
+/// blur from `\.ainkradSurfaceOpacity` and `\.ainkradSurfaceBlur`. This sets
+/// them to `modalFillOpacity` and no blur: the panel sits over the scrim, and
+/// painting the pane's opacity over the 0.45 scrim composited to ~0.85, the
+/// flat composer. `modalFillOpacity` makes the stack land on the user's setting
+/// plus one modal lift. No blur because the panel's own `VisualEffectBlur` would
+/// be a third blur over an already-blurred scrim over the host's backdrop.
 ///
-/// Everything else is a faithful copy of the kit modifier, on purpose: the
-/// scrim blur and dim, dismissal on scrim tap, the invisible Esc button, the
-/// materialize/scale transition and its `ainkradReduceMotion` gate, and the
-/// cap-then-pad content sizing that makes the `contentWidth` argument mean the
-/// width the content actually gets. Dismissal behaviour is unchanged, which
+/// An environment write reaches everything below it, which here is both the
+/// view the modal is attached to and the modal's content. Both get the values
+/// in force above this point back, so only the modal panel takes the setting:
+/// a kit panel or modal inside either keeps the host's.
+///
+/// Dismissal is the kit's: scrim tap and Esc both write `isPresented`. That
 /// matters more here than anywhere else in Raven: closing the composer must
 /// keep routing through the same `isPresented` write, because
 /// `ComposeSurface.onDisappear` is what preserves the draft, and the "a draft
@@ -33,83 +30,20 @@ private struct RavenTranslucentModalModifier<ModalContent: View>: ViewModifier {
     var appearance: RavenAppearance
     @ViewBuilder var modalContent: () -> ModalContent
 
-    @Environment(\.ainkradReduceMotion) private var reduceMotion
-    @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSurfaceOpacity) private var outerOpacity
+    @Environment(\.ainkradSurfaceBlur) private var outerBlur
 
     func body(content: Content) -> some View {
-        content.overlay {
-            if isPresented {
-                ZStack {
-                    // The one `VisualEffectBlur` left in Raven, and it is not a
-                    // surface: it blurs RAVEN'S OWN mail list behind the scrim
-                    // so the composer reads as a separate plane. That is the
-                    // kit modifier's behaviour and the reason a scrim exists at
-                    // all. Fixed at `.panel` — with no per-surface blur left
-                    // there is nothing for a user setting to mean here.
-                    VisualEffectBlur(level: .panel, blendingMode: .withinWindow)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .opacity(0.6)
-                    // The scrim. Unchanged from the kit's 0.45 — now named as
-                    // `RavenAppearance.scrimOpacity`, because the panel's own
-                    // fill is computed OVER it rather than independently of it
-                    // — and deliberately NOT scaled by the transparency
-                    // setting: a scrim's whole job is to push the content
-                    // behind it back, and a scrim that thins out with the panel
-                    // would stop separating the two. This is the layer the old
-                    // focus ring was being drawn on top of — see
-                    // `RavenFocusRing`.
-                    Color.black.opacity(RavenAppearance.scrimOpacity)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture { isPresented = false }
-
-                    modalContent()
-                        .frame(maxWidth: contentWidth)
-                        .padding(AinkradSpacing.lg)
-                        // `modalFillOpacity`, not `surfaceOpacity`: the panel
-                        // sits over the scrim, and painting the pane's opacity
-                        // over an existing 0.45 scrim composited to ~0.85 — the
-                        // "messed up", flat composer. This fill makes the stack
-                        // land on the user's setting plus one modal lift. See
-                        // `RavenAppearance.modalFillOpacity`.
-                        //
-                        // `ravenSurface`-style finish rather than
-                        // `.ainkradPanel`, for the same reason every other Raven
-                        // surface changed: the panel's own `VisualEffectBlur`
-                        // would be a THIRD blur over an already-blurred scrim
-                        // over the host's already-blurred backdrop. Brackets are
-                        // kept — they are the modal's own signature.
-                        .background(theme.background.opacity(appearance.modalFillOpacity))
-                        .clipShape(ChamferShape(cut: AinkradRadius.panel))
-                        .overlay(
-                            ChamferShape(cut: AinkradRadius.panel)
-                                .strokeBorder(theme.accentSecondary.opacity(0.4), lineWidth: 1)
-                        )
-                        .cornerBrackets()
-                        .ainkradPanelGlow()
-                        .transition(
-                            reduceMotion
-                                ? .opacity
-                                : .scale(scale: 0.94, anchor: .center).combined(with: .opacity)
-                        )
-
-                    dismissKey
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(reduceMotion ? nil : AinkradMotion.materialize, value: isPresented)
+        content
+            .environment(\.ainkradSurfaceOpacity, outerOpacity)
+            .environment(\.ainkradSurfaceBlur, outerBlur)
+            .ainkradModal(isPresented: $isPresented, contentWidth: contentWidth) {
+                modalContent()
+                    .environment(\.ainkradSurfaceOpacity, outerOpacity)
+                    .environment(\.ainkradSurfaceBlur, outerBlur)
             }
-        }
-    }
-
-    /// Invisible Esc-key dismiss affordance, copied from the kit modifier: a
-    /// real zero-size, zero-opacity `Button` rather than any native menu
-    /// chrome, so Esc dismisses while this scoped overlay is key.
-    private var dismissKey: some View {
-        Button("") { isPresented = false }
-            .keyboardShortcut(.escape, modifiers: [])
-            .opacity(0)
-            .frame(width: 0, height: 0)
-            .accessibilityHidden(true)
+            .environment(\.ainkradSurfaceOpacity, appearance.modalFillOpacity)
+            .environment(\.ainkradSurfaceBlur, false)
     }
 }
 

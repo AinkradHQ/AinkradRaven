@@ -106,7 +106,7 @@ public struct OAuthTokenClient: Sendable {
     ) -> URL {
         var components = URLComponents(
             url: configuration.authorizationEndpoint,
-            resolvingAgainstBaseURL: false)!
+            resolvingAgainstBaseURL: false)!  // design-lint: allow force-unwrap components of a valid URL
         var items: [URLQueryItem] = [
             .init(name: "client_id", value: configuration.clientID),
             .init(name: "redirect_uri", value: redirectURI),
@@ -121,7 +121,7 @@ public struct OAuthTokenClient: Sendable {
             items.append(.init(name: name, value: value))
         }
         components.queryItems = items
-        return components.url!
+        return components.url!  // design-lint: allow force-unwrap valid URL plus encoded query items
     }
 
     // MARK: Exchanges
@@ -180,6 +180,10 @@ public struct OAuthTokenClient: Sendable {
         return Data(body.utf8)
     }
 
+    /// How much of a token endpoint's error document reaches `providerFailed`.
+    /// Enough for OAuth's `error` and a short `error_description`.
+    static let maxErrorBodyCharacters = 200
+
     private func exchange(parameters: [String: String]) async throws -> TokenPayload {
         var request = URLRequest(url: configuration.tokenEndpoint)
         request.httpMethod = "POST"
@@ -191,10 +195,12 @@ public struct OAuthTokenClient: Sendable {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             // The response body is the provider's error document; the request
             // body (which carries the client secret) is deliberately NOT part
-            // of this error.
+            // of this error. Truncated, because `SyncEngine` persists an
+            // error's description into `MailAccount.lastError`, and the
+            // providers keep that field short for the same reason.
             throw MailError.providerFailed(
                 status: status,
-                message: String(decoding: data, as: UTF8.self))
+                message: String(String(decoding: data, as: UTF8.self).prefix(Self.maxErrorBodyCharacters)))
         }
         struct Wire: Decodable {
             let access_token: String

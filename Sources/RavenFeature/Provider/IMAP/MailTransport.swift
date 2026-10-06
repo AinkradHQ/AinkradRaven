@@ -79,8 +79,10 @@ enum MailTransportError: Error, Equatable {
     /// release) and for any other conformer that genuinely cannot. It is never a
     /// policy refusal, and it is never followed by a plaintext continuation.
     case tlsUpgradeUnsupported
+    #if DEBUG
     /// Scripted-double only: the test script had no more bytes to hand back.
     /// A deterministic error rather than a suspended read, so a wrong
     /// expectation in a test fails the test instead of hanging the suite.
     case scriptExhausted(String)
+    #endif
 }

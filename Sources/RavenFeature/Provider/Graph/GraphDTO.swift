@@ -134,10 +134,6 @@ public struct GraphAttachmentDTO: Decodable {
     }
 }
 
-public struct GraphAttachmentListDTO: Decodable {
-    public let value: [GraphAttachmentDTO]?
-}
-
 /// `GET /me` — the signed-in user. `mail` is absent for an account with no
 /// mailbox address provisioned, in which case `userPrincipalName` is the
 /// address Graph itself uses.

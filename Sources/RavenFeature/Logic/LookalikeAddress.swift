@@ -58,7 +58,7 @@ public enum LookalikeAddress {
                 let other = candidate.address.email.lowercased()
                 let distance = editDistance(typed, other)
                 guard isPlausibleTypo(distance: distance, typed: typed, known: other) else { continue }
-                if best == nil || distance < best!.distance {
+                if best.map({ distance < $0.distance }) ?? true {
                     best = Match(typed: address, suggestion: candidate.address, distance: distance)
                 }
             }

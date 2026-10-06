@@ -150,7 +150,7 @@ import Testing
         let outbox = Outbox(documents: InMemoryDocumentStore(), provider: provider)
         let entryID = try outbox.enqueue(.send(message()))
 
-        try outbox.discard(entryID)
+        outbox.discard(entryID)
 
         #expect(outbox.outcome(for: entryID) == .removedWithoutSending)
         #expect(provider.sentMessages.isEmpty)

@@ -35,6 +35,7 @@ public struct InboxSurface: View {
     @FocusState private var listFocused: Bool
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     /// Straight off the runtime's observable store rather than the environment,
@@ -233,10 +234,10 @@ public struct InboxSurface: View {
         case .searching:
             // The kit's own loading state, not a bare ProgressView + Text.
             AinkradLoadingState(label: "Searching all mail…")
-                .frame(height: 72)
+                .frame(height: skin.size.s72)
         case .failed(let message):
             AinkradErrorState(message: "Search all mail failed: \(message)")
-                .frame(height: 96)
+                .frame(height: skin.size.s96)
         case .results(let hits):
             // `RavenSectionFrame`: inside the translucent rail, the kit
             // component's fixed 0.35 fill reads as a dark card on glass.
@@ -248,16 +249,16 @@ public struct InboxSurface: View {
                 if hits.isEmpty {
                     Text("Gmail's full-archive search found nothing for this query.")
                         .font(AinkradFontResolver.font(.caption, typography: typo))
-                        .foregroundStyle(theme.foreground.opacity(0.6))
+                        .foregroundStyle(theme.foreground.opacity(skin.opacity.o60))
                 } else {
-                    LazyVStack(spacing: 2) {
+                    LazyVStack(spacing: skin.size.s2) {
                         ForEach(hits, id: \.id) { summary in
                             row(for: summary)
                         }
                     }
                 }
             }
-            .frame(maxHeight: 260)
+            .frame(maxHeight: skin.size.s260)
         }
     }
 
@@ -267,7 +268,7 @@ public struct InboxSurface: View {
             emptyState
         } else {
             ScrollView {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: skin.size.s2) {
                     ForEach(model.visibleThreads, id: \.id) { summary in
                         row(for: summary)
                     }

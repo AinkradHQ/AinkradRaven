@@ -25,6 +25,7 @@ struct RecipientChipField: View {
     @FocusState private var isFocused: Bool
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
     @Environment(\.ravenAppearance) private var appearance
 
@@ -66,10 +67,10 @@ struct RecipientChipField: View {
                             RecipientDetail(chip: chip, candidates: candidates)
                         }
                     }
-                    TextField("", text: $typed)
+                    TextField("", text: $typed)  // design-lint: allow raw-control token-gap chipFieldFocusBinding
                         .textFieldStyle(.plain)
                         .focused($isFocused)
-                        .frame(minWidth: 80)
+                        .frame(minWidth: skin.size.s80)
                         .onSubmit { commit() }
                         .onChange(of: typed) { _, newValue in
                             if newValue.hasSuffix(",") {
@@ -108,7 +109,7 @@ struct RecipientChipField: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(suggestions.indices, id: \.self) { index in
                         let candidate = suggestions[index]
-                        Button {
+                        Button {  // design-lint: allow raw-control token-gap inlineSuggestionList
                             chips.append(RecipientChip(raw: rfc5322(for: candidate.address)))
                             typed = ""
                         } label: {
@@ -117,7 +118,7 @@ struct RecipientChipField: View {
                                     ?? candidate.address.email
                             )
                             .font(AinkradFontResolver.font(.caption, typography: typo))
-                            .foregroundStyle(theme.foreground.opacity(0.85))
+                            .foregroundStyle(theme.foreground.opacity(skin.opacity.o85))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, AinkradSpacing.sm)
                             .padding(.vertical, AinkradSpacing.xs)
@@ -192,6 +193,7 @@ struct RecipientDetail: View {
     let candidates: [RecipientSuggestions.Candidate]
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     private var candidate: RecipientSuggestions.Candidate? {
@@ -208,28 +210,23 @@ struct RecipientDetail: View {
             }
             Text(chip.address?.email ?? chip.raw)
                 .font(AinkradFontResolver.font(.caption, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(0.8))
+                .foregroundStyle(theme.foreground.opacity(skin.opacity.o80))
                 .textSelection(.enabled)
             if !chip.isValid {
                 AinkradBanner(message: "Not a valid address", status: .danger)
             } else if let candidate {
-                Text(
+                AinkradCaption(
                     "On \(candidate.frequency) thread\(candidate.frequency == 1 ? "" : "s") "
                         + "you have loaded, most recently "
-                        + MailDateLabel.short(for: candidate.mostRecent)
-                )
-                .font(AinkradFontResolver.font(.caption, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(0.55))
+                        + MailDateLabel.short(for: candidate.mostRecent))
             } else {
                 // Said plainly rather than left blank: "you have never mailed
                 // this person" is the single most useful thing to know before
                 // sending, and it is what `LookalikeAddress` acts on too.
-                Text("You have not mailed this address before.")
-                    .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.55))
+                AinkradCaption("You have not mailed this address before.")
             }
         }
-        .frame(maxWidth: 260, alignment: .leading)
+        .frame(maxWidth: skin.size.s260, alignment: .leading)
     }
 }
 
@@ -251,7 +248,6 @@ struct ComposeFieldWrap<Content: View>: View {
 
     @Environment(\.ainkradTheme) private var theme
     @Environment(\.ainkradTypography) private var typo
-    @Environment(\.ravenAppearance) private var appearance
 
     var body: some View {
         AinkradCaptionedRow(label) {
@@ -262,41 +258,37 @@ struct ComposeFieldWrap<Content: View>: View {
                 // and the field shrink-wraps its content — a To field exactly as
                 // wide as the one chip in it.
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .modifier(ComposeFieldChrome(appearance: appearance))
+                .modifier(ComposeFieldChrome())
         }
     }
 }
 
-/// The chamfer + elevated fill + accent hairline that makes a chip field and an
-/// `AinkradTextField` read as one family. Extracted so the subject/body fields
-/// and the chip fields cannot drift apart.
+/// `AinkradTextField`'s chamfer and resting edge — the kit's `field` role —
+/// so a chip field and the Subject field beside it share a shape and edge.
+///
+/// The fill is NOT the field role's surfaceElevated 0.5. Over a compose panel
+/// that itself sits on the scrim, a fixed fill composites to a well darker than
+/// the modal holding it. `cardFillOpacity(isRead: false)` is the same lift a
+/// hovered inbox row and an unread message card spend, so the field reads as
+/// raised without being a slab.
+///
+/// Resting state only. The kit field brightens its edge while focused, but
+/// focus here lives in the chip field's own `TextField`, which this wrapper
+/// cannot see; a focus binding on the kit field is a kit gap (ledger).
 struct ComposeFieldChrome: ViewModifier {
-    let appearance: RavenAppearance
-
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
+    @Environment(\.ravenAppearance) private var appearance
 
     func body(content: Content) -> some View {
+        let field = skin.roles.field
+        let shape = AinkradSkinShape(token: field.shape)
         content
-            // Theme surface, not `Color.gray`: the field has to sit correctly on
-            // whichever theme the host is running, and a fixed grey wash reads as
-            // dirty on the light ones and invisible on the dark ones. Matches
-            // `AinkradTextField`'s own treatment (chamfer + elevated fill + accent
-            // hairline) so a chip field and a text field are visibly one family.
-            //
-            // The fill is the shared card budget, not the fixed 0.45 it was. 0.45
-            // over a compose panel that itself sits on the scrim composites to
-            // roughly 0.7 — a field well darker than the modal holding it, and the
-            // second-most solid thing in the overlay after the suggestion popover
-            // above. `cardFillOpacity(isRead: false)` is the same lift a hovered
-            // inbox row and an unread message card spend, so a field reads as
-            // raised without being a slab.
             .background(
-                ChamferShape(cut: AinkradRadius.sm)
-                    .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)))
+                shape.fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)))
             )
             .overlay(
-                ChamferShape(cut: AinkradRadius.sm)
-                    .strokeBorder(theme.accentPrimary.opacity(0.2), lineWidth: 1))
+                shape.strokeBorder(skin.color(field.stroke.color), lineWidth: field.stroke.width.resolve([])))
     }
 }
 
@@ -335,47 +327,6 @@ struct WrappingChips: Layout {
             x += size.width + AinkradSpacing.xs
             rowHeight = max(rowHeight, size.height)
         }
-    }
-}
-
-/// Picks files to attach.
-///
-/// `NSOpenPanel`, allowing multiple selection of any file type — Compose does
-/// not restrict which files can be attached, matching every other mail client.
-/// Reads each picked file's bytes into memory immediately (never a cache
-/// directory) and derives its MIME type from the file's extension via `UTType`,
-/// falling back to `application/octet-stream` for a type `UTType` cannot
-/// classify. A file that cannot be read is logged and returned in `skipped`
-/// (by file name) so the composer can say so instead of dropping it silently.
-enum ComposeAttachmentPicker {
-    @MainActor static func pick() -> (picked: [OutgoingAttachment], skipped: [String]) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        guard panel.runModal() == .OK else { return ([], []) }
-        var picked: [OutgoingAttachment] = []
-        var skipped: [String] = []
-        for url in panel.urls {
-            let data: Data
-            do {
-                data = try Data(contentsOf: url)
-            } catch {
-                Log.mime.error(
-                    "Could not read attachment \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
-                skipped.append(url.lastPathComponent)
-                continue
-            }
-            let mimeType =
-                UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
-                ?? "application/octet-stream"
-            picked.append(
-                OutgoingAttachment(
-                    filename: url.lastPathComponent,
-                    mimeType: mimeType, data: data))
-        }
-        return (picked, skipped)
     }
 }
 

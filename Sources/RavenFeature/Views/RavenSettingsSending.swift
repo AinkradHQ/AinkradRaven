@@ -12,8 +12,7 @@ import SwiftUI
 struct SendingSettingsGroup: View {
     let runtime: RavenRuntime
 
-    @Environment(\.ainkradTheme) private var theme
-    @Environment(\.ainkradTypography) private var typo
+    @Environment(\.ainkradSkin) private var skin
 
     /// Mirrors `runtime.holdWindow`. Held as text so a half-typed number does
     /// not momentarily read as a valid setting — only a parse that succeeds and
@@ -38,7 +37,7 @@ struct SendingSettingsGroup: View {
                 ) {
                     HStack(spacing: AinkradSpacing.sm) {
                         AinkradTextField(text: $holdWindowText, placeholder: "20")
-                            .frame(width: 70)
+                            .frame(width: skin.size.s70)
                             .onChange(of: holdWindowText) { _, newValue in
                                 guard let seconds = Double(newValue), seconds >= 0 else { return }
                                 runtime.holdWindow = seconds
@@ -63,9 +62,7 @@ struct SendingSettingsGroup: View {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(text)
-            .font(AinkradFontResolver.font(.caption, typography: typo))
-            .foregroundStyle(theme.foreground.opacity(0.6))
+        AinkradCaption(text)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: AinkradSettingsPanel<EmptyView>.hintReadingWidth, alignment: .leading)
     }

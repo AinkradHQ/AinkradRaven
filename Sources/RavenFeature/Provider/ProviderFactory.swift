@@ -133,7 +133,7 @@ import Foundation
         return GraphAuth(
             secrets: host.secrets, clientID: clientID,
             clientSecret: host.secrets.secret(forKey: azureClientSecretKey),
-            tenantID: (tenantID?.isEmpty == false) ? tenantID! : GraphAuth.commonTenant)
+            tenantID: tenantID.flatMap { $0.isEmpty ? nil : $0 } ?? GraphAuth.commonTenant)
     }
 
     // MARK: Credentials

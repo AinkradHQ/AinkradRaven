@@ -92,9 +92,12 @@ import Foundation
     /// path with it — see `ProviderFactory`. Replaces M0's single
     /// `auth: GmailAuth?`, which made the runtime a Gmail-specific object.
     /// Internal rather than private so `attachStoredAccounts()` in
-    /// `RavenRuntime+Sync.swift` can build providers through it; the factory
-    /// exposes no token and no secret getter, so this is narrower than the
-    /// `GmailAuth` it replaces despite the wider visibility.
+    /// `RavenRuntime+Sync.swift` can build providers through it. The factory's
+    /// own methods return no token and no secret, but its `host` is internal
+    /// (its extensions in other files need it), so module code holding the
+    /// factory can reach `host.secrets` through it. That is no more than this
+    /// runtime's own internal `host` already reaches; the factory adds no
+    /// credential surface of its own.
     let providerFactory: ProviderFactory
     /// One engine per connected account. Not `private` — see `syncEngine`
     /// below for the test seam that writes here.
@@ -294,6 +297,8 @@ import Foundation
         actionTokens = []
     }
 
+    // MARK: Sign-out
+
     /// Signing out must leave nothing of the account behind. Four things go,
     /// in this order:
     ///
@@ -365,7 +370,7 @@ import Foundation
     }
 
     public func discardOutboxEntry(_ id: UUID) {
-        try? outbox.discard(id)
+        outbox.discard(id)
         refreshOutboxSnapshots()
     }
 

@@ -177,7 +177,7 @@ enum RavenMCPReadOperations {
                         do {
                             try store.upsertThread(hit)
                         } catch {
-                            Log.store.error(
+                            AinkradLog.logger("raven.store").error(
                                 "search_mail could not save \(hit.id, privacy: .public): \(String(describing: error), privacy: .public)"
                             )
                         }

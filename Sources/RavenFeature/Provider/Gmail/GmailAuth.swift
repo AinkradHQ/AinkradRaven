@@ -1,3 +1,4 @@
+// design-lint: allow-file force-unwrap constant OAuth endpoint URLs
 import AinkradAppKit
 import AppKit
 import Foundation

@@ -33,9 +33,6 @@ public struct RavenSettingsView: View {
     @State private var clientSecret = ""
     @State private var saveError: String?
 
-    @Environment(\.ainkradTheme) private var theme
-    @Environment(\.ainkradTypography) private var typo
-
     public init(
         runtime: RavenRuntime,
         presentation: any PluginPresentationControl,
@@ -154,9 +151,7 @@ public struct RavenSettingsView: View {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(text)
-            .font(AinkradFontResolver.font(.caption, typography: typo))
-            .foregroundStyle(theme.foreground.opacity(0.55))
+        AinkradCaption(text)
             .fixedSize(horizontal: false, vertical: true)
     }
 }

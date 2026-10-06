@@ -212,7 +212,8 @@ actor IMAPMessageIndex {
 /// second chance to disagree with the strategy about which UIDs are new.
 ///
 /// A lock rather than an actor because the hook it wraps is a synchronous
-/// `@Sendable` closure and cannot await.
+/// `@Sendable` closure and cannot await. `@unchecked Sendable` describes that
+/// mechanism: `arrivals`, the only mutable state, is read and written under `lock`.
 final class IMAPArrivalCollector: @unchecked Sendable {
     struct Arrival: Sendable {
         let uid: UInt32

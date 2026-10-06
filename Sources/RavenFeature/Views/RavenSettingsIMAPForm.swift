@@ -33,6 +33,7 @@ struct RavenSettingsIMAPForm: View {
     let onCancel: () -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
 
     @State private var draft = IMAPAccountSetup.Draft()
     /// Never written into `draft`, never logged, cleared on success — see above.
@@ -157,7 +158,7 @@ struct RavenSettingsIMAPForm: View {
                         }),
                     placeholder: "Port"
                 )
-                .frame(width: 90)
+                .frame(width: skin.size.s90)
             }
         }
         inlineMessage(for: hostField)
@@ -172,7 +173,7 @@ struct RavenSettingsIMAPForm: View {
         if let issue = issues.first(where: { $0.field == field }) {
             HStack(spacing: AinkradSpacing.xs) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(skin.font(AinkradFontToken(sizeKey: "t10", weight: "semibold")))
                     .foregroundStyle(theme.accentTertiary)
                 AinkradCaption(issue.message)
             }

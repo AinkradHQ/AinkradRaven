@@ -47,6 +47,7 @@ struct InboxRow: View {
     let onTap: () -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
     @Environment(\.ainkradReduceMotion) private var reduceMotion
     @State private var hovering = false
@@ -68,7 +69,7 @@ struct InboxRow: View {
             // treatment and the bold subject.
             AinkradIconGlyph(systemName: leadingGlyph, filled: isUnread)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: skin.size.s2) {
                 Text(summary.subject.isEmpty ? "(no subject)" : summary.subject)
                     .font(
                         AinkradFontResolver.font(
@@ -79,7 +80,7 @@ struct InboxRow: View {
                     .truncationMode(.tail)
                 Text(subtitle)
                     .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.55))
+                    .foregroundStyle(skin.color(skin.text.muted))
                     .lineLimit(Self.snippetLines, reservesSpace: true)
                     .truncationMode(.tail)
             }
@@ -92,14 +93,14 @@ struct InboxRow: View {
         }
         .padding(.horizontal, AinkradSpacing.md)
         .padding(.vertical, AinkradSpacing.sm)
-        .background(ChamferShape(cut: 6).fill(rowFill))
+        .background(ChamferShape(cut: skin.cut.c6).fill(rowFill))
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(theme.accentSecondary)
                 .frame(width: accentWidth)
-                .shadow(color: theme.accentSecondary.opacity(isSelected ? 0.6 : 0), radius: 3)
+                .shadow(color: theme.accentSecondary.opacity(isSelected ? skin.opacity.o60 : 0), radius: skin.size.s3)
         }
-        .clipShape(ChamferShape(cut: 6))
+        .clipShape(ChamferShape(cut: skin.cut.c6))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .animation(reduceMotion ? nil : AinkradMotion.hover, value: hovering)
@@ -113,7 +114,7 @@ struct InboxRow: View {
         VStack(alignment: .trailing, spacing: AinkradSpacing.xs) {
             Text(MailDateLabel.short(for: summary.lastMessageDate))
                 .font(AinkradFontResolver.font(.caption, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(isUnread ? 0.85 : 0.5))
+                .foregroundStyle(theme.foreground.opacity(isUnread ? skin.opacity.o85 : skin.opacity.o50))
                 .monospacedDigit()
                 .lineLimit(1)
             HStack(spacing: AinkradSpacing.xs) {
@@ -137,7 +138,7 @@ struct InboxRow: View {
     /// is the one that had to change: a flat 0.5 of `surfaceElevated` over an
     /// already-translucent rail composited to a near-solid row.
     private var rowFill: Color {
-        if isSelected { return theme.accentPrimary.opacity(0.16) }
+        if isSelected { return theme.accentPrimary.opacity(skin.opacity.o16) }
         if hovering {
             return theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false))
         }

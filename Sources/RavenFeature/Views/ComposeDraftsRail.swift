@@ -27,6 +27,7 @@ struct ComposeDraftsRail: View {
     let onDelete: (String) -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     var body: some View {
@@ -40,7 +41,7 @@ struct ComposeDraftsRail: View {
                 return DraftBox.shared.all()
             }()
             ScrollView {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: skin.size.s2) {
                     ForEach(drafts, id: \.id) { entry in
                         AinkradListRow(
                             isSelected: selectedDraftID == entry.id,
@@ -93,6 +94,7 @@ struct ComposeUndoBanner: View {
     let onUndo: () -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     var body: some View {
@@ -104,7 +106,7 @@ struct ComposeUndoBanner: View {
                     label: "undo", size: 36)
                 Text("Sending in \(Int(remaining.rounded(.up)))s…")
                     .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.7))
+                    .foregroundStyle(theme.foreground.opacity(skin.opacity.o70))
                 AinkradButton(title: "Undo", style: .secondary, action: onUndo)
             }
             .padding(AinkradSpacing.sm)

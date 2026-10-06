@@ -1,9 +1,10 @@
+// design-lint: allow-file force-unwrap constant API base URL and URLComponents of it
 import Foundation
 import Security
 
 /// Gmail REST v1. Threading, labels, and search are server-side, so this maps
 /// rather than computes.
-public final class GmailProvider: MailProvider, @unchecked Sendable {
+public final class GmailProvider: MailProvider, Sendable {
     public let accountID: String
     /// Gmail transmits and mutates over its REST API — always read-write.
     public let capabilities: MailProviderCapabilities = .readWrite

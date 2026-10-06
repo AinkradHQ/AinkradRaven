@@ -134,26 +134,21 @@ enum SMTPHarness {
 
     /// Hands out pre-built transports in order. `makeTransport` is synchronous and
     /// `@Sendable`, so this is a lock rather than an actor.
-    final class TransportQueue: @unchecked Sendable {
-        private let lock = NSLock()
+    final class TransportQueue: Sendable {
         private let transports: [ScriptedTransport]
-        private var index = 0
+        private let index = Locked(0)
         init(_ transports: [ScriptedTransport]) {
             precondition(!transports.isEmpty)
             self.transports = transports
         }
         func next() -> ScriptedTransport {
-            lock.lock()
-            defer { lock.unlock() }
-            let transport = transports[min(index, transports.count - 1)]
-            index += 1
-            return transport
+            let taken = index.withLock { index in
+                defer { index += 1 }
+                return index
+            }
+            return transports[min(taken, transports.count - 1)]
         }
-        var handedOut: Int {
-            lock.lock()
-            defer { lock.unlock() }
-            return index
-        }
+        var handedOut: Int { index.value }
     }
 
     /// An ordinary message with one `to`, one `cc` and one `bcc`.

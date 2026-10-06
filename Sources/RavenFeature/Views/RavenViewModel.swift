@@ -1,3 +1,4 @@
+import AinkradAppKit
 import Foundation
 import Observation
 
@@ -129,7 +130,8 @@ import Observation
             try store.upsertThread(thread)
         } catch {
             let message = String(describing: error)
-            Log.store.error("Mark-read for \(threadID, privacy: .public) was not saved: \(message, privacy: .public)")
+            AinkradLog.logger("raven.store").error(
+                "Mark-read for \(threadID, privacy: .public) was not saved: \(message, privacy: .public)")
             failure = message
         }
         if wasUnread {
@@ -139,7 +141,7 @@ import Observation
                 try outbox?.enqueue(.labels(readMutation), accountID: thread.accountID)
             } catch {
                 let message = String(describing: error)
-                Log.store.error(
+                AinkradLog.logger("raven.store").error(
                     "Mark-read for \(threadID, privacy: .public) was not queued: \(message, privacy: .public)")
                 failure = failure ?? message
             }
@@ -231,7 +233,6 @@ import Observation
     public func archiveActive() { apply(.archive) }
     public func trashActive() { apply(.trash) }
     public func starActive(_ starred: Bool) { apply(.star(starred)) }
-    public func setReadActive(_ read: Bool) { apply(.setRead(read)) }
 
     /// `e` and the row archive button both call this.
     public func archive(_ threadIDs: [String]) { apply(.archive, ids: threadIDs) }

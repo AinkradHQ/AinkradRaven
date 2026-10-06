@@ -14,7 +14,7 @@ enum RFC2047 {
     /// Compiled once. The pattern is a compile-time constant and cannot fail to
     /// compile, so `try!` here is total — but building an NSRegularExpression on
     /// every call is not free, and `decode` runs per header.
-    private static let encodedWordRegex = try! NSRegularExpression(
+    private static let encodedWordRegex = try! NSRegularExpression(  // design-lint: allow try-bang constant pattern
         pattern: "=\\?UTF-8\\?B\\?([A-Za-z0-9+/=]*)\\?=", options: [.caseInsensitive])
 
     /// Encodes `text` as one or more folded encoded-words if it contains any

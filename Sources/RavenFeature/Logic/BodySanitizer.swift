@@ -77,7 +77,7 @@ public enum BodySanitizer {
     /// decodes to "5 < 6 and 7 > 3") is left intact instead of being swallowed
     /// as if it were a tag. This is an output-quality optimization on top of
     /// the pipeline, not the security boundary — see `neutralizeResidualTagOpeners`.
-    private static let tagShapedPattern = "<\\/?[A-Za-z!][^<>]*>"
+    private static let tagShapedPattern = "<\\/?[A-Za-z!][^<>]*>"  // design-lint: allow force-unwrap regex, not unwrap
 
     private static func stripTagShaped(_ html: String) -> String {
         html.replacingOccurrences(

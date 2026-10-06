@@ -9,6 +9,7 @@ struct RulesSettingsGroup: View {
     let runtime: RavenRuntime
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     @State private var rulesVersion = 0
@@ -61,10 +62,10 @@ struct RulesSettingsGroup: View {
         if ruleSet.rules.isEmpty {
             Text("No rules yet. A rule acts on new mail automatically as it arrives.")
                 .font(AinkradFontResolver.font(.caption, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(0.6))
+                .foregroundStyle(theme.foreground.opacity(skin.opacity.o60))
                 .fixedSize(horizontal: false, vertical: true)
         } else {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: skin.size.s2) {
                 ForEach(Array(ruleSet.rules.enumerated()), id: \.element.id) { index, rule in
                     ruleRow(rule, index: index, ruleSet: ruleSet)
                 }
@@ -164,6 +165,7 @@ struct RuleEditor: View {
     let onCancel: () -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     @State private var name: String
@@ -257,7 +259,7 @@ struct RuleEditor: View {
                         + (previewCount == 1 ? "" : "s") + "."
                 )
                 .font(AinkradFontResolver.font(.caption, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(0.6))
+                .foregroundStyle(theme.foreground.opacity(skin.opacity.o60))
                 HStack {
                     AinkradButton(title: "Cancel", style: .ghost, action: onCancel)
                     Spacer()

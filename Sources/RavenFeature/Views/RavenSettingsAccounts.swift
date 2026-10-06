@@ -30,8 +30,7 @@ struct RavenAccountsPane: View {
     /// would otherwise drop the setting entirely.
     let showsSignature: Bool
 
-    @Environment(\.ainkradTheme) private var theme
-    @Environment(\.ainkradTypography) private var typo
+    @Environment(\.ainkradSkin) private var skin
 
     @State private var isConnecting = false
     /// Tracked separately from `isConnecting` so a Graph flow in progress does not
@@ -119,7 +118,7 @@ struct RavenAccountsPane: View {
                     actionTitle: "Connect Gmail",
                     action: { connect() }
                 )
-                .frame(height: 220)
+                .frame(height: skin.size.s220)
                 .disabled(!runtime.canConnectAccount || isConnecting)
             } else {
                 ForEach(accounts) { account in
@@ -218,12 +217,9 @@ struct RavenAccountsPane: View {
                 }
                 Spacer(minLength: AinkradSpacing.sm)
                 if let lastSyncedAt = account.lastSyncedAt {
-                    Text(
+                    AinkradCaption(
                         "Last synced "
-                            + lastSyncedAt.formatted(date: .abbreviated, time: .shortened)
-                    )
-                    .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.55))
+                            + lastSyncedAt.formatted(date: .abbreviated, time: .shortened))
                 }
             }
             .padding(.leading, AinkradSpacing.lg)

@@ -110,13 +110,11 @@ public struct RavenShell: View {
         // recipient row wants). A sheet is edge-anchored and full-bleed on its
         // cross axis, which suits a filter or a detail drawer, not a form the
         // user will spend a minute inside.
-        // `ravenTranslucentModal`, not `.ainkradModal`: same scrim, same
-        // dismissal, same transition, but the panel takes the user's
-        // transparency setting instead of the kit's fixed 0.94 — which is why
-        // the composer read as an opaque slab over a blurred island. See
-        // `RavenTranslucentModal` for why that modifier is local. It also
-        // publishes `ravenModalPresented` so the inbox rail's focus ring stops
-        // painting over this scrim.
+        // `ravenTranslucentModal` is that kit modal with its panel taking the
+        // user's transparency setting instead of the kit's fixed 0.94 — which
+        // is why the composer read as an opaque slab over a blurred island.
+        // See `RavenTranslucentModal`. It also publishes `ravenModalPresented`
+        // so the inbox rail's focus ring stops painting over this scrim.
         .ravenTranslucentModal(
             isPresented: isComposing,
             contentWidth: Self.composeWidth(in: availableWidth),
@@ -207,6 +205,7 @@ private struct ComposeFloatingButton: View {
     let action: () -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradReduceMotion) private var reduceMotion
     @State private var hovering = false
 
@@ -226,10 +225,10 @@ private struct ComposeFloatingButton: View {
             // Every colour from the theme, including the lift: a fixed
             // black shadow vanishes on a light theme, so the riser is the
             // theme's own accent at low opacity.
-            ChamferShape(cut: Self.size * 0.2)
-                .fill(theme.accentPrimary.opacity(hovering ? 0.30 : 0.18))
+            ChamferShape(cut: Self.size * skin.cut.r0_2)
+                .fill(theme.accentPrimary.opacity(hovering ? skin.opacity.o30 : skin.opacity.o18))
                 .shadow(
-                    color: theme.accentSecondary.opacity(hovering ? 0.45 : 0.28),
+                    color: theme.accentSecondary.opacity(hovering ? skin.opacity.o45 : skin.opacity.o28),
                     radius: hovering ? 14 : 8, x: 0, y: 2)
         )
         .onHover { hovering = $0 }

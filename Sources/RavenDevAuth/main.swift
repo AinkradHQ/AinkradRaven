@@ -1,5 +1,6 @@
 import AinkradAppKit
 // design-lint: allow-file print dev-only CLI writes to stdout
+// design-lint: allow-file force-unwrap dev-only CLI, constant Gmail API URLs
 import Foundation
 import RavenFeature
 
@@ -360,8 +361,11 @@ func runHarness() async -> Int32 {
 // end of `main` would exit before the listener ever got a chance to bind.
 // `exitCode` is set exactly once (success, failure, or the internal
 // authorization timeout inside `GmailAuth` itself surfacing as a thrown
-// error) and its assignment is what stops the loop.
-nonisolated(unsafe) var exitCode: Int32?
+// error) and its assignment is what stops the loop. A plain `var`, not
+// `nonisolated(unsafe)`: a top-level variable in `main.swift` is main-actor
+// isolated (SE-0343), and the `@MainActor` task below and the run loop that
+// reads it both run there, so the compiler checks it rather than trusting it.
+var exitCode: Int32?
 
 Task { @MainActor in
     if CommandLine.arguments.contains("--capture-fixtures") {
@@ -381,4 +385,4 @@ Task { @MainActor in
 while exitCode == nil {
     RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 }
-exit(exitCode!)
+exit(exitCode ?? 1)  // never nil here: the loop above runs until it is set
