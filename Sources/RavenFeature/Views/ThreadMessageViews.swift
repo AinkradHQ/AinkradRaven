@@ -245,9 +245,13 @@ struct AttachmentChipRow: View {
                     AinkradChip(label: chipLabel(attachment), systemName: "paperclip")
                         .opacity(downloadingID == attachment.attachmentID ? 0.5 : 1)
                         .onTapGesture { preview(attachment) }
-                        .contextMenu {
-                            Button("Save…") { download(attachment) }
-                        }
+                        // The kit's right-click menu, not SwiftUI's
+                        // `.contextMenu`, which is a stock AppKit menu.
+                        .ainkradContextMenu([
+                            AinkradMenuItem(title: "Save…", systemName: "square.and.arrow.down") {
+                                download(attachment)
+                            }
+                        ])
                 }
             }
             if let errorMessage {
