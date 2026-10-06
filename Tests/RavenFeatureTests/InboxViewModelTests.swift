@@ -290,4 +290,29 @@ import Testing
         model.star(["t1"], starred: true)
         #expect(model.rowErrors["t1"] == nil)
     }
+
+    @Test("a failed mark-read enqueue on select keeps the local read but surfaces a row error")
+    func failedMarkReadEnqueueSurfacesRowError() throws {
+        let store = DocumentMailStore(documents: InMemoryDocumentStore())
+        try store.saveAccount(
+            MailAccount(
+                id: "a1", provider: .gmail, address: "me@x.com",
+                displayName: "Me", state: .ready))
+        let outbox = FailingOutbox()
+        let model = RavenViewModel(store: store, outbox: outbox)
+        try store.upsertThread(thread("t1", subject: "Hi", unread: true, date: Date()))
+        model.reload()
+
+        model.select("t1")
+
+        #expect(store.thread("t1")?.unreadCount == 0)
+        #expect(outbox.attempts == 1)
+        #expect(model.rowErrors["t1"] != nil)
+
+        // Re-opening an already-read thread queues nothing, so it must not
+        // wipe the error a still-unsynced read left behind.
+        model.select("t1")
+        #expect(outbox.attempts == 1)
+        #expect(model.rowErrors["t1"] != nil)
+    }
 }

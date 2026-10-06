@@ -122,11 +122,32 @@ import Observation
             thread.messages[index].isRead = true
             thread.messages[index].labelIDs.removeAll { unreadLabels.contains($0) }
         }
-        try? store.upsertThread(thread)
+        // A read that never persisted or never queued lands in `rowErrors`,
+        // exactly like `apply(_:ids:)`'s failed enqueue — never silently.
+        var failure: String?
+        do {
+            try store.upsertThread(thread)
+        } catch {
+            let message = String(describing: error)
+            Log.store.error("Mark-read for \(threadID, privacy: .public) was not saved: \(message, privacy: .public)")
+            failure = message
+        }
         if wasUnread {
             // Stamped with the THREAD's account, not a default: the mutation
             // has to reach the mailbox the thread actually lives in.
-            try? outbox?.enqueue(.labels(readMutation), accountID: thread.accountID)
+            do {
+                try outbox?.enqueue(.labels(readMutation), accountID: thread.accountID)
+            } catch {
+                let message = String(describing: error)
+                Log.store.error(
+                    "Mark-read for \(threadID, privacy: .public) was not queued: \(message, privacy: .public)")
+                failure = failure ?? message
+            }
+            // A mutation targeted this thread, so its outcome replaces any
+            // earlier row error — the same rule `apply(_:ids:)` follows.
+            rowErrors[threadID] = failure
+        } else if let failure {
+            rowErrors[threadID] = failure
         }
         selectedThread = thread
         reload()
