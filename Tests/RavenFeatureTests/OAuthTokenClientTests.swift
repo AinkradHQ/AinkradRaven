@@ -203,6 +203,25 @@ struct OAuthTokenClientTests {
         }
     }
 
+    @Test("a non-200 error body is truncated, like every provider's providerFailed message")
+    func errorBodyIsTruncated() async throws {
+        let longBody = #"{"error":"invalid_grant","error_description":""# + String(repeating: "x", count: 5000) + #""}"#
+        StubURLProtocol.handler = { _ in (400, [:], Data(longBody.utf8)) }
+        defer { StubURLProtocol.handler = nil }
+
+        let client = OAuthTokenClient(
+            configuration: makeConfiguration(clientSecret: nil),
+            session: StubURLProtocol.makeSession())
+        do {
+            _ = try await client.refresh(refreshToken: "rt-1")
+            Issue.record("a 400 must throw")
+        } catch MailError.providerFailed(let status, let message) {
+            #expect(status == 400)
+            #expect(message.hasPrefix(#"{"error":"invalid_grant""#))
+            #expect(message.count <= OAuthTokenClient.maxErrorBodyCharacters)
+        }
+    }
+
     @Test("an undecodable 200 body is a typed decoding failure, not a crash")
     func undecodableBody() async throws {
         StubURLProtocol.handler = { _ in (200, [:], Data("not json".utf8)) }
