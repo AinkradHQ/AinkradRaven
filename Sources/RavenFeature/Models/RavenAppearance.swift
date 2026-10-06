@@ -199,8 +199,8 @@ public struct RavenAppearance: Codable, Equatable, Sendable {
         isRead ? lerp(0.22, 0.40) : lerp(0.55, 0.80)
     }
 
-    /// The scrim `RavenTranslucentModal` draws behind the compose overlay.
-    /// Fixed, and deliberately not user-scaled: a scrim's job is to push the
+    /// The kit modal's scrim behind the compose overlay (`skin.roles.scrim`,
+    /// black at 0.45), restated because the arithmetic needs it. Fixed, and deliberately not user-scaled: a scrim's job is to push the
     /// mail behind it back, and one that thinned out with the panel would stop
     /// separating the two. Named here because the modal's own fill has to be
     /// computed *over* it — that is the second place two layers stack.
