@@ -35,6 +35,7 @@ public struct InboxSurface: View {
     @FocusState private var listFocused: Bool
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     /// Straight off the runtime's observable store rather than the environment,
@@ -248,7 +249,7 @@ public struct InboxSurface: View {
                 if hits.isEmpty {
                     Text("Gmail's full-archive search found nothing for this query.")
                         .font(AinkradFontResolver.font(.caption, typography: typo))
-                        .foregroundStyle(theme.foreground.opacity(0.6))
+                        .foregroundStyle(theme.foreground.opacity(skin.opacity.o60))
                 } else {
                     LazyVStack(spacing: 2) {
                         ForEach(hits, id: \.id) { summary in

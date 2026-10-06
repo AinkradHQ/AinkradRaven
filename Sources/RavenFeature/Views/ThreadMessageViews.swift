@@ -12,6 +12,7 @@ struct MessageRow: View {
     let runtime: RavenRuntime
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     @State private var loadedBody: MessageBody?
@@ -155,7 +156,7 @@ struct MessageRow: View {
         } else {
             Text("(body not synced)")
                 .font(AinkradFontResolver.font(.body, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(0.55))
+                .foregroundStyle(skin.color(skin.text.muted))
         }
     }
 }
@@ -173,6 +174,7 @@ struct LabelReasonNote: View {
     let runtime: RavenRuntime
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     private var latest: LabelReason? {
@@ -186,7 +188,7 @@ struct LabelReasonNote: View {
                 AinkradIconGlyph(systemName: "text.badge.checkmark")
                 Text(summary(latest))
                     .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.7))
+                    .foregroundStyle(theme.foreground.opacity(skin.opacity.o70))
                     .lineLimit(2)
             }
             // The full text on hover: the chip line is truncated to two lines
@@ -229,6 +231,7 @@ struct AttachmentChipRow: View {
     let threadID: String
     let runtime: RavenRuntime
 
+    @Environment(\.ainkradSkin) private var skin
     @State private var downloadingID: String?
     @State private var errorMessage: String?
 
@@ -243,7 +246,7 @@ struct AttachmentChipRow: View {
             HStack(spacing: AinkradSpacing.xs) {
                 ForEach(attachments, id: \.attachmentID) { attachment in
                     AinkradChip(label: chipLabel(attachment), systemName: "paperclip")
-                        .opacity(downloadingID == attachment.attachmentID ? 0.5 : 1)
+                        .opacity(downloadingID == attachment.attachmentID ? skin.opacity.o50 : 1)
                         .onTapGesture { preview(attachment) }
                         // The kit's right-click menu, not SwiftUI's
                         // `.contextMenu`, which is a stock AppKit menu.

@@ -27,6 +27,7 @@ public struct ThreadSurface: View {
     let onCompose: (ComposeContext) -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     /// The message whose raw HTML the toolbar's "Show original" is showing.
@@ -116,7 +117,7 @@ public struct ThreadSurface: View {
             HStack(spacing: AinkradSpacing.xs) {
                 Text(participantLabel(thread))
                     .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.6))
+                    .foregroundStyle(theme.foreground.opacity(skin.opacity.o60))
                     .lineLimit(2)
                 Spacer(minLength: AinkradSpacing.sm)
                 AinkradBadge(

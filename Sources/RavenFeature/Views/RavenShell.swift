@@ -205,6 +205,7 @@ private struct ComposeFloatingButton: View {
     let action: () -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradReduceMotion) private var reduceMotion
     @State private var hovering = false
 
@@ -225,9 +226,9 @@ private struct ComposeFloatingButton: View {
             // black shadow vanishes on a light theme, so the riser is the
             // theme's own accent at low opacity.
             ChamferShape(cut: Self.size * 0.2)
-                .fill(theme.accentPrimary.opacity(hovering ? 0.30 : 0.18))
+                .fill(theme.accentPrimary.opacity(hovering ? skin.opacity.o30 : skin.opacity.o18))
                 .shadow(
-                    color: theme.accentSecondary.opacity(hovering ? 0.45 : 0.28),
+                    color: theme.accentSecondary.opacity(hovering ? skin.opacity.o45 : skin.opacity.o28),
                     radius: hovering ? 14 : 8, x: 0, y: 2)
         )
         .onHover { hovering = $0 }

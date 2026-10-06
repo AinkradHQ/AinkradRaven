@@ -21,6 +21,7 @@ struct ComposeBodyField: View {
     let minHeight: CGFloat
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
     /// Editing state reported up from the `NSTextView` — SwiftUI's
     /// `@FocusState` does not track an `NSViewRepresentable`, so the chamfer
@@ -68,7 +69,7 @@ struct ComposeBodyField: View {
                 // placeholder sits where typed text will.
                 Text(placeholder)
                     .font(AinkradFontResolver.font(.body, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.4))
+                    .foregroundStyle(theme.foreground.opacity(skin.opacity.o40))
                     .padding(.horizontal, AinkradSpacing.md + 5)
                     .padding(.vertical, AinkradSpacing.sm)
                     .allowsHitTesting(false)
@@ -82,14 +83,14 @@ struct ComposeBodyField: View {
                 onFocusChange: { isEditing = $0 })
         }
         .frame(minHeight: minHeight)
-        .background(ChamferShape(cut: 8).fill(theme.surfaceElevated.opacity(0.5)))
+        .background(ChamferShape(cut: 8).fill(theme.surfaceElevated.opacity(skin.opacity.o50)))
         .overlay(
             ChamferShape(cut: 8).strokeBorder(
-                theme.accentPrimary.opacity(isEditing ? 0.9 : 0.25),
+                theme.accentPrimary.opacity(isEditing ? skin.opacity.o90 : skin.opacity.o25),
                 lineWidth: isEditing ? 1.5 : 1.25)
         )
         .shadow(
-            color: theme.accentSecondary.opacity(isEditing ? 0.4 : 0),
+            color: theme.accentSecondary.opacity(isEditing ? skin.opacity.o40 : 0),
             radius: isEditing ? 6 : 0
         )
         .animation(AinkradMotion.hover, value: isEditing)

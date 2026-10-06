@@ -140,6 +140,7 @@ extension EnvironmentValues {
 private struct RavenFocusRing: ViewModifier {
     let isFocused: Bool
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradReduceMotion) private var reduceMotion
     @Environment(\.ravenModalPresented) private var modalPresented
 
@@ -153,7 +154,7 @@ private struct RavenFocusRing: ViewModifier {
             .overlay {
                 ChamferShape(cut: AinkradRadius.panel)
                     .strokeBorder(
-                        theme.accentSecondary.opacity(showsRing ? 0.55 : 0),
+                        theme.accentSecondary.opacity(showsRing ? skin.opacity.o55 : 0),
                         lineWidth: 1
                     )
                     .allowsHitTesting(false)

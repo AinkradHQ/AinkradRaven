@@ -22,6 +22,7 @@ struct ComposeRecipients: View {
     let candidates: [RecipientSuggestions.Candidate]
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     /// How many recipients the collapsed section is hiding. Fed to
@@ -60,7 +61,7 @@ struct ComposeRecipients: View {
                             + "that they were included."
                     )
                     .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.5))
+                    .foregroundStyle(theme.foreground.opacity(skin.opacity.o50))
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -88,7 +89,7 @@ struct ComposeRecipients: View {
             ComposeFieldWrap(label: "From") {
                 Text(address)
                     .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.7))
+                    .foregroundStyle(theme.foreground.opacity(skin.opacity.o70))
             }
         }
     }

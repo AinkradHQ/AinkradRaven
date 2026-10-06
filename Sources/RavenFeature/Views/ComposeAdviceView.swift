@@ -18,6 +18,7 @@ struct ComposeAdviceView: View {
     let onApply: (ComposeCorrection) -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     private var notices: [ComposeFinding] {
@@ -32,7 +33,7 @@ struct ComposeAdviceView: View {
                         AinkradIconGlyph(systemName: "lightbulb")
                         Text(finding.message)
                             .font(AinkradFontResolver.font(.caption, typography: typo))
-                            .foregroundStyle(theme.foreground.opacity(0.7))
+                            .foregroundStyle(theme.foreground.opacity(skin.opacity.o70))
                             .fixedSize(horizontal: false, vertical: true)
                         if let correction = finding.correction {
                             AinkradButton(title: Self.actionTitle(for: correction), style: .ghost) {

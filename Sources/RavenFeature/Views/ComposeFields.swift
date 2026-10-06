@@ -25,6 +25,7 @@ struct RecipientChipField: View {
     @FocusState private var isFocused: Bool
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
     @Environment(\.ravenAppearance) private var appearance
 
@@ -117,7 +118,7 @@ struct RecipientChipField: View {
                                     ?? candidate.address.email
                             )
                             .font(AinkradFontResolver.font(.caption, typography: typo))
-                            .foregroundStyle(theme.foreground.opacity(0.85))
+                            .foregroundStyle(theme.foreground.opacity(skin.opacity.o85))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, AinkradSpacing.sm)
                             .padding(.vertical, AinkradSpacing.xs)
@@ -192,6 +193,7 @@ struct RecipientDetail: View {
     let candidates: [RecipientSuggestions.Candidate]
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     private var candidate: RecipientSuggestions.Candidate? {
@@ -208,7 +210,7 @@ struct RecipientDetail: View {
             }
             Text(chip.address?.email ?? chip.raw)
                 .font(AinkradFontResolver.font(.caption, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(0.8))
+                .foregroundStyle(theme.foreground.opacity(skin.opacity.o80))
                 .textSelection(.enabled)
             if !chip.isValid {
                 AinkradBanner(message: "Not a valid address", status: .danger)

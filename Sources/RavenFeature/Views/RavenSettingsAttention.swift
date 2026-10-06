@@ -23,6 +23,7 @@ struct OutboxAttentionGroup: View {
     let runtime: RavenRuntime
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
     @Environment(\.ainkradStatusColors) private var statusColors
 
@@ -70,11 +71,11 @@ struct OutboxAttentionGroup: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     ChamferShape(cut: AinkradRadius.md)
-                        .fill(statusColors.warning.opacity(0.10))
+                        .fill(statusColors.warning.opacity(skin.opacity.o10))
                 )
                 .overlay(
                     ChamferShape(cut: AinkradRadius.md)
-                        .strokeBorder(statusColors.warning.opacity(0.55), lineWidth: 1))
+                        .strokeBorder(statusColors.warning.opacity(skin.opacity.o55), lineWidth: 1))
             }
         }
         .onAppear { runtime.refreshOutboxSnapshots() }
@@ -98,7 +99,7 @@ struct OutboxAttentionGroup: View {
             VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
                 Text(note)
                     .font(AinkradFontResolver.font(.caption, typography: typo))
-                    .foregroundStyle(theme.foreground.opacity(0.7))
+                    .foregroundStyle(theme.foreground.opacity(skin.opacity.o70))
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(entries) { entry in
                     AinkradListRow(
@@ -151,7 +152,7 @@ struct OutboxAttentionGroup: View {
         AinkradSectionFrame(title: title) {
             Text(text)
                 .font(AinkradFontResolver.font(.caption, typography: typo))
-                .foregroundStyle(theme.foreground.opacity(0.7))
+                .foregroundStyle(theme.foreground.opacity(skin.opacity.o70))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

@@ -19,6 +19,7 @@ struct ComposeFooterBar: View {
     let onSend: () -> Void
 
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
 
     var body: some View {
@@ -46,7 +47,7 @@ struct ComposeFooterBar: View {
                     // be a progress indicator for something with no progress.
                     Text(draftStateText)
                         .font(AinkradFontResolver.font(.caption, typography: typo))
-                        .foregroundStyle(theme.foreground.opacity(0.45))
+                        .foregroundStyle(skin.color(skin.text.faint))
                 }
                 Spacer(minLength: AinkradSpacing.xs)
                 AinkradButton(title: "Save Draft", style: .ghost, action: onSaveDraft)
