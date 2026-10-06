@@ -121,8 +121,8 @@ actor IMAPSession {
     /// `deinit` cannot run while any waiter exists.
     deinit { untaggedContinuation.finish() }
 
-    // MARK: - Introspection (assertions read these)
-
+    // MARK: - Introspection (test-only, so DEBUG-only: assertions read these)
+    #if DEBUG
     /// Commands whose completion has neither arrived nor been handed to a waiter.
     /// Must be 0 after `close()`.
     var inFlightCount: Int { inFlight.count }
@@ -138,6 +138,7 @@ actor IMAPSession {
         if case .running = state { return true }
         return false
     }
+    #endif
 
     // MARK: - Lifecycle
 

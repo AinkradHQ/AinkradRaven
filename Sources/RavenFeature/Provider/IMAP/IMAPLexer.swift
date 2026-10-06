@@ -129,23 +129,6 @@ struct IMAPLexer: Sendable {
         return tokens
     }
 
-    /// Convenience for whole-buffer callers and for the reference side of the
-    /// every-split-point test. Not used in production, where bytes always arrive
-    /// in chunks.
-    static func tokenize(
-        _ data: Data,
-        maxLiteralBytes: Int = IMAPLexer.defaultMaxLiteralBytes,
-        maxUnterminatedBytes: Int = IMAPLexer.defaultMaxUnterminatedBytes
-    )
-        throws -> [IMAPToken]
-    {
-        var lexer = IMAPLexer(
-            maxLiteralBytes: maxLiteralBytes,
-            maxUnterminatedBytes: maxUnterminatedBytes)
-        lexer.append(data)
-        return try lexer.drainTokens()
-    }
-
     // MARK: - The scan
 
     private mutating func lex(into tokens: inout [IMAPToken]) throws {
