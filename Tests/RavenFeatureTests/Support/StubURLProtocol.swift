@@ -1,4 +1,5 @@
 import Foundation
+import Testing
 
 /// Intercepts every request made through a session configured with this
 /// protocol registered, and answers from an in-process handler — no live
@@ -53,4 +54,54 @@ final class StubURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+/// Serializes every test that drives `StubURLProtocol`, ACROSS suites.
+///
+/// `handler`/`transportFailure` are process-global, and swift-testing runs
+/// suites in parallel, so two suites setting them at once answer each other's
+/// requests. `.serialized` would only order tests within one suite; this
+/// trait takes one shared lock around each test case of every suite it marks.
+/// ponytail: one global lock for all stub tests; per-session routing if the
+/// serialized ~100 tests ever make the run measurably slower.
+struct StubbedNetworkTrait: SuiteTrait, TestTrait, TestScoping {
+    var isRecursive: Bool { true }
+
+    func provideScope(
+        for test: Test, testCase: Test.Case?,
+        performing function: @Sendable () async throws -> Void
+    ) async throws {
+        await StubNetworkLock.shared.acquire()
+        do {
+            try await function()
+        } catch {
+            await StubNetworkLock.shared.release()
+            throw error
+        }
+        await StubNetworkLock.shared.release()
+    }
+}
+
+extension Trait where Self == StubbedNetworkTrait {
+    static var stubbedNetwork: Self { Self() }
+}
+
+private actor StubNetworkLock {
+    static let shared = StubNetworkLock()
+    private var held = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        guard held else {
+            held = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    /// Hands the lock straight to the next waiter, so `held` never drops
+    /// between two queued tests.
+    func release() {
+        if waiters.isEmpty { held = false } else { waiters.removeFirst().resume() }
+    }
 }

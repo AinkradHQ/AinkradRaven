@@ -6,7 +6,7 @@ import Testing
 
 /// Task 19's first criterion: Graph reuses Task 4's OAuth layer rather than
 /// growing a second flow, and its credentials land in the right stores.
-@Suite("Graph auth")
+@Suite("Graph auth", .stubbedNetwork)
 @MainActor
 struct GraphAuthTests {
     private func fixture(_ name: String) throws -> Data { try graphFixture(name) }

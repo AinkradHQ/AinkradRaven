@@ -9,7 +9,7 @@ import Testing
 ///
 /// **Verified against fixtures only.** There is no Azure app registration, so
 /// nothing here has met a real Graph endpoint; live verification is Task 24's.
-@Suite("Graph provider")
+@Suite("Graph provider", .stubbedNetwork)
 @MainActor
 struct GraphProviderTests {
     private func fixture(_ name: String) throws -> Data { try graphFixture(name) }

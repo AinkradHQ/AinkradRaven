@@ -10,7 +10,7 @@ import Testing
 /// **Verified against recorded fixtures and `StubURLProtocol` only.** There is no
 /// Azure app registration, so nothing here has met a live Graph endpoint; live
 /// verification is Task 24's.
-@Suite("Graph send")
+@Suite("Graph send", .stubbedNetwork)
 @MainActor
 struct GraphSendTests {
 
