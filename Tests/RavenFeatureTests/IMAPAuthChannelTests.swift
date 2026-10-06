@@ -415,7 +415,7 @@ struct IMAPCredentialLeakTests {
     }
 }
 
-@Suite("IMAP credential storage", .timeLimit(.minutes(1)))
+@Suite("IMAP credential storage", .timeLimit(.minutes(1)), .stubbedNetwork)
 @MainActor
 struct IMAPCredentialStorageTests {
 

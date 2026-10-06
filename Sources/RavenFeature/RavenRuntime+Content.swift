@@ -35,7 +35,13 @@ extension RavenRuntime {
             }.value
             // Attributed to the account that fetched it, so sign-out can purge
             // it even if this message's thread document never lands.
-            try? store.saveBody(body, accountID: accountID)
+            // A failed cache write still returns the fetched body; it is only
+            // re-fetched next time, so log it rather than fail the read.
+            do {
+                try store.saveBody(body, accountID: accountID)
+            } catch {
+                host.log.error("RavenRuntime.loadBody could not cache \(message.id): \(error)")
+            }
             return body
         } catch {
             host.log.error("RavenRuntime.loadBody failed for \(message.id): \(error)")

@@ -91,7 +91,7 @@ struct OAuthFormEncodingTests {
     }
 }
 
-@Suite("OAuth token client")
+@Suite("OAuth token client", .stubbedNetwork)
 struct OAuthTokenClientTests {
     private static let tokenResponse = Data(
         """
@@ -236,7 +236,7 @@ struct OAuthTokenClientTests {
 /// nowhere, and asserted the untouched local was empty. That passes whether or
 /// not the invariant holds, and would have kept passing if a later task gave
 /// `GmailAuth` a document store and wrote a refresh token straight through it.
-@Suite("OAuth token storage")
+@Suite("OAuth token storage", .stubbedNetwork)
 @MainActor
 struct OAuthTokenStorageTests {
     /// The tripwire the vacuous version could not be: if any auth type ever

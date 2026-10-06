@@ -263,7 +263,7 @@ public struct ComposeSurface: View {
             isScheduling: $isScheduling,
             scheduledSendAt: $scheduledSendAt,
             draftStateText: draftStateText,
-            onAttach: { attachments.append(contentsOf: ComposeAttachmentPicker.pick()) },
+            onAttach: attachFiles,
             onSaveDraft: saveDraft,
             onSend: send)
     }
@@ -287,6 +287,18 @@ public struct ComposeSurface: View {
     /// or which conversation they belong to.
     func stampedMessage() -> OutgoingMessage {
         activeContext.stamp(message(), fallbackAccountID: effectiveAccountID)
+    }
+
+    /// The paperclip and the "attach files" advice both pick through here, so
+    /// a file that could not be read is reported on the composer's existing
+    /// toast rather than silently left out of the message.
+    func attachFiles() {
+        let result = ComposeAttachmentPicker.pick()
+        attachments.append(contentsOf: result.picked)
+        guard !result.skipped.isEmpty else { return }
+        toasts.show(
+            "Could not attach \(result.skipped.joined(separator: ", ")); the file could not be read.",
+            status: .warning, duration: Self.alertToast)
     }
 
     /// The explicit Save Draft button. The autosave already covers the same

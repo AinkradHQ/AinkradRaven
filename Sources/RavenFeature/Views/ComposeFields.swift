@@ -345,17 +345,28 @@ struct WrappingChips: Layout {
 /// Reads each picked file's bytes into memory immediately (never a cache
 /// directory) and derives its MIME type from the file's extension via `UTType`,
 /// falling back to `application/octet-stream` for a type `UTType` cannot
-/// classify.
+/// classify. A file that cannot be read is logged and returned in `skipped`
+/// (by file name) so the composer can say so instead of dropping it silently.
 enum ComposeAttachmentPicker {
-    @MainActor static func pick() -> [OutgoingAttachment] {
+    @MainActor static func pick() -> (picked: [OutgoingAttachment], skipped: [String]) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
-        guard panel.runModal() == .OK else { return [] }
+        guard panel.runModal() == .OK else { return ([], []) }
         var picked: [OutgoingAttachment] = []
+        var skipped: [String] = []
         for url in panel.urls {
-            guard let data = try? Data(contentsOf: url) else { continue }
+            let data: Data
+            do {
+                data = try Data(contentsOf: url)
+            } catch {
+                Log.mime.error(
+                    "Could not read attachment \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+                skipped.append(url.lastPathComponent)
+                continue
+            }
             let mimeType =
                 UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
                 ?? "application/octet-stream"
@@ -364,7 +375,7 @@ enum ComposeAttachmentPicker {
                     filename: url.lastPathComponent,
                     mimeType: mimeType, data: data))
         }
-        return picked
+        return (picked, skipped)
     }
 }
 

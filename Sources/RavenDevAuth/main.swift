@@ -100,12 +100,29 @@ final class FileBackedSecretStore: PluginSecretStore {
         persist()
     }
 
+    /// `PluginSecretStore.setSecret` cannot throw, so every failure is written
+    /// to stderr: on a fresh machine a missing `~/.config/ainkrad-raven/` used
+    /// to make `createFile` fail and the refresh token vanish without a word.
     private func persist() {
-        guard let data = try? JSONEncoder().encode(storage) else { return }
-        FileManager.default.createFile(
-            atPath: path, contents: data,
-            attributes: [.posixPermissions: 0o600])
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        let fileManager = FileManager.default
+        do {
+            let data = try JSONEncoder().encode(storage)
+            try fileManager.createDirectory(
+                atPath: (path as NSString).deletingLastPathComponent,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+            guard
+                fileManager.createFile(
+                    atPath: path, contents: data,
+                    attributes: [.posixPermissions: 0o600])
+            else {
+                FileHandle.standardError.write(Data("Failed to write secrets to \(path).\n".utf8))
+                return
+            }
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        } catch {
+            FileHandle.standardError.write(Data("Failed to persist secrets to \(path): \(error)\n".utf8))
+        }
     }
 }
 

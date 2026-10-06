@@ -6,7 +6,7 @@ import Testing
 
 /// Exercises `GmailProvider` end to end against recorded fixture bytes and
 /// synthetic HTTP responses, via `StubURLProtocol` — no live network call.
-@Suite("Gmail provider")
+@Suite("Gmail provider", .stubbedNetwork)
 @MainActor
 struct GmailProviderTests {
     private func fixture(_ name: String) throws -> Data {

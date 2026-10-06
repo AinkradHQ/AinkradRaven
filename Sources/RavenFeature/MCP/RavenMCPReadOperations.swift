@@ -173,7 +173,15 @@ enum RavenMCPReadOperations {
                 }
                 do {
                     let hits = try await provider.searchThreads(query: query, limit: limit)
-                    for hit in hits { try? store.upsertThread(hit) }
+                    for hit in hits {
+                        do {
+                            try store.upsertThread(hit)
+                        } catch {
+                            Log.store.error(
+                                "search_mail could not save \(hit.id, privacy: .public): \(String(describing: error), privacy: .public)"
+                            )
+                        }
+                    }
                     groups.append(hits.map { $0.summary() })
                     succeeded = true
                 } catch let error as MailError {

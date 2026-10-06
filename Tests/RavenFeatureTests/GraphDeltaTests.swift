@@ -11,7 +11,7 @@ import Testing
 ///
 /// **Verified against fixtures only** — there is no Azure app registration;
 /// live verification is Task 24's.
-@Suite("Graph delta")
+@Suite("Graph delta", .stubbedNetwork)
 @MainActor
 struct GraphDeltaTests {
     private func fixture(_ name: String) throws -> Data { try graphFixture(name) }
