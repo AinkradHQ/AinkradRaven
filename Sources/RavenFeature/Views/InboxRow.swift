@@ -93,14 +93,14 @@ struct InboxRow: View {
         }
         .padding(.horizontal, AinkradSpacing.md)
         .padding(.vertical, AinkradSpacing.sm)
-        .background(ChamferShape(cut: 6).fill(rowFill))
+        .background(ChamferShape(cut: skin.cut.c6).fill(rowFill))
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(theme.accentSecondary)
                 .frame(width: accentWidth)
-                .shadow(color: theme.accentSecondary.opacity(isSelected ? skin.opacity.o60 : 0), radius: 3)
+                .shadow(color: theme.accentSecondary.opacity(isSelected ? skin.opacity.o60 : 0), radius: skin.size.s3)
         }
-        .clipShape(ChamferShape(cut: 6))
+        .clipShape(ChamferShape(cut: skin.cut.c6))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .animation(reduceMotion ? nil : AinkradMotion.hover, value: hovering)

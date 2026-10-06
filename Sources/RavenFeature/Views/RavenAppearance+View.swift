@@ -37,6 +37,7 @@ private struct RavenSurface: ViewModifier {
 private struct RavenLegibleText: ViewModifier {
     let appearance: RavenAppearance
     @Environment(\.ainkradTheme) private var theme
+    @Environment(\.ainkradSkin) private var skin
 
     func body(content: Content) -> some View {
         // `Color.contrastingText` (the kit's `ColorContrast`) picked against
@@ -47,7 +48,7 @@ private struct RavenLegibleText: ViewModifier {
         // hardcode black.
         content.shadow(
             color: theme.foreground.contrastingText
-                .opacity(appearance.textHaloOpacity), radius: 1.5)
+                .opacity(appearance.textHaloOpacity), radius: skin.size.s1_5)
     }
 }
 
