@@ -2,43 +2,6 @@ import AinkradAppKit
 import AinkradAppKitUI
 import SwiftUI
 
-/// The user's surface setting, carried down the view tree.
-///
-/// Why an environment value when `InboxRow` and `ComposeUndoBanner` take it as
-/// a `let`: those are constructed by a view that already holds the runtime, so
-/// passing it costs one argument. The surfaces fixed here — a recipient
-/// suggestion popover, a chip field's well, a titled block inside a message —
-/// are three and four levels down from the nearest view that has a runtime, and
-/// threading an argument through every intermediate initialiser to reach them
-/// is how a translucency rule gets forgotten at one site (which is exactly what
-/// happened: `ComposeFields` took `AinkradPanel`'s opaque 0.94 default because
-/// nothing there had an `appearance` to hand).
-///
-/// The default is `RavenAppearance.default`, NOT the kit's opaque look, so a
-/// site that is somehow reached without an injection is still glass at the
-/// out-of-the-box setting rather than a slab.
-///
-/// Observation still works: `RavenShell` sets it from
-/// `runtime.appearanceStore.appearance` inside its own `body`, so the read is
-/// tracked and dragging the slider re-injects.
-private struct RavenAppearanceKey: EnvironmentKey {
-    static let defaultValue = RavenAppearance.default
-}
-
-extension EnvironmentValues {
-    public var ravenAppearance: RavenAppearance {
-        get { self[RavenAppearanceKey.self] }
-        set { self[RavenAppearanceKey.self] = newValue }
-    }
-}
-
-extension View {
-    /// Publishes the surface setting to every Raven surface below this point.
-    public func ravenAppearanceEnvironment(_ appearance: RavenAppearance) -> some View {
-        environment(\.ravenAppearance, appearance)
-    }
-}
-
 /// `AinkradSectionFrame`'s look, with an appearance-derived fill instead of its
 /// hardcoded one.
 ///
