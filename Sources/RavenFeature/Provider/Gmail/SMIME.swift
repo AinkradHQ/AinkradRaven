@@ -144,7 +144,7 @@ enum SMIME {
                 AinkradLog.logger("raven.auth").error("Keychain returned a non-identity for an identity query")
                 return nil
             }
-            return (ref as! SecIdentity)
+            return (ref as! SecIdentity)  // design-lint: allow force-cast CF type, CFGetTypeID checked above
         }
         guard !email.isEmpty else { return nil }
         return SecIdentityCopyPreferred(email as CFString, nil, nil)

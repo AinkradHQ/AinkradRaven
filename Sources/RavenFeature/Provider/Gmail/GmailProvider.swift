@@ -1,3 +1,4 @@
+// design-lint: allow-file force-unwrap constant API base URL and URLComponents of it
 import Foundation
 import Security
 

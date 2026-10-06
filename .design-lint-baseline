@@ -10,9 +10,9 @@ hex-color 8
 raw-color 1
 raw-control 5
 file-length 0
-try-bang 1
-force-cast 1
-force-unwrap 28
+try-bang 0
+force-cast 0
+force-unwrap 0
 print 0
 opacity-literal 43
 frame-literal 14

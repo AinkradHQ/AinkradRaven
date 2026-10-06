@@ -1,5 +1,6 @@
 import AinkradAppKit
 // design-lint: allow-file print dev-only CLI writes to stdout
+// design-lint: allow-file force-unwrap dev-only CLI, constant Gmail API URLs
 import Foundation
 import RavenFeature
 

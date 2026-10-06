@@ -106,7 +106,7 @@ public struct OAuthTokenClient: Sendable {
     ) -> URL {
         var components = URLComponents(
             url: configuration.authorizationEndpoint,
-            resolvingAgainstBaseURL: false)!
+            resolvingAgainstBaseURL: false)!  // design-lint: allow force-unwrap components of a valid URL
         var items: [URLQueryItem] = [
             .init(name: "client_id", value: configuration.clientID),
             .init(name: "redirect_uri", value: redirectURI),
@@ -121,7 +121,7 @@ public struct OAuthTokenClient: Sendable {
             items.append(.init(name: name, value: value))
         }
         components.queryItems = items
-        return components.url!
+        return components.url!  // design-lint: allow force-unwrap valid URL plus encoded query items
     }
 
     // MARK: Exchanges

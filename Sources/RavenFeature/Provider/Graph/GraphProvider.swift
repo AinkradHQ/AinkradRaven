@@ -1,3 +1,4 @@
+// design-lint: allow-file force-unwrap constant API base URL and URLComponents of it
 import Foundation
 
 /// Microsoft Graph v1.0, read paths.

@@ -1,3 +1,4 @@
+// design-lint: allow-file force-unwrap QLPreviewPanelDataSource requires implicitly unwrapped types
 import AinkradAppKit
 import AinkradAppKitUI
 import AppKit

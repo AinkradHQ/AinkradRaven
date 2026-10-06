@@ -1,3 +1,4 @@
+// design-lint: allow-file force-unwrap constant OAuth endpoint URLs (tenant id is a path segment)
 import AinkradAppKit
 import AppKit
 import Foundation
