@@ -384,4 +384,4 @@ Task { @MainActor in
 while exitCode == nil {
     RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 }
-exit(exitCode!)
+exit(exitCode ?? 1)  // never nil here: the loop above runs until it is set

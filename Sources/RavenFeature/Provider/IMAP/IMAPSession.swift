@@ -109,11 +109,9 @@ actor IMAPSession {
 
     init(transport: any MailTransport) {
         self.transport = transport
-        var continuation: AsyncStream<IMAPUntaggedResponse>.Continuation!
-        self.untaggedResponses = AsyncStream(bufferingPolicy: .bufferingNewest(512)) {
-            continuation = $0
-        }
-        self.untaggedContinuation = continuation
+        let stream = AsyncStream.makeStream(of: IMAPUntaggedResponse.self, bufferingPolicy: .bufferingNewest(512))
+        self.untaggedResponses = stream.stream
+        self.untaggedContinuation = stream.continuation
     }
 
     /// Only finishes the untagged stream. It deliberately does NOT try to resume
