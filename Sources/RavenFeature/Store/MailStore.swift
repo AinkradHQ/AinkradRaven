@@ -16,16 +16,22 @@ public struct MessageBody: Codable, Equatable, Sendable {
     /// for every existing caller and every document persisted before S/MIME
     /// support shipped, so no other behavior changes.
     public let signatureStatus: SignatureStatus
+    /// Which transfer-encoding decoder produced this body. `nil` for every
+    /// body cached before version 2, whose quoted-printable decode kept
+    /// `=\r\n` soft breaks — `RavenRuntime.loadBody` re-fetches those.
+    public let decoderVersion: Int?
+    public static let currentDecoderVersion = 2
 
     public init(
         messageID: String, plainText: String, html: String?, icsText: String? = nil,
-        signatureStatus: SignatureStatus = .unsigned
+        signatureStatus: SignatureStatus = .unsigned, decoderVersion: Int? = MessageBody.currentDecoderVersion
     ) {
         self.messageID = messageID
         self.plainText = plainText
         self.html = html
         self.icsText = icsText
         self.signatureStatus = signatureStatus
+        self.decoderVersion = decoderVersion
     }
 
     public init(from decoder: Decoder) throws {
@@ -35,6 +41,7 @@ public struct MessageBody: Codable, Equatable, Sendable {
         html = try c.decodeIfPresent(String.self, forKey: .html)
         icsText = try c.decodeIfPresent(String.self, forKey: .icsText)
         signatureStatus = try c.decodeIfPresent(SignatureStatus.self, forKey: .signatureStatus) ?? .unsigned
+        decoderVersion = try c.decodeIfPresent(Int.self, forKey: .decoderVersion)
     }
 }
 

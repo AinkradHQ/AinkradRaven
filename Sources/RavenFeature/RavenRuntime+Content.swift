@@ -24,11 +24,14 @@ extension RavenRuntime {
     /// The account is resolved from the message's own thread, so with several
     /// accounts connected a body is fetched by the mailbox it actually belongs
     /// to — and cached under that same account, so sign-out purges it.
+    /// A body cached by an older decoder (see `MessageBody.decoderVersion`)
+    /// is fetched again; if that fails it is still shown rather than nothing.
     public func loadBody(for message: MailMessage) async -> MessageBody? {
-        if let cached = store.body(messageID: message.id) { return cached }
+        let cached = store.body(messageID: message.id)
+        if let cached, (cached.decoderVersion ?? 1) >= MessageBody.currentDecoderVersion { return cached }
         guard let accountID = store.thread(message.threadID)?.accountID,
             let provider = providers.provider(for: accountID)
-        else { return nil }
+        else { return cached }
         do {
             let body = try await Task.detached {
                 try await provider.fetchBody(messageID: message.id)
@@ -45,7 +48,7 @@ extension RavenRuntime {
             return body
         } catch {
             host.log.error("RavenRuntime.loadBody failed for \(message.id): \(error)")
-            return nil
+            return cached
         }
     }
 
