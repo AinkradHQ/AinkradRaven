@@ -67,7 +67,7 @@ struct RecipientChipField: View {
                             RecipientDetail(chip: chip, candidates: candidates)
                         }
                     }
-                    TextField("", text: $typed)  // design-lint: allow raw-control token-gap chipFieldFocusBinding
+                    TextField("", text: $typed)  // design-lint: allow raw-control kit-gap chipFieldFocusBinding
                         .textFieldStyle(.plain)
                         .focused($isFocused)
                         .frame(minWidth: skin.size.s80)
@@ -109,7 +109,7 @@ struct RecipientChipField: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(suggestions.indices, id: \.self) { index in
                         let candidate = suggestions[index]
-                        Button {  // design-lint: allow raw-control token-gap inlineSuggestionList
+                        Button {  // design-lint: allow raw-control kit-gap inlineSuggestionList
                             chips.append(RecipientChip(raw: rfc5322(for: candidate.address)))
                             typed = ""
                         } label: {
