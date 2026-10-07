@@ -207,39 +207,46 @@ struct RFC822Message {
         }
     }
 
+    /// Decodes over BYTES, never a `String`: Swift reads `"\r\n"` as one
+    /// `Character`, so a `String` walk never sees the `=\r\n` soft line break
+    /// every server sends, and an 8-bit byte made the old ASCII decode give up
+    /// on the whole body.
     private static func decodeQuotedPrintable(_ data: Data) -> Data {
-        guard let text = String(data: data, encoding: .ascii) else { return data }
-        var out = Data()
-        var index = text.startIndex
-        while index < text.endIndex {
-            let char = text[index]
-            if char == "=" {
-                let next = text.index(after: index)
-                if next < text.endIndex, text[next] == "\n" || text[next] == "\r" {
-                    // Soft line break: skip the CRLF/LF it introduces.
-                    index = text.index(after: next)
-                    if index < text.endIndex, text[text.index(before: index)] == "\r",
-                        text[index] == "\n"
-                    {
-                        index = text.index(after: index)
-                    }
-                    continue
-                }
-                let hexEnd = text.index(index, offsetBy: 3, limitedBy: text.endIndex) ?? text.endIndex
-                let hex = text[text.index(after: index)..<hexEnd]
-                if hex.count == 2, let byte = UInt8(hex, radix: 16) {
-                    out.append(byte)
-                    index = hexEnd
-                    continue
-                }
-                out.append(UInt8(ascii: "="))
-                index = text.index(after: index)
+        let bytes = [UInt8](data)
+        var out = Data(capacity: bytes.count)
+        var i = 0
+        while i < bytes.count {
+            guard bytes[i] == UInt8(ascii: "=") else {
+                out.append(bytes[i])
+                i += 1
+                continue
+            }
+            if i + 2 < bytes.count, bytes[i + 1] == 0x0D, bytes[i + 2] == 0x0A {
+                i += 3  // soft line break, CRLF
+            } else if i + 1 < bytes.count, bytes[i + 1] == 0x0A {
+                i += 2  // soft line break, bare LF
+            } else if i + 2 < bytes.count, let byte = hexByte(bytes[i + 1], bytes[i + 2]) {
+                out.append(byte)
+                i += 3
             } else {
-                out.append(contentsOf: Array(String(char).utf8))
-                index = text.index(after: index)
+                out.append(bytes[i])  // a lone "=" is kept literally
+                i += 1
             }
         }
         return out
+    }
+
+    private static func hexByte(_ high: UInt8, _ low: UInt8) -> UInt8? {
+        func nibble(_ c: UInt8) -> UInt8? {
+            switch c {
+            case 0x30...0x39: return c - 0x30
+            case 0x41...0x46: return c - 0x41 + 10
+            case 0x61...0x66: return c - 0x61 + 10
+            default: return nil
+            }
+        }
+        guard let h = nibble(high), let l = nibble(low) else { return nil }
+        return h << 4 | l
     }
 
     /// Splits a multipart body on `--boundary` lines, dropping the preamble
