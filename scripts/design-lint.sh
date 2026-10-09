@@ -32,6 +32,7 @@ rule_names=(
   "frame-literal"
   "chamfer-literal"
   "motion-literal"
+  "chamfer-direct"
 )
 
 rule_scopes=(
@@ -43,6 +44,7 @@ rule_scopes=(
   "Sources"
   "Sources"
   "Sources+Tests"
+  "Sources"
   "Sources"
   "Sources"
   "Sources"
@@ -72,6 +74,7 @@ rule_patterns=(
   "\\.frame\\(([^)]*, *)?(width|height|minWidth|maxWidth|minHeight|maxHeight|idealWidth|idealHeight): *-?([1-9]|0\\.[0-9]*[1-9])"
   "ChamferShape\\( *cut: *([^,)]*[^A-Za-z0-9_.])?[0-9]|\\.cornerBrackets\\([^)]*(length|inset): *-?[0-9]"
   "\\.(easeIn|easeOut|easeInOut|linear|spring|interactiveSpring|interpolatingSpring|snappy|smooth|bouncy|timingCurve)\\([^)]*(duration|response|dampingFraction|blendDuration|bounce|extraBounce|stiffness|damping): *[0-9.]|\\.(delay|speed)\\( *[0-9.]"
+  "ChamferShape\\("
 )
 
 MODE="default"

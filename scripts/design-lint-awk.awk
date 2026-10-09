@@ -5,7 +5,7 @@ BEGIN {
   list_rule = ENVIRON["AWK_LIST_RULE"]
   
   # Initialize counts for all rules
-  split("font-size,padding-literal,spacing-literal,radius-literal,hex-color,raw-color,raw-control,file-length,try-bang,force-cast,force-unwrap,print,opacity-literal,frame-literal,chamfer-literal,motion-literal", rule_list, ",")
+  split("font-size,padding-literal,spacing-literal,radius-literal,hex-color,raw-color,raw-control,file-length,try-bang,force-cast,force-unwrap,print,opacity-literal,frame-literal,chamfer-literal,motion-literal,chamfer-direct", rule_list, ",")
   for (i in rule_list) {
     count[rule_list[i]] = 0
     allowed_count[rule_list[i]] = 0
