@@ -109,6 +109,16 @@ Task.sleep(for: .seconds(2))
 // comment .spring(response: 0.5)
 EOF
 
+  cat > Sources/Rule17.swift <<'EOF'
+ChamferShape(cut: radius, corners: .all)
+ChamferShape()
+skin.shape(cut: radius)
+AinkradSkinShape(token: tile.shape)
+ChamferCorners.diagonal
+ChamferShape(cut: radius) // design-lint: allow chamfer-direct test
+// comment ChamferShape(cut: radius)
+EOF
+
   cat > Sources/Rule9.swift <<'EOF'
 let a = try! decode(data)
 let b = try! parse(text) // design-lint: allow try-bang test
@@ -312,6 +322,8 @@ EOF
       "frame-literal") expected=2; expected_allowed=1 ;;
       "chamfer-literal") expected=2; expected_allowed=1 ;;
       "motion-literal") expected=2; expected_allowed=1 ;;
+      # chamfer-direct: Rule17's two bare ChamferShape( lines plus Rule15's two.
+      "chamfer-direct") expected=4; expected_allowed=1 ;;
     esac
     
     if [ $count -ne $expected ]; then
