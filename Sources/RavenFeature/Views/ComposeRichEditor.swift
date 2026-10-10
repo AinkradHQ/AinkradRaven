@@ -83,9 +83,9 @@ struct ComposeBodyField: View {
                 onFocusChange: { isEditing = $0 })
         }
         .frame(minHeight: minHeight)
-        .background(ChamferShape(cut: skin.cut.c8).fill(theme.surfaceElevated.opacity(skin.opacity.o50)))
+        .background(skin.shape(cut: skin.cut.c8).fill(theme.surfaceElevated.opacity(skin.opacity.o50)))
         .overlay(
-            ChamferShape(cut: skin.cut.c8).strokeBorder(
+            skin.shape(cut: skin.cut.c8).strokeBorder(
                 theme.accentPrimary.opacity(isEditing ? skin.opacity.o90 : skin.opacity.o25),
                 lineWidth: isEditing ? 1.5 : 1.25)
         )

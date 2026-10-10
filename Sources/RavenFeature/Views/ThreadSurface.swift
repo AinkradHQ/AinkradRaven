@@ -293,7 +293,7 @@ private struct OverflowTrigger: View {
     @State private var hovering = false
 
     var body: some View {
-        let shape = ChamferShape(cut: size * skin.cut.r0_2)
+        let shape = skin.shape(cut: size * skin.cut.r0_2)
         let o = skin.opacity
         Image(systemName: "ellipsis")
             .font(skin.font(AinkradFontToken(sizeKey: "t11", weight: "semibold", scaled: false)))

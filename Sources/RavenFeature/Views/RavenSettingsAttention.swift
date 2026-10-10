@@ -70,11 +70,11 @@ struct OutboxAttentionGroup: View {
                 .padding(AinkradSpacing.lg)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    ChamferShape(cut: AinkradRadius.md)
+                    skin.shape(cut: AinkradRadius.md)
                         .fill(statusColors.warning.opacity(skin.opacity.o10))
                 )
                 .overlay(
-                    ChamferShape(cut: AinkradRadius.md)
+                    skin.shape(cut: AinkradRadius.md)
                         .strokeBorder(statusColors.warning.opacity(skin.opacity.o55), lineWidth: 1))
             }
         }
