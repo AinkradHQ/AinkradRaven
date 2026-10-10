@@ -77,7 +77,7 @@ struct RawHTMLSheet: View {
                 html: imagesAllowed ? html : Self.blockingRemoteImages(html),
                 allowsRemoteLoads: imagesAllowed
             )
-            .clipShape(ChamferShape(cut: AinkradRadius.sm))
+            .clipShape(skin.shape(cut: AinkradRadius.sm))
         }
         // A fixed height, not a `minHeight`: this is presented inside
         // `.ainkradModal(contentWidth:)` now, whose content is offered the

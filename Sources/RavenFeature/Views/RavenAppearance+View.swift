@@ -153,7 +153,7 @@ private struct RavenFocusRing: ViewModifier {
             // Suppress AppKit's own ring; this modifier is its replacement.
             .focusEffectDisabled()
             .overlay {
-                ChamferShape(cut: AinkradRadius.panel)
+                skin.shape(cut: AinkradRadius.panel)
                     .strokeBorder(
                         theme.accentSecondary.opacity(showsRing ? skin.opacity.o55 : 0),
                         lineWidth: 1

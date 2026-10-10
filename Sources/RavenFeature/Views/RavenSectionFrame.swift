@@ -56,11 +56,11 @@ struct RavenSectionFrame<Content: View>: View {
         // grouping and has to be findable, the same call `InboxRow` makes for
         // a hovered row.
         .background(
-            ChamferShape(cut: AinkradRadius.md)
+            skin.shape(cut: AinkradRadius.md)
                 .fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)))
         )
         .overlay(
-            ChamferShape(cut: AinkradRadius.md)
+            skin.shape(cut: AinkradRadius.md)
                 .strokeBorder(
                     theme.accentSecondary
                         .opacity(appearance.cardBorderOpacity(isRead: true)), lineWidth: 1))

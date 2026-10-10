@@ -148,7 +148,7 @@ public struct InboxSurface: View {
         // surface picks between — they just differ within the setting instead of
         // on top of it.
         .background(
-            ChamferShape(cut: AinkradRadius.sm)
+            skin.shape(cut: AinkradRadius.sm)
                 .fill(
                     theme.surfaceElevated
                         .opacity(appearance.cardFillOpacity(isRead: selectionCount == 0))))

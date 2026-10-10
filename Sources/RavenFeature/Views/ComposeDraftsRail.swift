@@ -112,13 +112,13 @@ struct ComposeUndoBanner: View {
             .padding(AinkradSpacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                ChamferShape(cut: AinkradRadius.sm)
+                skin.shape(cut: AinkradRadius.sm)
                     .fill(
                         theme.surfaceElevated
                             .opacity(appearance.cardFillOpacity(isRead: false)))
             )
             .overlay(
-                ChamferShape(cut: AinkradRadius.sm)
+                skin.shape(cut: AinkradRadius.sm)
                     .strokeBorder(
                         theme.accentSecondary
                             .opacity(appearance.cardBorderOpacity(isRead: false)), lineWidth: 1))
