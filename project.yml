@@ -31,7 +31,8 @@ packages:
     # fb4be6d: Glass Native E1–E2 -- every kit component draws Apple's own controls and Liquid Glass
     #   when skin.usesNativeGlass. AppKitUI ABI: additions only. NOT releasable until an installed
     #   host pins fb4be6d.
-    revision: fb4be6d29f8143248702e7d6014609106f02bbc5
+    # aa3fc95: AinkradMenuButton keeps a custom label under Glass (#107).
+    revision: aa3fc955d523a9ec940626bddeeabd927c587737
 targets:
   RavenFeature:
     type: library.static
