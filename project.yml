@@ -32,7 +32,8 @@ packages:
     #   when skin.usesNativeGlass. AppKitUI ABI: additions only. NOT releasable until an installed
     #   host pins fb4be6d.
     # aa3fc95: AinkradMenuButton keeps a custom label under Glass (#107).
-    revision: aa3fc955d523a9ec940626bddeeabd927c587737
+    # bdf3b0d: Grimoire E1 — AinkradMarkdownText, AinkradDiffReview, AinkradDecisionBar, AinkradComposer (#108–#110).
+    revision: bdf3b0d8d235cf792ca4c2a986801162aee3e4fb
 targets:
   RavenFeature:
     type: library.static
