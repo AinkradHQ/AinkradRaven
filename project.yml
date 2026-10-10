@@ -28,7 +28,7 @@ packages:
     # c315110: generation 11 -- Basic Mode. NOT releasable until an installed
     # host is generation 11.
     # 43868c9: AinkradSurfaceSettings -- the shared Open as / Open in rows.
-    revision: 636baa4cb5925a4603a589eaad98139e3b93d888
+    revision: 2f0bb8ffb982019ba93b4194f9ca7fa541fdd808
 targets:
   RavenFeature:
     type: library.static
