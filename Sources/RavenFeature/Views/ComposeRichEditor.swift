@@ -89,8 +89,9 @@ struct ComposeBodyField: View {
                 theme.accentPrimary.opacity(isEditing ? skin.opacity.o90 : skin.opacity.o25),
                 lineWidth: isEditing ? 1.5 : 1.25)
         )
+        // No glow under Liquid Glass: the accent edge is the focus ring.
         .shadow(
-            color: theme.accentSecondary.opacity(isEditing ? skin.opacity.o40 : 0),
+            color: theme.accentSecondary.opacity(isEditing && !skin.usesNativeGlass ? skin.opacity.o40 : 0),
             radius: isEditing ? 6 : 0
         )
         .animation(AinkradMotion.hover, value: isEditing)

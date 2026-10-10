@@ -23,6 +23,7 @@ private struct RavenSurface: ViewModifier {
     let appearance: RavenAppearance
     @Environment(\.ainkradSurfaceOpacity) private var outerOpacity
     @Environment(\.ainkradSurfaceBlur) private var outerBlur
+    @Environment(\.ainkradSkin) private var skin
 
     func body(content: Content) -> some View {
         content
@@ -30,7 +31,11 @@ private struct RavenSurface: ViewModifier {
             .environment(\.ainkradSurfaceBlur, outerBlur)
             .ainkradPanel()
             .environment(\.ainkradSurfaceOpacity, appearance.surfaceOpacity)
-            .environment(\.ainkradSurfaceBlur, false)
+            // Under Liquid Glass the pane IS glass (the kit panel's
+            // `glassEffect`), which samples once rather than re-blurring the
+            // host's backdrop; with blur forced off it was a flat fill the
+            // colour of the background — invisible. The host's setting decides.
+            .environment(\.ainkradSurfaceBlur, skin.usesNativeGlass ? outerBlur : false)
     }
 }
 
@@ -169,5 +174,35 @@ extension View {
     /// system focus ring. Draws nothing while a Raven modal is presented.
     public func ravenFocusRing(isFocused: Bool) -> some View {
         modifier(RavenFocusRing(isFocused: isFocused))
+    }
+}
+
+// MARK: - Liquid Glass
+
+/// A Raven card's chrome: the translucent fill and accent hairline under Neon;
+/// under Liquid Glass (`skin.usesNativeGlass`) a grouped box — the system fill,
+/// no accent outline — the way macOS groups content (Mail, System Settings).
+private struct RavenCardChrome<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let fill: Color
+    let stroke: Color
+    let lineWidth: CGFloat
+    @Environment(\.ainkradSkin) private var skin
+
+    func body(content: Content) -> some View {
+        if skin.usesNativeGlass {
+            content.background(.quaternary, in: shape)
+        } else {
+            content
+                .background(shape.fill(fill))
+                .overlay(shape.strokeBorder(stroke, lineWidth: lineWidth))
+        }
+    }
+}
+
+extension View {
+    /// `fill` + `stroke` in `shape`, or the grouped-box look under Liquid Glass.
+    func ravenCard<S: InsettableShape>(_ shape: S, fill: Color, stroke: Color, lineWidth: CGFloat = 1) -> some View {
+        modifier(RavenCardChrome(shape: shape, fill: fill, stroke: stroke, lineWidth: lineWidth))
     }
 }

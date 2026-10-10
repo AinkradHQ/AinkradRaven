@@ -292,10 +292,21 @@ private struct OverflowTrigger: View {
     @Environment(\.ainkradReduceMotion) private var reduceMotion
     @State private var hovering = false
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if #available(macOS 26, *), skin.usesNativeGlass {
+            // Liquid Glass: the kit icon button's glass circle.
+            Image(systemName: "ellipsis")
+                .frame(width: size, height: size)
+                .glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            kitBody
+        }
+    }
+
+    private var kitBody: some View {
         let shape = skin.shape(cut: size * skin.cut.r0_2)
         let o = skin.opacity
-        Image(systemName: "ellipsis")
+        return Image(systemName: "ellipsis")
             .font(skin.font(AinkradFontToken(sizeKey: "t11", weight: "semibold", scaled: false)))
             .foregroundStyle(theme.foreground.opacity(hovering ? 1 : o.o75))
             .frame(width: size, height: size)

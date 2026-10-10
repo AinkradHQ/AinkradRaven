@@ -50,6 +50,7 @@ struct InboxRow: View {
     @Environment(\.ainkradSkin) private var skin
     @Environment(\.ainkradTypography) private var typo
     @Environment(\.ainkradReduceMotion) private var reduceMotion
+    @Environment(\.ainkradStatusColors) private var statusColors
     @State private var hovering = false
 
     /// Subject: exactly one line. A subject is an identifier, not content —
@@ -67,7 +68,20 @@ struct InboxRow: View {
             // Starred wins over unread in the glyph because it is the state the
             // user set deliberately; unread is still carried by the filled
             // treatment and the bold subject.
-            AinkradIconGlyph(systemName: leadingGlyph, filled: isUnread)
+            if skin.usesNativeGlass {
+                // Liquid Glass: Mail's unread dot (a star when starred).
+                Group {
+                    if summary.isStarred {
+                        Image(systemName: "star.fill").imageScale(.small).foregroundStyle(statusColors.warning)
+                    } else {
+                        Circle().fill(theme.accentPrimary).frame(width: skin.size.s8, height: skin.size.s8)
+                            .opacity(isUnread ? 1 : 0)
+                    }
+                }
+                .frame(width: skin.size.s16)
+            } else {
+                AinkradIconGlyph(systemName: leadingGlyph, filled: isUnread)
+            }
 
             VStack(alignment: .leading, spacing: skin.size.s2) {
                 Text(summary.subject.isEmpty ? "(no subject)" : summary.subject)
@@ -97,8 +111,10 @@ struct InboxRow: View {
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(theme.accentSecondary)
-                .frame(width: accentWidth)
-                .shadow(color: theme.accentSecondary.opacity(isSelected ? skin.opacity.o60 : 0), radius: skin.size.s3)
+                .frame(width: skin.usesNativeGlass ? 0 : accentWidth)
+                .shadow(
+                    color: theme.accentSecondary.opacity(isSelected && !skin.usesNativeGlass ? skin.opacity.o60 : 0),
+                    radius: skin.size.s3)
         }
         .clipShape(skin.shape(cut: skin.cut.c6))
         .contentShape(Rectangle())
@@ -138,7 +154,8 @@ struct InboxRow: View {
     /// is the one that had to change: a flat 0.5 of `surfaceElevated` over an
     /// already-translucent rail composited to a near-solid row.
     private var rowFill: Color {
-        if isSelected { return theme.accentPrimary.opacity(skin.opacity.o16) }
+        // Liquid Glass: the macOS selection — the accent itself, not a tint.
+        if isSelected { return skin.usesNativeGlass ? theme.accentPrimary : theme.accentPrimary.opacity(skin.opacity.o16) }
         if hovering {
             return theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false))
         }

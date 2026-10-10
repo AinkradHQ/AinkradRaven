@@ -32,6 +32,7 @@ private struct RavenTranslucentModalModifier<ModalContent: View>: ViewModifier {
 
     @Environment(\.ainkradSurfaceOpacity) private var outerOpacity
     @Environment(\.ainkradSurfaceBlur) private var outerBlur
+    @Environment(\.ainkradSkin) private var skin
 
     func body(content: Content) -> some View {
         content
@@ -43,7 +44,8 @@ private struct RavenTranslucentModalModifier<ModalContent: View>: ViewModifier {
                     .environment(\.ainkradSurfaceBlur, outerBlur)
             }
             .environment(\.ainkradSurfaceOpacity, appearance.modalFillOpacity)
-            .environment(\.ainkradSurfaceBlur, false)
+            // Liquid Glass: the composer panel is glass (see `RavenSurface`).
+            .environment(\.ainkradSurfaceBlur, skin.usesNativeGlass ? outerBlur : false)
     }
 }
 

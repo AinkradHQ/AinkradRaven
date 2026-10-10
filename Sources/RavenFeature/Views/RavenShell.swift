@@ -224,12 +224,14 @@ private struct ComposeFloatingButton: View {
         .background(
             // Every colour from the theme, including the lift: a fixed
             // black shadow vanishes on a light theme, so the riser is the
-            // theme's own accent at low opacity.
+            // theme's own accent at low opacity. Liquid Glass: none — the
+            // glass button carries its own depth.
             skin.shape(cut: Self.size * skin.cut.r0_2)
                 .fill(theme.accentPrimary.opacity(hovering ? skin.opacity.o30 : skin.opacity.o18))
                 .shadow(
                     color: theme.accentSecondary.opacity(hovering ? skin.opacity.o45 : skin.opacity.o28),
                     radius: hovering ? 14 : 8, x: 0, y: 2)
+                .opacity(skin.usesNativeGlass ? 0 : 1)
         )
         .onHover { hovering = $0 }
         .animation(reduceMotion ? nil : AinkradMotion.hover, value: hovering)
