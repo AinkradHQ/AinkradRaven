@@ -28,7 +28,11 @@ packages:
     # c315110: generation 11 -- Basic Mode. NOT releasable until an installed
     # host is generation 11.
     # 43868c9: AinkradSurfaceSettings -- the shared Open as / Open in rows.
-    revision: 2f0bb8ffb982019ba93b4194f9ca7fa541fdd808
+    # fb4be6d: Glass Native E1–E2 -- every kit component draws Apple's own controls and Liquid Glass
+    #   when skin.usesNativeGlass. AppKitUI ABI: additions only. NOT releasable until an installed
+    #   host pins fb4be6d.
+    # aa3fc95: AinkradMenuButton keeps a custom label under Glass (#107).
+    revision: aa3fc955d523a9ec940626bddeeabd927c587737
 targets:
   RavenFeature:
     type: library.static

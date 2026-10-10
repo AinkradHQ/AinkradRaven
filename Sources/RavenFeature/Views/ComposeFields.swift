@@ -283,12 +283,9 @@ struct ComposeFieldChrome: ViewModifier {
     func body(content: Content) -> some View {
         let field = skin.roles.field
         let shape = AinkradSkinShape(token: field.shape)
-        content
-            .background(
-                shape.fill(theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)))
-            )
-            .overlay(
-                shape.strokeBorder(skin.color(field.stroke.color), lineWidth: field.stroke.width.resolve([])))
+        content.ravenCard(
+            shape, fill: theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)),
+            stroke: skin.color(field.stroke.color), lineWidth: field.stroke.width.resolve([]))
     }
 }
 

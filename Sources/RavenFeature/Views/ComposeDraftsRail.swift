@@ -111,17 +111,10 @@ struct ComposeUndoBanner: View {
             }
             .padding(AinkradSpacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                skin.shape(cut: AinkradRadius.sm)
-                    .fill(
-                        theme.surfaceElevated
-                            .opacity(appearance.cardFillOpacity(isRead: false)))
-            )
-            .overlay(
-                skin.shape(cut: AinkradRadius.sm)
-                    .strokeBorder(
-                        theme.accentSecondary
-                            .opacity(appearance.cardBorderOpacity(isRead: false)), lineWidth: 1))
+            .ravenCard(
+                skin.shape(cut: AinkradRadius.sm),
+                fill: theme.surfaceElevated.opacity(appearance.cardFillOpacity(isRead: false)),
+                stroke: theme.accentSecondary.opacity(appearance.cardBorderOpacity(isRead: false)))
         }
     }
 }

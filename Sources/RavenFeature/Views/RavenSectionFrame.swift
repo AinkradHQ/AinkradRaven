@@ -32,12 +32,27 @@ struct RavenSectionFrame<Content: View>: View {
     @Environment(\.ainkradTypography) private var typo
     @Environment(\.ravenAppearance) private var appearance
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if skin.usesNativeGlass {
+            // Liquid Glass: a system heading over a grouped box — no tick, no
+            // tracked caps, no accent outline.
+            VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
+                Text(title).font(.headline)
+                content()
+            }
+            .padding(AinkradSpacing.md)
+            .background(.quaternary, in: skin.shape(cut: AinkradRadius.md))
+        } else {
+            kitBody
+        }
+    }
+
+    private var kitBody: some View {
         // The kit's `accentTick` role for the tick. The section frame's own
         // component tokens (tick size, title colour) are not public, so those
         // come from the ladders at the kit's values.
         let tick = skin.roles.accentTick
-        VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
+        return VStack(alignment: .leading, spacing: AinkradSpacing.sm) {
             HStack(spacing: AinkradSpacing.xs) {
                 Rectangle()
                     .fill(skin.color(tick.fill))
