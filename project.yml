@@ -33,7 +33,8 @@ packages:
     #   host pins fb4be6d.
     # aa3fc95: AinkradMenuButton keeps a custom label under Glass (#107).
     # bdf3b0d: Grimoire E1 — AinkradMarkdownText, AinkradDiffReview, AinkradDecisionBar, AinkradComposer (#108–#110).
-    revision: bdf3b0d8d235cf792ca4c2a986801162aee3e4fb
+    # 41cd9d9: markdown pipe tables and block quotes in AinkradMarkdownText (#111).
+    revision: 41cd9d9443e89bda6a08e0400a4a8d1377df3308
 targets:
   RavenFeature:
     type: library.static
