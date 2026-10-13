@@ -36,7 +36,8 @@ packages:
     # 41cd9d9: markdown pipe tables and block quotes in AinkradMarkdownText (#111).
     # 51655c2: AinkradMenuButton.kitMenuUnderGlass() opt-in (#112, Forge FD20).
     # 966326c: kit parity batches 1+2 (#113, #114) for the Forge/Grimoire mockups; additive, abi-check clean.
-    revision: 966326c04cc4dcf174c1d0aacc35dc8eef130ccf
+    # a352acd: kit parity batches 3+4 (#115, #116) for the Forge/Grimoire mockups; additive, abi-check clean.
+    revision: a352acdcf4f7c468843f8a3bcdbed34785185db7
 targets:
   RavenFeature:
     type: library.static
