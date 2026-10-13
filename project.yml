@@ -37,7 +37,8 @@ packages:
     # 51655c2: AinkradMenuButton.kitMenuUnderGlass() opt-in (#112, Forge FD20).
     # 966326c: kit parity batches 1+2 (#113, #114) for the Forge/Grimoire mockups; additive, abi-check clean.
     # a352acd: kit parity batches 3+4 (#115, #116) for the Forge/Grimoire mockups; additive, abi-check clean.
-    revision: a352acdcf4f7c468843f8a3bcdbed34785185db7
+    # dbc2b5e: kit parity batch 5 (#117) for the Forge mockups; additive, abi-check clean.
+    revision: dbc2b5eb7dce936861e470084b9cde05070d3607
 targets:
   RavenFeature:
     type: library.static
