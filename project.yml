@@ -35,7 +35,8 @@ packages:
     # bdf3b0d: Grimoire E1 — AinkradMarkdownText, AinkradDiffReview, AinkradDecisionBar, AinkradComposer (#108–#110).
     # 41cd9d9: markdown pipe tables and block quotes in AinkradMarkdownText (#111).
     # 51655c2: AinkradMenuButton.kitMenuUnderGlass() opt-in (#112, Forge FD20).
-    revision: 51655c243aab09146e8db97df9b72ee0ba5cc52c
+    # 966326c: kit parity batches 1+2 (#113, #114) for the Forge/Grimoire mockups; additive, abi-check clean.
+    revision: 966326c04cc4dcf174c1d0aacc35dc8eef130ccf
 targets:
   RavenFeature:
     type: library.static
