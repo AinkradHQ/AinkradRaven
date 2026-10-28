@@ -14,13 +14,15 @@ export DEVELOPER_DIR
 # to the main app. Override on the command line to target the Dev Host:
 #   make sideload HOST_BUNDLE_ID=com.ainkrad.devhost
 HOST_BUNDLE_ID ?= com.ainkrad.app
-DEV_PLUGINS := $(HOME)/Library/Application Support/$(HOST_BUNDLE_ID)/Cache/DevPlugins
+DEV_PLUGINS ?= $(HOME)/Library/Application Support/$(HOST_BUNDLE_ID)/Cache/DevPlugins
 
 .PHONY: generate build sideload test dev-auth dev-fixtures release
 
 generate: ; ./scripts/generate-oauth-credentials.sh && xcodegen generate
 build: lint generate ; xcodebuild -scheme RavenPlugin -configuration Debug -derivedDataPath build -destination 'platform=macOS' build
 sideload: build
+	@case "$(DEV_PLUGINS)" in "$(HOME)/Library/Application Support/"*) \
+		[ "$(CONFIRM_DAILY)" = 1 ] || { echo "refusing: DEV_PLUGINS is the daily app's folder (set DEV_PLUGINS=<fixture>/DevPlugins or CONFIRM_DAILY=1)"; exit 1; };; esac
 	mkdir -p "$(DEV_PLUGINS)"
 	rm -rf "$(DEV_PLUGINS)/RavenPlugin.bundle"
 	cp -R build/Build/Products/Debug/RavenPlugin.bundle "$(DEV_PLUGINS)/RavenPlugin.bundle"
